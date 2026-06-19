@@ -6,7 +6,8 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton, QLabel, QMenu,
     QToolButton, QFrame, QStackedWidget,
 )
-from PySide6.QtGui import QColor, QBrush, QIcon, QPixmap, QPainter, QFont
+from PySide6.QtCore import Qt, QPoint, QRect, QSize
+from PySide6.QtGui import QColor, QIcon, QPixmap, QPainter, QFont, QShortcut, QKeySequence
 
 from theme_manager import ThemeManager
 
@@ -81,6 +82,7 @@ class VentanaPrincipal(QMainWindow):
 
         self._theme = ThemeManager.load_preference()
         self._active_tab = "VISTA PRINCIPAL"
+        self._temp_tab_widget = None
 
         self._build_central()
         self._build_statusbar()
@@ -99,7 +101,15 @@ class VentanaPrincipal(QMainWindow):
 
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self._build_sidebar())
-        splitter.addWidget(self._build_content())
+
+        right = QWidget()
+        right_layout = QVBoxLayout(right)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(0)
+        self._build_search_bar(right_layout)
+        right_layout.addWidget(self._build_content(), 1)
+        splitter.addWidget(right)
+
         splitter.setStretchFactor(0, 2)
         splitter.setStretchFactor(1, 8)
         splitter.setSizes([220, 1040])
@@ -126,6 +136,26 @@ class VentanaPrincipal(QMainWindow):
             layout.addWidget(btn)
 
         layout.addStretch()
+        parent_layout.addWidget(bar)
+
+    # ── Barra de búsqueda ──
+
+    def _build_search_bar(self, parent_layout):
+        from PySide6.QtWidgets import QLineEdit
+
+        bar = QWidget()
+        bar.setObjectName("searchBar")
+        bar.setFixedHeight(32)
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(8, 0, 8, 0)
+        layout.setSpacing(0)
+
+        inp = QLineEdit()
+        inp.setObjectName("searchInput")
+        inp.setPlaceholderText("🔍  Buscar en el proyecto…")
+        inp.setClearButtonEnabled(True)
+        layout.addWidget(inp)
+
         parent_layout.addWidget(bar)
 
     # ── Toolbar ──
@@ -321,7 +351,14 @@ class VentanaPrincipal(QMainWindow):
     # ── Explorador ──
 
     def _build_sidebar(self):
-        tree = QTreeWidget()
+        from ui.widgets.tabla_presupuesto import draw_tree_connectors
+
+        class _SidebarTree(QTreeWidget):
+            def drawBranches(self, painter, rect, index):
+                super().drawBranches(painter, rect, index)
+                draw_tree_connectors(self, painter, rect, index)
+
+        tree = _SidebarTree()
         tree.setHeaderLabel("Explorador")
         tree.setAnimated(True)
         tree.setIndentation(16)
@@ -329,9 +366,18 @@ class VentanaPrincipal(QMainWindow):
         tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
 
         section = [
-            ("📁 Propuesta", ["Presupuesto", "Conceptos", "Indirectos"]),
-            ("📁 Insumos", ["Materiales", "Mano obra", "Equipo"]),
-            ("📁 Ejecución", ["Estimaciones", "Ajustes"]),
+            ("📁 Propuesta", [
+                "📋 Presupuesto programable", "📐 Conceptos", "💰 Cálculo de indirectos",
+                "👷 Personal en indirectos", "📊 Cálculo de sobrecostos",
+                "📦 Explosión de insumos", "🚚 Programa de suministros",
+            ]),
+            ("📁 Insumos", [
+                "📚 Todos", "🧱 Materiales", "👷 Mano de obra", "🔧 Herramienta",
+                "🚜 Equipo", "⚙️ Auxiliares", "🧮 Matrices", "🚛 Fletes", "🏗️ Trabajos",
+            ]),
+            ("📁 Ejecución", [
+                "📝 Estimaciones", "➕ Conceptos fuera de catálogo", "📈 Ajustes de costos",
+            ]),
         ]
         for nombre, hijos in section:
             root = QTreeWidgetItem(tree, [nombre])
@@ -342,36 +388,29 @@ class VentanaPrincipal(QMainWindow):
             for h in hijos:
                 QTreeWidgetItem(root, [h])
 
+        self._sidebar_tree = tree
+        tree.itemClicked.connect(self._on_sidebar_click)
+        tree.itemDoubleClicked.connect(self._on_sidebar_double_click)
         return tree
 
     # ── Tabs centrales ──
 
     def _build_content(self):
-        tabs = QTabWidget()
-        tabs.setTabsClosable(True)
-        tabs.addTab(self._build_presupuesto(), "Presupuesto programable  ×")
-        tabs.addTab(self._tab_vacia(), "APU Detalle  ×")
-        return tabs
+        self._tabs = QTabWidget()
+        self._tabs.setTabsClosable(True)
+        self._tabs.tabCloseRequested.connect(self._on_tab_close)
+        self._tabs.addTab(self._build_presupuesto(), "📋 Presupuesto programable")
+
+        ctrl_tab = QShortcut(QKeySequence("Ctrl+Tab"), self)
+        ctrl_tab.activated.connect(self._next_tab)
+        ctrl_shift_tab = QShortcut(QKeySequence("Ctrl+Shift+Tab"), self)
+        ctrl_shift_tab.activated.connect(self._prev_tab)
+
+        return self._tabs
 
     def _build_presupuesto(self):
-        cols = ["Nº", "Tipo", "Clave", "Descripción", "Unid", "Cant", "P.U.", "Total"]
-        tree = QTreeWidget()
-        tree.setColumnCount(len(cols))
-        tree.setHeaderLabels(cols)
-        tree.setAlternatingRowColors(True)
-        tree.setAnimated(True)
-        tree.setIndentation(20)
-        tree.setRootIsDecorated(True)
-        tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-
-        h = tree.header()
-        h.setStretchLastSection(False)
-        h.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        h.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        h.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        h.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        for c in range(4, 8):
-            h.setSectionResizeMode(c, QHeaderView.ResizeMode.ResizeToContents)
+        from ui.widgets.tabla_presupuesto import TablaPresupuesto
+        tree = TablaPresupuesto()
 
         for cap_nombre, cap_color, subs in _MockData.CAPITULOS:
             cap_total = sum(
@@ -379,35 +418,18 @@ class VentanaPrincipal(QMainWindow):
                 for _, _, _, _, cant, pu in
                 sum((c[2] for c in subs), [])
             )
-            cap = QTreeWidgetItem(tree, ["", "Capítulo", "", cap_nombre, "", "", "", f"${cap_total:,.2f}"])
-            cap.setForeground(0, QBrush(QColor(cap_color)))
-            cap.setForeground(1, QBrush(QColor(cap_color)))
-            cap.setForeground(3, QBrush(QColor(cap_color)))
-            cap.setForeground(7, QBrush(QColor(cap_color)))
-            f = cap.font(0)
-            f.setBold(True)
-            cap.setFont(0, f)
-            cap.setFont(1, f)
-            cap.setFont(3, f)
-            cap.setFont(7, f)
-            cap.setExpanded(True)
+            cap = tree.add_agrupador(cap_nombre, cap_color, cap_total)
+            cap.setText(1, "Capítulo")
 
             for sub_nombre, sub_color, conceptos in subs:
                 sub_total = sum(cant * pu for _, _, _, _, cant, pu in conceptos)
-                sub = QTreeWidgetItem(cap, ["", "Subpart.", "", sub_nombre, "", "", "", f"${sub_total:,.2f}"])
-                sub.setForeground(0, QBrush(QColor(sub_color)))
-                sub.setForeground(1, QBrush(QColor(sub_color)))
-                sub.setForeground(3, QBrush(QColor(sub_color)))
-                sub.setForeground(7, QBrush(QColor(sub_color)))
-                sub.setExpanded(True)
+                sub = tree.add_agrupador(sub_nombre, sub_color, sub_total, cap)
+                sub.setText(1, "Subpart.")
 
                 for num, clave, desc, unid, cant, pu in conceptos:
-                    imp = cant * pu
-                    QTreeWidgetItem(sub, [
-                        str(num), "Concepto", clave, desc, unid,
-                        f"{cant:,.2f}", f"${pu:,.2f}", f"${imp:,.2f}",
-                    ])
+                    tree.add_registro(num, clave, desc, unid, cant, pu, sub)
 
+        tree.renumerar()
         return tree
 
     def _tab_vacia(self):
@@ -416,6 +438,94 @@ class VentanaPrincipal(QMainWindow):
         t.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         t.horizontalHeader().setStretchLastSection(True)
         return t
+
+    # ── StatusBar ──
+
+    # ── Navegación del explorador ──
+
+    def _on_sidebar_click(self, item, column):
+        if item.childCount() > 0:
+            return
+        title = item.text(0)
+        for i in range(self._tabs.count()):
+            if self._tabs.tabText(i) == title:
+                self._tabs.setCurrentIndex(i)
+                return
+        self._open_sidebar_tab(title, temporary=True)
+
+    def _on_sidebar_double_click(self, item, column):
+        if item.childCount() > 0:
+            return
+        title = item.text(0)
+        for i in range(self._tabs.count()):
+            if self._tabs.tabText(i) == title:
+                widget = self._tabs.widget(i)
+                if widget is self._temp_tab_widget:
+                    self._temp_tab_widget = None
+                self._tabs.setCurrentIndex(i)
+                return
+        self._open_sidebar_tab(title, temporary=False)
+
+    def _open_sidebar_tab(self, title, temporary):
+        if self._temp_tab_widget is not None:
+            idx = self._tabs.indexOf(self._temp_tab_widget)
+            if idx >= 0:
+                self._tabs.removeTab(idx)
+            self._temp_tab_widget = None
+
+        if title == "📋 Presupuesto programable":
+            content = self._build_presupuesto()
+        else:
+            content = self._build_placeholder(title)
+        idx = self._tabs.addTab(content, title)
+        self._tabs.setCurrentIndex(idx)
+
+        if temporary:
+            self._temp_tab_widget = content
+
+    def _next_tab(self):
+        i = (self._tabs.currentIndex() + 1) % self._tabs.count()
+        self._tabs.setCurrentIndex(i)
+
+    def _prev_tab(self):
+        i = (self._tabs.currentIndex() - 1) % self._tabs.count()
+        self._tabs.setCurrentIndex(i)
+
+    def _on_tab_close(self, idx):
+        widget = self._tabs.widget(idx)
+        if widget is self._temp_tab_widget:
+            self._temp_tab_widget = None
+        self._tabs.removeTab(idx)
+
+    def _build_placeholder(self, title):
+        w = QWidget()
+        layout = QVBoxLayout(w)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        icon = QLabel("🚧")
+        icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        f = QFont("Segoe UI Symbol", 48)
+        icon.setFont(f)
+
+        name = QLabel(title)
+        name.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        f2 = QFont("Inter", 16)
+        f2.setBold(True)
+        name.setFont(f2)
+
+        msg = QLabel("Esta sección aún no ha sido implementada.")
+        msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        msg.setFont(QFont("Inter", 11))
+
+        layout.addStretch()
+        layout.addWidget(icon)
+        layout.addSpacing(16)
+        layout.addWidget(name)
+        layout.addSpacing(8)
+        layout.addWidget(msg)
+        layout.addStretch()
+
+        return w
 
     # ── StatusBar ──
 

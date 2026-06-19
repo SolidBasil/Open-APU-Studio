@@ -36,8 +36,11 @@ QMenu::item:selected {
 
 /* ── Toolbar ── */
 #tbCustom {
-    background-color: #2C5F8A;
+    background-color: #326A97;
     border-bottom: 1px solid #1E4668;
+}
+#tbCustom > QWidget {
+    background-color: transparent;
 }
 #tbGroup, #tbGroup * {
     background-color: transparent;
@@ -91,6 +94,24 @@ QToolButton:hover {
     background-color: #1E4668;
 }
 
+/* ── Search bar ── */
+#searchBar {
+    background-color: #2C5F8A;
+    border-bottom: 1px solid #1E4668;
+}
+#searchInput {
+    background-color: #FFFFFF;
+    color: #1A1A1A;
+    border: 1px solid #B8C9D9;
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 13px;
+    min-height: 20px;
+}
+#searchInput:focus {
+    border: 1px solid #2C5F8A;
+}
+
 /* ── Splitter ── */
 QSplitter::handle {
     background-color: #C8C0B4;
@@ -113,8 +134,23 @@ QTreeView::item {
     padding: 4px 2px;
     border: none;
 }
+QTreeView::item:hover {
+    background: #EBE7DF;
+}
 QTreeView::item:selected {
-    background-color: #D0DCE8;
+    background: #D0DCE8;
+}
+QTreeView::item:selected:focus {
+    background: #A8C4E0;
+}
+QTreeView::branch {
+    background: transparent;
+}
+QTreeView::branch:hover {
+    background: #EBE7DF;
+}
+QTreeView::branch:selected {
+    background: #D0DCE8;
 }
 QHeaderView::section {
     background-color: #CDD5DC;
