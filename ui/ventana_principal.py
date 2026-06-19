@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QTreeWidget, QTreeWidgetItem, QTabWidget,
     QTableView, QSplitter, QStatusBar,
     QHeaderView, QAbstractItemView, QApplication,
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMenu,
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton, QLabel, QMenu,
     QToolButton, QFrame, QStackedWidget,
 )
 from PySide6.QtGui import QColor, QBrush, QIcon, QPixmap, QPainter, QFont
@@ -11,13 +11,13 @@ from PySide6.QtGui import QColor, QBrush, QIcon, QPixmap, QPainter, QFont
 from theme_manager import ThemeManager
 
 
-def _icon(char, size=20):
+def _icon(char, size=20, font_size=None):
     pix = QPixmap(size, size)
     pix.fill(Qt.GlobalColor.transparent)
     p = QPainter(pix)
     p.setRenderHint(QPainter.RenderHint.TextAntialiasing)
     p.setPen(QColor("#E8EDF2"))
-    f = QFont("Segoe UI Symbol", 13)
+    f = QFont("Segoe UI Symbol", font_size or size - 4)
     p.setFont(f)
     p.drawText(QRect(0, 0, size, size), Qt.AlignmentFlag.AlignCenter, char)
     p.end()
@@ -47,8 +47,8 @@ _TOOLBAR_CFG = {
         ("Transferir", [("📤", "Exportar"), ("📥", "Importar")]),
     ],
     "INICIO": [
-        ("Historial", [("↩", "Deshacer"), ("↪", "Rehacer")]),
-        ("Portapapeles", [("✂", "Cortar"), ("📋", "Copiar"), ("📄", "Pegar")]),
+        ("Historial", [[("↩", "Deshacer"), ("↪", "Rehacer")]]),
+        ("Portapapeles", [("✂", "Cortar"), [("📋", "Copiar"), ("📄", "Pegar")]]),
         ("Acciones", [("✕", "Eliminar")]),
     ],
     "INFORMES": [
@@ -56,9 +56,9 @@ _TOOLBAR_CFG = {
         ("Vista", [("👁", "Vista previa")]),
     ],
     "VISTA PRINCIPAL": [
-        ("Portapapeles", [("📋", "Copiar"), ("✂", "Cortar"), ("📄", "Pegar"), ("☑", "Seleccionar todo")]),
+        ("Portapapeles", [("📋", "Copiar"), [("✂", "Cortar"), ("📄", "Pegar"), ("☑", "Seleccionar todo")]]),
         ("Editar", [("+", "Agregar elemento"), ("✎", "Modificar"), ("→", "Desglosar"), ("✕", "Eliminar"), ("↩", "Deshacer")]),
-        ("Estructura", [("▲", "Subir"), ("▼", "Bajar")]),
+        ("Estructura", [[("▲", "Subir"), ("▼", "Bajar")]]),
         ("Buscar", [("📚", "En catálogos"), ("👁", "En vista")]),
         ("Desplegar", [("1", "Primer nivel"), ("Σ", "Resumen agrupadores"), ("⊞", "Todo"), ("≡", "Nivel")]),
         ("Filtrar", [("🌐", "Global"), ("☰", "Por columna"), ("✏", "Editor")]),
@@ -155,7 +155,15 @@ class VentanaPrincipal(QMainWindow):
         layout.setSpacing(0)
 
         groups = _TOOLBAR_CFG[tab_name]
-        for idx, (label, items) in enumerate(groups):
+        page_max_rows = max(
+            max((len(item) if isinstance(item, list) else 1) for item in g[1])
+            for g in groups
+        )
+        page_min_btn_h = max(56, page_max_rows * 22)
+
+        for idx, group in enumerate(groups):
+            label, items = group
+
             if idx > 0:
                 sep = QFrame()
                 sep.setFrameShape(QFrame.Shape.VLine)
@@ -167,30 +175,103 @@ class VentanaPrincipal(QMainWindow):
             g.setObjectName("tbGroup")
             gl = QVBoxLayout(g)
             gl.setContentsMargins(6, 0, 6, 0)
-            gl.setSpacing(1)
-            gl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            gl.setSpacing(0)
 
-            row = QWidget()
-            rl = QHBoxLayout(row)
-            rl.setContentsMargins(0, 0, 0, 0)
-            rl.setSpacing(1)
-            rl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            gl.addStretch()
 
-            for icon_char, tip in items:
-                btn = QToolButton()
-                btn.setIcon(_icon(icon_char))
-                btn.setToolTip(tip)
-                short = tip.split()[0]
-                btn.setText(short)
-                btn.setIconSize(QSize(22, 22))
-                btn.setAutoRaise(True)
-                btn.setMinimumSize(48, 32)
-                btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
-                if "Tema" in tip:
-                    btn.clicked.connect(self._show_theme_menu)
-                rl.addWidget(btn)
+            has_stack = any(isinstance(item, list) for item in items)
+            has_single = any(not isinstance(item, list) for item in items)
 
-            gl.addWidget(row, 0, Qt.AlignmentFlag.AlignCenter)
+            if has_stack and has_single:
+                btn_wrap = QWidget()
+                bl = QHBoxLayout(btn_wrap)
+                bl.setContentsMargins(0, 0, 0, 0)
+                bl.setSpacing(0)
+                for item in items:
+                    wrapper = QWidget()
+                    wl = QVBoxLayout(wrapper)
+                    wl.setContentsMargins(0, 0, 0, 0)
+                    wl.setSpacing(0)
+                    wl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                    if isinstance(item, list):
+                        sz = 18 if len(item) == 2 else 12
+                        fs = 11 if len(item) == 2 else 9
+                        for icon_char, tip in item:
+                            btn = QToolButton()
+                            btn.setObjectName("tbStackedBtn")
+                            btn.setIcon(_icon(icon_char, sz, fs))
+                            btn.setToolTip(tip)
+                            short = tip.split()[0]
+                            btn.setText(short)
+                            btn.setIconSize(QSize(sz, sz))
+                            btn.setAutoRaise(True)
+                            btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+                            if "Tema" in tip:
+                                btn.clicked.connect(self._show_theme_menu)
+                            wl.addWidget(btn)
+                    else:
+                        icon_char, tip = item
+                        btn = QToolButton()
+                        btn.setIcon(_icon(icon_char, 40, 22))
+                        btn.setToolTip(tip)
+                        short = tip.split()[0]
+                        btn.setText(short)
+                        btn.setIconSize(QSize(40, 40))
+                        btn.setAutoRaise(True)
+                        btn.setMinimumSize(80, 56)
+                        btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+                        if "Tema" in tip:
+                            btn.clicked.connect(self._show_theme_menu)
+                        wl.addWidget(btn)
+                    bl.addWidget(wrapper)
+                btn_wrap.setMinimumHeight(page_min_btn_h)
+                gl.addWidget(btn_wrap)
+            elif has_stack:
+                item = items[0]
+                sz = 18 if len(item) == 2 else 12
+                fs = 11 if len(item) == 2 else 9
+                btn_wrap = QWidget()
+                bl = QVBoxLayout(btn_wrap)
+                bl.setContentsMargins(0, 0, 0, 0)
+                bl.setSpacing(0)
+                bl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                for icon_char, tip in item:
+                    btn = QToolButton()
+                    btn.setObjectName("tbStackedBtn")
+                    btn.setIcon(_icon(icon_char, sz, fs))
+                    btn.setToolTip(tip)
+                    short = tip.split()[0]
+                    btn.setText(short)
+                    btn.setIconSize(QSize(sz, sz))
+                    btn.setAutoRaise(True)
+                    btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+                    if "Tema" in tip:
+                        btn.clicked.connect(self._show_theme_menu)
+                    bl.addWidget(btn)
+                btn_wrap.setMinimumWidth(80)
+                btn_wrap.setMinimumHeight(page_min_btn_h)
+                gl.addWidget(btn_wrap)
+            else:
+                btn_wrap = QWidget()
+                bl = QHBoxLayout(btn_wrap)
+                bl.setContentsMargins(0, 0, 0, 0)
+                bl.setSpacing(0)
+                bl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                for icon_char, tip in items:
+                    btn = QToolButton()
+                    btn.setIcon(_icon(icon_char, 40, 22))
+                    btn.setToolTip(tip)
+                    short = tip.split()[0]
+                    btn.setText(short)
+                    btn.setIconSize(QSize(40, 40))
+                    btn.setAutoRaise(True)
+                    btn.setMinimumSize(80, 56)
+                    btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+                    if "Tema" in tip:
+                        btn.clicked.connect(self._show_theme_menu)
+                    bl.addWidget(btn)
+                btn_wrap.setMinimumHeight(page_min_btn_h)
+                gl.addWidget(btn_wrap)
 
             lbl = QLabel(label)
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)

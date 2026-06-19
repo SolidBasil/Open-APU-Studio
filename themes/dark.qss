@@ -85,6 +85,11 @@ QToolButton {
 QToolButton:hover {
     background-color: #203244;
 }
+#tbStackedBtn {
+    padding: 0 6px;
+    text-align: left;
+    min-height: 0px;
+}
 
 /* ── Splitter ── */
 QSplitter::handle {
