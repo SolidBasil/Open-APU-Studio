@@ -123,6 +123,42 @@ class TreeTableWidget(QTreeWidget):
 
     # ── Clipboard ──
 
+    # ── Search / filter ──
+
+    def filter_rows(self, text):
+        """Filter visible rows by description column match."""
+        desc_col = 2
+        for c in range(self.columnCount()):
+            if "descrip" in self.headerItem().text(c).lower():
+                desc_col = c
+                break
+        if not text:
+            self._show_all()
+            return
+        text = text.lower()
+        for i in range(self.topLevelItemCount()):
+            self._filter_item(self.topLevelItem(i), text, desc_col)
+
+    def _show_all(self, parent=None):
+        if parent is None:
+            items = [self.topLevelItem(i) for i in range(self.topLevelItemCount())]
+        else:
+            items = [parent.child(i) for i in range(parent.childCount())]
+        for item in items:
+            item.setHidden(False)
+            if item.childCount():
+                self._show_all(item)
+
+    def _filter_item(self, item, text, col):
+        match = text in item.text(col).lower()
+        any_child_visible = False
+        for i in range(item.childCount()):
+            if self._filter_item(item.child(i), text, col):
+                any_child_visible = True
+        visible = match or any_child_visible
+        item.setHidden(not visible)
+        return visible
+
     def keyPressEvent(self, event):
         if event.matches(QKeySequence.StandardKey.Copy):
             self._copy()

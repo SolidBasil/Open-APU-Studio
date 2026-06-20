@@ -157,6 +157,8 @@ class VentanaPrincipal(QMainWindow):
         inp.setObjectName("searchInput")
         inp.setPlaceholderText("🔍  Buscar en el proyecto…")
         inp.setClearButtonEnabled(True)
+        inp.textChanged.connect(self._on_search)
+        self._search_input = inp
         layout.addWidget(inp)
 
         parent_layout.addWidget(bar)
@@ -397,6 +399,7 @@ class VentanaPrincipal(QMainWindow):
         self._tabs = QTabWidget()
         self._tabs.setTabsClosable(True)
         self._tabs.tabCloseRequested.connect(self._on_tab_close)
+        self._tabs.currentChanged.connect(self._on_tab_changed)
         self._tabs.addTab(self._build_presupuesto(), "📋 Presupuesto programable")
 
         ctrl_tab = QShortcut(QKeySequence("Ctrl+Tab"), self)
@@ -630,6 +633,18 @@ class VentanaPrincipal(QMainWindow):
         return t
 
     # ── StatusBar ──
+
+    # ── Búsqueda ──
+
+    def _on_search(self, text):
+        w = self._tabs.currentWidget()
+        from frontend.ui.widgets.tabla_base import TreeTableWidget
+        if isinstance(w, TreeTableWidget):
+            w.filter_rows(text)
+
+    def _on_tab_changed(self, idx):
+        text = self._search_input.text()
+        self._on_search(text)
 
     # ── Navegación del explorador ──
 
