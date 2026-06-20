@@ -417,7 +417,81 @@ class VentanaPrincipal(QMainWindow):
         elif self._db:
             self._populate_from_repos(tree)
 
+        tree.setEditTriggers(QAbstractItemView.EditTrigger.EditKeyPressed)
+        tree.itemDoubleClicked.connect(self._on_presupuesto_dblclick)
+
         return tree
+
+    def _on_presupuesto_dblclick(self, item, column):
+        if column != 5:
+            return
+        clave = item.text(1).strip()
+        if not clave:
+            return
+        self._open_apu_tab(clave)
+
+    def _open_apu_tab(self, clave):
+        from frontend.ui.widgets.tabla_base import TreeTableWidget
+        from PySide6.QtWidgets import QHeaderView
+
+        tipo_nombre = {1: "🧱 Material", 2: "👷 Mano obra", 4: "🔧 Herramienta",
+                       8: "🚜 Equipo", 16: "⚙️ Auxiliar", 32: "📄 Concepto"}
+
+        detail = TreeTableWidget(
+            ["Componente", "Descripción", "Unidad", "Cant", "P.U.", "Total", "Tipo"],
+            flat=True,
+        )
+        detail.set_column_modes({
+            c: (QHeaderView.ResizeMode.Interactive, w)
+            for c, w in enumerate([90, 250, 50, 80, 100, 110, 120])
+        })
+
+        if self._db:
+            rows = self._db.conn.execute("""
+                SELECT ac.insumo_clave, i.descripcion, i.unidad,
+                       ac.cantidad_total, ac.precio_unitario, ac.tipo_insumo
+                FROM apu_componentes ac
+                JOIN insumos i ON i.clave = ac.insumo_clave
+                WHERE ac.concepto_clave = ?
+                ORDER BY ac.tipo_insumo, ac.insumo_clave
+            """, (clave,)).fetchall()
+            for r in rows:
+                imp = r[3] * r[4]
+                tn = tipo_nombre.get(r[5], f"Tipo {r[5]}")
+                detail.add_row([
+                    r[0], r[1] or "", r[2] or "",
+                    f"{r[3]:,.2f}", f"${r[4]:,.2f}",
+                    f"${imp:,.2f}", tn,
+                ], editable=False)
+        elif opus_db := self._find_opus_db():
+            import sqlite3
+            conn = sqlite3.connect(opus_db)
+            rows = conn.execute("""
+                SELECT f.COMPONENTE, p.DESCRIPCIO, p.UNIDAD,
+                       f.CANTIDAD, f.COSTO, COALESCE(p.PREFIJO, f.PREF)
+                FROM D60JALISCOTF f
+                LEFT JOIN D60JALISCOTP p ON p.NOMBRE = f.COMPONENTE AND p._deleted=0
+                WHERE f.NOMBRE = ? AND f._deleted = 0
+                ORDER BY f.PREF, f.COMPONENTE
+            """, (clave,)).fetchall()
+            conn.close()
+            for r in rows:
+                imp = r[3] * r[4]
+                tn = tipo_nombre.get(r[5], f"Tipo {r[5]}")
+                detail.add_row([
+                    r[0], r[1] or "", r[2] or "",
+                    f"{r[3]:,.2f}", f"${r[4]:,.2f}",
+                    f"${imp:,.2f}", tn,
+                ], editable=False)
+
+        title = f"APU: {clave}"
+        for i in range(self._tabs.count()):
+            if self._tabs.tabText(i) == title:
+                self._tabs.setCurrentIndex(i)
+                return
+
+        idx = self._tabs.addTab(detail, title)
+        self._tabs.setCurrentIndex(idx)
 
     def _find_opus_db(self):
         import os
@@ -629,42 +703,45 @@ class VentanaPrincipal(QMainWindow):
             tabla.poblar(insumos)
             return tabla
 
+        tipo = tipo_map.get(title)
+        if tipo is None and title != "📚 Todos":
+            return TablaInsumos()
+
         from PySide6.QtWidgets import QHeaderView
         from frontend.ui.widgets.tabla_base import TreeTableWidget
-        if opus_db := self._find_opus_db():
-            import sqlite3
-            conn = sqlite3.connect(opus_db)
-            col_pairs = {
-                1: ("MATERIALES", "🧱 Materiales"),
-                2: ("MANO_DEO", "👷 Mano de obra"),
-                4: ("HERRAMIENT", "🔧 Herramienta"),
-                8: ("EQUIPO", "🚜 Equipo"),
-                16: ("AUXILIARES", "⚙️ Auxiliares"),
-            }
-            tipo = tipo_map.get(title)
-            if tipo and tipo in col_pairs:
-                col, label = col_pairs[tipo]
-                where = f"AND p.{col} > 0"
-            else:
-                col, label = "PRECIO", "Concepto"
-                where = ""
-            rows = conn.execute(f"""
-                SELECT p.NOMBRE, p.DESCRIPCIO, p.UNIDAD, p.{col}
-                FROM D60JALISCOTP p
-                WHERE p.PREFIJO=32 AND p._deleted=0 {where}
-                ORDER BY p.NOMBRE
-            """).fetchall()
-            conn.close()
-            t = TreeTableWidget(["Clave", "Descripción", "Unidad", "P.U.", "Tipo"], flat=True)
-            t.set_column_modes({
-                c: (QHeaderView.ResizeMode.Interactive, w)
-                for c, w in enumerate([90, 250, 60, 100, 130])
-            })
-            for r in rows:
-                precio = f"${r[3]:,.2f}" if r[3] else ""
-                t.add_row([r[0], r[1] or "", r[2] or "", precio, label], editable=False)
-            return t
-        return TablaInsumos()
+        if not (opus_db := self._find_opus_db()):
+            return TablaInsumos()
+
+        import sqlite3
+        conn = sqlite3.connect(opus_db)
+        tipo_label = {1: "🧱 Materiales", 2: "👷 Mano de obra", 4: "🔧 Herramienta",
+                      8: "🚜 Equipo", 16: "⚙️ Auxiliares", 32: "📄 Conceptos"}
+
+        if tipo is not None:
+            where = "p._deleted=0 AND p.PREFIJO=?"
+            params = [tipo]
+        else:
+            where = "p._deleted=0 AND p.PREFIJO IN (1,2,4,8,16,32)"
+            params = []
+
+        rows = conn.execute(f"""
+            SELECT p.NOMBRE, p.DESCRIPCIO, p.UNIDAD, p.PRECIO, p.PREFIJO
+            FROM D60JALISCOTP p
+            WHERE {where}
+            ORDER BY p.PREFIJO, p.NOMBRE
+        """, params).fetchall()
+        conn.close()
+
+        t = TreeTableWidget(["Clave", "Descripción", "Unidad", "P.U.", "Tipo"], flat=True)
+        t.set_column_modes({
+            c: (QHeaderView.ResizeMode.Interactive, w)
+            for c, w in enumerate([90, 250, 60, 100, 130])
+        })
+        for r in rows:
+            precio = f"${r[3]:,.2f}" if r[3] else ""
+            tn = tipo_label.get(r[4], f"Tipo {r[4]}")
+            t.add_row([r[0], r[1] or "", r[2] or "", precio, tn], editable=False)
+        return t
 
     def _next_tab(self):
         i = (self._tabs.currentIndex() + 1) % self._tabs.count()
