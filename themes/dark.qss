@@ -131,7 +131,8 @@ QTreeView, QTableView {
     font-size: 13px;
 }
 QTreeView::item {
-    padding: 4px 2px;
+    padding: 4px 8px;
+    min-height: 28px;
     border: none;
 }
 QTreeView::item:hover {

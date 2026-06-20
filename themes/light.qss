@@ -132,6 +132,7 @@ QTreeView, QTableView {
 }
 QTreeView::item {
     padding: 4px 2px;
+    min-height: 28px;
     border: none;
 }
 QTreeView::item:hover {

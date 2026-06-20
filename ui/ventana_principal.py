@@ -25,21 +25,9 @@ def _icon(char, size=20, font_size=None):
     return QIcon(pix)
 
 
-class _MockData:
-    CAPITULOS = [
-        ("INSTALACIONES HIDRÁULICAS", "#8B6FB5", [
-            ("Salidas hidráulicas y sanitarias", "#5E9CA0", [
-                (1282, "071515", "Salida hidráulica p/ lavabo",       "pza",  1.00, 3697.52),
-                (1283, "071516", "Salida hidráulica p/ regadera",     "pza",  2.00, 4677.90),
-            ]),
-        ]),
-        ("INSTALACIONES ELÉCTRICAS", "#8B6FB5", [
-            ("Alimentación y tableros", "#5E9CA0", [
-                (1284, "080101", "Centro de carga 8 circuitos",       "pza",  1.00, 6240.00),
-                (1285, "080102", "Salida eléctrica c/ interrup.",     "pza", 12.00, 1850.00),
-            ]),
-        ]),
-    ]
+class _EmptyState:
+    def __init__(self):
+        pass
 
 
 _TOOLBAR_CFG = {
@@ -83,9 +71,24 @@ class VentanaPrincipal(QMainWindow):
         self._theme = ThemeManager.load_preference()
         self._active_tab = "VISTA PRINCIPAL"
         self._temp_tab_widget = None
+        self._db = None
 
+        self._init_db()
         self._build_central()
         self._build_statusbar()
+
+    def _init_db(self):
+        import os
+        from db.conexion import DatabaseManager
+        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        db_path = os.path.join(base, "CASA EG.presup")
+        opus_dir = os.path.join(base, "Ejemplo opus CASA EG")
+        if os.path.exists(db_path):
+            self._db = DatabaseManager.abrir(db_path)
+        elif os.path.exists(opus_dir):
+            from servicios.importador_opus import importar_opus
+            result = importar_opus(opus_dir, db_path)
+            self._db = DatabaseManager.abrir(db_path)
 
     # ── Layout central ──
 
@@ -238,6 +241,8 @@ class VentanaPrincipal(QMainWindow):
                             btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
                             if "Tema" in tip:
                                 btn.clicked.connect(self._show_theme_menu)
+                            elif "Importar OPUS" in tip:
+                                btn.clicked.connect(self._on_importar_opus)
                             wl.addWidget(btn)
                     else:
                         icon_char, tip = item
@@ -351,7 +356,7 @@ class VentanaPrincipal(QMainWindow):
     # ── Explorador ──
 
     def _build_sidebar(self):
-        from ui.widgets.tabla_presupuesto import draw_tree_connectors
+        from ui.widgets.tabla_base import draw_tree_connectors
 
         class _SidebarTree(QTreeWidget):
             def drawBranches(self, painter, rect, index):
@@ -410,27 +415,89 @@ class VentanaPrincipal(QMainWindow):
 
     def _build_presupuesto(self):
         from ui.widgets.tabla_presupuesto import TablaPresupuesto
+        from db.repos.partidas import PartidaRepo
+        from db.repos.conceptos import ConceptoRepo
+
         tree = TablaPresupuesto()
+        if not self._db:
+            return tree
 
-        for cap_nombre, cap_color, subs in _MockData.CAPITULOS:
-            cap_total = sum(
-                cant * pu
-                for _, _, _, _, cant, pu in
-                sum((c[2] for c in subs), [])
-            )
-            cap = tree.add_agrupador(cap_nombre, cap_color, cap_total)
-            cap.setText(1, "Capítulo")
+        partida_repo = PartidaRepo(self._db.conn)
+        concepto_repo = ConceptoRepo(self._db.conn)
+        partidas = partida_repo.todas()
 
-            for sub_nombre, sub_color, conceptos in subs:
-                sub_total = sum(cant * pu for _, _, _, _, cant, pu in conceptos)
-                sub = tree.add_agrupador(sub_nombre, sub_color, sub_total, cap)
-                sub.setText(1, "Subpart.")
-
-                for num, clave, desc, unid, cant, pu in conceptos:
-                    tree.add_registro(num, clave, desc, unid, cant, pu, sub)
+        for p in partidas:
+            cap = tree.add_agrupador(p["nombre"], "#8B6FB5", parent=None)
+            conceptos = concepto_repo.por_partida(p["id"])
+            total = 0
+            for c in conceptos:
+                tree.add_registro(
+                    c["orden"], c["clave"], c["descripcion"],
+                    c["unidad"], c["cantidad"], c["precio_unitario"],
+                    cap,
+                )
+                total += c["cantidad"] * c["precio_unitario"]
+            cap.setText(7, f"${total:,.2f}")
 
         tree.renumerar()
         return tree
+
+    def _build_conceptos(self):
+        from PySide6.QtWidgets import QHeaderView
+        from ui.widgets.tabla_base import TreeTableWidget
+        from db.repos.conceptos import ConceptoRepo
+        t = TreeTableWidget(["Clave", "Descripción", "Unidad", "Cant", "P.U.", "Total"], flat=True)
+        t.set_column_modes({
+            c: (QHeaderView.ResizeMode.Interactive, w)
+            for c, w in enumerate([80, 250, 50, 80, 100, 110])
+        })
+        if not self._db:
+            return t
+        repo = ConceptoRepo(self._db.conn)
+        for c in repo.todos():
+            t.add_row([
+                c["clave"], c["descripcion"] or "", c["unidad"] or "",
+                f"{c['cantidad']:,.2f}", f"${c['precio_unitario']:,.2f}",
+                f"${c['importe']:,.2f}",
+            ], editable=False)
+        return t
+
+    def _build_indirectos(self):
+        from PySide6.QtWidgets import QHeaderView
+        from ui.widgets.tabla_base import TreeTableWidget
+        t = TreeTableWidget(["Renglón", "Variable", "Descripción", "Fórmula"], flat=True)
+        t.set_column_modes({
+            c: (QHeaderView.ResizeMode.Interactive, w)
+            for c, w in enumerate([60, 100, 250, 200])
+        })
+        if not self._db:
+            return t
+        for r in self._db.conn.execute("SELECT * FROM indirectos ORDER BY renglon"):
+            t.add_row([str(r["renglon"]), r["variable"], r["descripcion"], r["formula"]], editable=False)
+        return t
+
+    def _on_importar_opus(self):
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
+        from db.conexion import DatabaseManager
+        dir_path = QFileDialog.getExistingDirectory(self, "Seleccionar carpeta del proyecto OPUS")
+        if not dir_path:
+            return
+        import os
+        from servicios.importador_opus import importar_opus
+        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        nombre = os.path.basename(dir_path.rstrip("/\\"))
+        db_path = os.path.join(base, f"{nombre}.presup")
+        try:
+            result = importar_opus(dir_path, db_path)
+            if self._db:
+                self._db.close()
+            self._db = DatabaseManager.abrir(db_path)
+            QMessageBox.information(self, "Importación exitosa",
+                f"Insumos: {result['insumos']}\nConceptos: {result['conceptos']}\n"
+                f"APU componentes: {result['apu_componentes']}\n"
+                f"Capítulos: {result['capitulos']}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error de importación", str(e))
 
     def _tab_vacia(self):
         t = QTableView()
@@ -475,6 +542,14 @@ class VentanaPrincipal(QMainWindow):
 
         if title == "📋 Presupuesto programable":
             content = self._build_presupuesto()
+        elif title == "📐 Conceptos":
+            content = self._build_conceptos()
+        elif title == "💰 Cálculo de indirectos":
+            content = self._build_indirectos()
+        elif title in ("📚 Todos", "🧱 Materiales", "👷 Mano de obra",
+                       "🔧 Herramienta", "🚜 Equipo", "⚙️ Auxiliares",
+                       "🧮 Matrices", "🚛 Fletes", "🏗️ Trabajos"):
+            content = self._build_insumos(title)
         else:
             content = self._build_placeholder(title)
         idx = self._tabs.addTab(content, title)
@@ -482,6 +557,29 @@ class VentanaPrincipal(QMainWindow):
 
         if temporary:
             self._temp_tab_widget = content
+
+    def _build_insumos(self, title):
+        from ui.widgets.tabla_insumos import TablaInsumos
+        from db.repos.insumos import InsumoRepo
+        tipo_map = {
+            "📚 Todos": None,
+            "🧱 Materiales": 1,
+            "👷 Mano de obra": 2,
+            "🔧 Herramienta": 4,
+            "🚜 Equipo": 8,
+            "⚙️ Auxiliares": 16,
+        }
+        tabla = TablaInsumos()
+        if not self._db:
+            return tabla
+        repo = InsumoRepo(self._db.conn)
+        tipo = tipo_map.get(title)
+        if tipo:
+            insumos = repo.por_tipo(tipo)
+        else:
+            insumos = repo.todos()
+        tabla.poblar(insumos)
+        return tabla
 
     def _next_tab(self):
         i = (self._tabs.currentIndex() + 1) % self._tabs.count()

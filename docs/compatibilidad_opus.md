@@ -38,7 +38,7 @@ for registro in tabla:
 
 ### Consideraciones de codificación
 
-- Todos los archivos `.DBF` usan **CP850** (OEM Latin). Usar siempre `encoding='cp850'` al leer.
+- Los archivos `.DBF` pueden usar **CP850** o **Latin-1/ISO-8859-1** según la configuración regional donde se generaron. En la práctica, los archivos mexicanos suelen usar Latin-1. Usar `encoding='latin-1'` al leer; si hay errores de decodificación, probar con `'cp850'`.
 - Los campos tipo **Memo** (`M`) se almacenan en el `.FPT` asociado. `dbfread` los carga automáticamente si el `.FPT` está en la misma carpeta.
 - Los campos tipo **Lógico** (`L`) devuelven `True`, `False` o `None`.
 - Los campos tipo **Numérico** (`N`) llegan como `Decimal` en Python. Convertir a `float` al guardar en SQLite.
