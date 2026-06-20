@@ -226,19 +226,45 @@ def _nearest_active_ancestor(pre_id, full_parent_map, active_ids):
     return pid
 
 
+def _parent_from_wbs(wbs, wbs_to_id):
+    """Find the immediate parent of a WBS code by longest prefix match across
+    all active WBS entries. Returns the parent PRE_ID or -1 for root."""
+    if not wbs:
+        return -1
+    for i in range(len(wbs) - 1, 0, -1):
+        parent_wbs = wbs[:i]
+        pid = wbs_to_id.get(parent_wbs)
+        if pid is not None:
+            return pid
+    return -1
+
+
+def _parent_for_row(r, wbs_to_id, full_parent_map, active_ids):
+    """Determine parent PRE_ID for a row: WBS first, then PRE_IDPAD fallback."""
+    wbs = r.get("PRE_WBS")
+    if wbs:
+        p = _parent_from_wbs(wbs, wbs_to_id)
+        if p != -1:
+            return p
+    # fallback to PRE_IDPAD
+    idpad = r["PRE_IDPAD"]
+    if idpad == -1 or idpad in active_ids:
+        return idpad
+    return _nearest_active_ancestor(r["PRE_ID"], full_parent_map, active_ids)
+
+
 def build_budget_tree(db_path):
     """Devuelve una lista de nodos raíz. Cada nodo:
         id, nivel, clave, desc, unidad, cantidad, precio, importe,
         es_capitulo, hijos: [...]
 
-    Reglas de negocio aplicadas (ver ARQUITECTURA_CONVERSION.md):
+    Reglas de negocio aplicadas:
       - Filtra siempre _deleted = 0, incluso dentro de los JOIN a catálogos.
       - Capítulo (PRE_COM='') -> descripción de D60JALISCOTA.DESC vía PRE_IDUNI.
       - Concepto (PRE_COM!='') -> descripción/unidad/precio de D60JALISCOTP
         vía (PREFIJO=32, NOMBRE=PRE_COM).
       - Importe = PRE_VOL * PRE_PRE en conceptos; PRE_PRE directo en capítulos.
-      - Si el padre directo está borrado, se reconecta al ancestro activo
-        más cercano subiendo por la cadena completa (incluye borrados).
+      - Jerarquía por PRE_WBS (prefijo más largo) con caída a PRE_IDPAD.
     """
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -250,6 +276,7 @@ def build_budget_tree(db_path):
     rows = [dict(r) for r in conn.execute(
         """
         SELECT t1.PRE_ID, t1.PRE_IDPAD, t1.PRE_NIVEL, t1.PRE_COM, t1.PRE_VOL, t1.PRE_PRE,
+               t1.PRE_WBS,
                a.DESC as cap_desc,
                p.DESCRIPCIO as con_desc, p.UNIDAD as con_unidad
         FROM D60JALISCOT1 t1
@@ -267,11 +294,16 @@ def build_budget_tree(db_path):
     by_id = {r["PRE_ID"]: r for r in rows}
     active_ids = set(by_id.keys())
 
+    # Build WBS→PRE_ID map (only for active rows)
+    wbs_to_id = {}
+    for r in rows:
+        w = r.get("PRE_WBS")
+        if w:
+            wbs_to_id[w] = r["PRE_ID"]
+
     children = {}
     for r in rows:
-        idpad = r["PRE_IDPAD"]
-        parent = idpad if (idpad == -1 or idpad in active_ids) \
-            else _nearest_active_ancestor(r["PRE_ID"], full_parent_map, active_ids)
+        parent = _parent_for_row(r, wbs_to_id, full_parent_map, active_ids)
         children.setdefault(parent, []).append(r["PRE_ID"])
 
     def build_node(pre_id):

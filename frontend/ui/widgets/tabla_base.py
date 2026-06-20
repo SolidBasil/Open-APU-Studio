@@ -4,11 +4,12 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import (
-    QColor, QFont, QKeySequence, QPainter, QPen,
+    QColor, QKeySequence, QPainter, QPen,
 )
 
 
-LINE_COLOR = QColor("#2A4158")
+LINE_COLOR = QColor("#5E92B8")
+LINE_WIDTH = 1.5
 
 
 def draw_tree_connectors(tree, painter, rect, index, line_color=LINE_COLOR):
@@ -29,7 +30,7 @@ def draw_tree_connectors(tree, painter, rect, index, line_color=LINE_COLOR):
     cur_depth = len(info) - 1
     indent = tree.indentation()
     mid_y = rect.top() + rect.height() // 2
-    pen = QPen(line_color, 1)
+    pen = QPen(line_color, LINE_WIDTH)
 
     painter.save()
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -39,16 +40,16 @@ def draw_tree_connectors(tree, painter, rect, index, line_color=LINE_COLOR):
         if not info[k]["has_below"]:
             continue
         d = cur_depth - k
-        x = rect.left() + d * indent + indent // 2
+        x = d * indent + indent // 2
         painter.drawLine(x, rect.top(), x, rect.bottom())
 
-    has_below = info[0]["has_below"]
-    x = rect.left() + cur_depth * indent + indent // 2
+    x = cur_depth * indent + indent // 2
+    branch_right = (cur_depth + 1) * indent
 
     if cur_depth > 0 or index.row() > 0:
         painter.drawLine(x, rect.top(), x, mid_y)
-    painter.drawLine(x, mid_y, rect.right(), mid_y)
-    if has_below:
+    painter.drawLine(x, mid_y, branch_right, mid_y)
+    if info[0]["has_below"]:
         painter.drawLine(x, mid_y, x, rect.bottom())
 
     painter.restore()
@@ -77,7 +78,7 @@ class TreeTableWidget(QTreeWidget):
         self.setHeaderLabels(columns)
         self.setAlternatingRowColors(True)
         self.setAnimated(True)
-        self.setIndentation(20 if not flat else 0)
+        self.setIndentation(24 if not flat else 0)
         self.setRootIsDecorated(not flat)
         self.setSelectionMode(
             QAbstractItemView.SelectionMode.ExtendedSelection
@@ -119,24 +120,6 @@ class TreeTableWidget(QTreeWidget):
         super().drawBranches(painter, rect, index)
         if not self._flat:
             draw_tree_connectors(self, painter, rect, index, self._line_color)
-
-    # ── Hierarchical numbering ──
-
-    def renumerar(self, skip_col=1, skip_values=None):
-        if self._flat:
-            return
-        skip = skip_values or frozenset()
-        root = self.invisibleRootItem()
-
-        def walk(parent, prefix):
-            for i in range(parent.childCount()):
-                child = parent.child(i)
-                if child.text(skip_col) not in skip:
-                    num = f"{prefix}{i + 1}"
-                    child.setText(0, num)
-                    walk(child, f"{num}.")
-
-        walk(root, "")
 
     # ── Clipboard ──
 

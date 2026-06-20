@@ -356,14 +356,7 @@ class VentanaPrincipal(QMainWindow):
     # ── Explorador ──
 
     def _build_sidebar(self):
-        from frontend.ui.widgets.tabla_base import draw_tree_connectors
-
-        class _SidebarTree(QTreeWidget):
-            def drawBranches(self, painter, rect, index):
-                super().drawBranches(painter, rect, index)
-                draw_tree_connectors(self, painter, rect, index)
-
-        tree = _SidebarTree()
+        tree = QTreeWidget()
         tree.setHeaderLabel("Explorador")
         tree.setAnimated(True)
         tree.setIndentation(16)
@@ -424,7 +417,6 @@ class VentanaPrincipal(QMainWindow):
         elif self._db:
             self._populate_from_repos(tree)
 
-        tree.renumerar()
         return tree
 
     def _find_opus_db(self):
@@ -448,14 +440,14 @@ class VentanaPrincipal(QMainWindow):
         for node in nodes:
             if node["es_capitulo"]:
                 item = tree.add_agrupador(
-                    node["desc"], "#8B6FB5",
+                    node["desc"],
                     total=node["importe"],
                     parent=parent,
                 )
                 self._opus_add_nodes(tree, node["hijos"], item)
             else:
                 tree.add_registro(
-                    0, node["clave"], node["desc"],
+                    node["clave"], node["desc"],
                     node["unidad"], node["cantidad"] or 0, node["precio"] or 0,
                     parent=parent,
                 )
@@ -469,17 +461,17 @@ class VentanaPrincipal(QMainWindow):
         partidas = partida_repo.todas()
 
         for p in partidas:
-            cap = tree.add_agrupador(p["nombre"], "#8B6FB5", parent=None)
+            cap = tree.add_agrupador(p["nombre"], parent=None)
             conceptos = concepto_repo.por_partida(p["id"])
             total = 0
             for c in conceptos:
                 tree.add_registro(
-                    c["orden"], c["clave"], c["descripcion"],
+                    c["clave"], c["descripcion"],
                     c["unidad"], c["cantidad"], c["precio_unitario"],
                     cap,
                 )
                 total += c["cantidad"] * c["precio_unitario"]
-            cap.setText(7, f"${total:,.2f}")
+            cap.setText(6, f"${total:,.2f}")
 
     def _build_conceptos(self):
         from PySide6.QtWidgets import QHeaderView
