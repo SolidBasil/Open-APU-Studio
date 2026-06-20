@@ -482,15 +482,33 @@ class VentanaPrincipal(QMainWindow):
             c: (QHeaderView.ResizeMode.Interactive, w)
             for c, w in enumerate([80, 250, 50, 80, 100, 110])
         })
-        if not self._db:
-            return t
-        repo = ConceptoRepo(self._db.conn)
-        for c in repo.todos():
-            t.add_row([
-                c["clave"], c["descripcion"] or "", c["unidad"] or "",
-                f"{c['cantidad']:,.2f}", f"${c['precio_unitario']:,.2f}",
-                f"${c['importe']:,.2f}",
-            ], editable=False)
+        if self._db:
+            repo = ConceptoRepo(self._db.conn)
+            for c in repo.todos():
+                t.add_row([
+                    c["clave"], c["descripcion"] or "", c["unidad"] or "",
+                    f"{c['cantidad']:,.2f}", f"${c['precio_unitario']:,.2f}",
+                    f"${c['importe']:,.2f}",
+                ], editable=False)
+        elif opus_db := self._find_opus_db():
+            import sqlite3
+            conn = sqlite3.connect(opus_db)
+            rows = conn.execute("""
+                SELECT p.NOMBRE, p.DESCRIPCIO, p.UNIDAD,
+                       SUM(t1.PRE_VOL) as cant, p.PRECIO
+                FROM D60JALISCOTP p
+                JOIN D60JALISCOT1 t1 ON t1.PRE_COM = p.NOMBRE AND t1._deleted=0
+                WHERE p.PREFIJO=32 AND p._deleted=0
+                GROUP BY p.NOMBRE
+                ORDER BY p.NOMBRE
+            """).fetchall()
+            for r in rows:
+                t.add_row([
+                    r[0], r[1] or "", r[2] or "",
+                    f"{r[3]:,.2f}", f"${r[4]:,.2f}",
+                    f"${r[3] * r[4]:,.2f}",
+                ], editable=False)
+            conn.close()
         return t
 
     def _build_indirectos(self):
@@ -600,17 +618,53 @@ class VentanaPrincipal(QMainWindow):
             "🚜 Equipo": 8,
             "⚙️ Auxiliares": 16,
         }
-        tabla = TablaInsumos()
-        if not self._db:
+        if self._db:
+            tabla = TablaInsumos()
+            repo = InsumoRepo(self._db.conn)
+            tipo = tipo_map.get(title)
+            if tipo:
+                insumos = repo.por_tipo(tipo)
+            else:
+                insumos = repo.todos()
+            tabla.poblar(insumos)
             return tabla
-        repo = InsumoRepo(self._db.conn)
-        tipo = tipo_map.get(title)
-        if tipo:
-            insumos = repo.por_tipo(tipo)
-        else:
-            insumos = repo.todos()
-        tabla.poblar(insumos)
-        return tabla
+
+        from PySide6.QtWidgets import QHeaderView
+        from frontend.ui.widgets.tabla_base import TreeTableWidget
+        if opus_db := self._find_opus_db():
+            import sqlite3
+            conn = sqlite3.connect(opus_db)
+            col_pairs = {
+                1: ("MATERIALES", "🧱 Materiales"),
+                2: ("MANO_DEO", "👷 Mano de obra"),
+                4: ("HERRAMIENT", "🔧 Herramienta"),
+                8: ("EQUIPO", "🚜 Equipo"),
+                16: ("AUXILIARES", "⚙️ Auxiliares"),
+            }
+            tipo = tipo_map.get(title)
+            if tipo and tipo in col_pairs:
+                col, label = col_pairs[tipo]
+                where = f"AND p.{col} > 0"
+            else:
+                col, label = "PRECIO", "Concepto"
+                where = ""
+            rows = conn.execute(f"""
+                SELECT p.NOMBRE, p.DESCRIPCIO, p.UNIDAD, p.{col}
+                FROM D60JALISCOTP p
+                WHERE p.PREFIJO=32 AND p._deleted=0 {where}
+                ORDER BY p.NOMBRE
+            """).fetchall()
+            conn.close()
+            t = TreeTableWidget(["Clave", "Descripción", "Unidad", "P.U.", "Tipo"], flat=True)
+            t.set_column_modes({
+                c: (QHeaderView.ResizeMode.Interactive, w)
+                for c, w in enumerate([90, 250, 60, 100, 130])
+            })
+            for r in rows:
+                precio = f"${r[3]:,.2f}" if r[3] else ""
+                t.add_row([r[0], r[1] or "", r[2] or "", precio, label], editable=False)
+            return t
+        return TablaInsumos()
 
     def _next_tab(self):
         i = (self._tabs.currentIndex() + 1) % self._tabs.count()
