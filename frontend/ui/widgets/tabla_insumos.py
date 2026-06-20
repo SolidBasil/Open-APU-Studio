@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import QHeaderView
 
-from ui.widgets.tabla_base import TreeTableWidget
+from frontend.ui.widgets.tabla_base import TreeTableWidget
 
 
 COLUMNAS = ["Clave", "Descripción", "Unidad", "Precio", "Tipo"]

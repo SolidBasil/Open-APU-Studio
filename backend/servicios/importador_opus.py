@@ -5,11 +5,11 @@ from collections import defaultdict
 
 from dbfread import DBF
 
-from db.conexion import DatabaseManager
-from db.repos.insumos import InsumoRepo
-from db.repos.partidas import PartidaRepo
-from db.repos.conceptos import ConceptoRepo
-from db.repos.apu import ApuComponenteRepo, ApuResumenRepo, AuxiliarRepo
+from backend.db.conexion import DatabaseManager
+from backend.db.repos.insumos import InsumoRepo
+from backend.db.repos.partidas import PartidaRepo
+from backend.db.repos.conceptos import ConceptoRepo
+from backend.db.repos.apu import ApuComponenteRepo, ApuResumenRepo, AuxiliarRepo
 
 
 def _prefijo_proyecto(ruta_carpeta):

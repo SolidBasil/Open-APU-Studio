@@ -1,7 +1,7 @@
 from PySide6.QtGui import QColor, QBrush, QFont
 from PySide6.QtWidgets import QHeaderView
 
-from ui.widgets.tabla_base import TreeTableWidget
+from frontend.ui.widgets.tabla_base import TreeTableWidget
 
 
 COLUMNS = ["Nº", "Tipo", "Clave", "Descripción", "Unid", "Cant", "P.U.", "Total"]

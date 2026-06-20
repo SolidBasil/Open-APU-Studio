@@ -4,6 +4,7 @@ __pycache__/
 *.db
 *.presup
 *.sqlite3
+*.sqlite
 venv/
 .venv/
 env/
@@ -14,5 +15,6 @@ build/
 .DS_Store
 Thumbs.db
 TEMP_*
-backend/
 Ejemplos/
+Conversor de opus/D60JALISCOT.sqlite
+Conversor de opus/presupuesto.html

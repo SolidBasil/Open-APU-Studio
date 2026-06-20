@@ -5,29 +5,31 @@
 - Targets: Windows (principal) + Linux (nativo desde inicio)
 
 ## Arquitectura — regla cardinal
-**SQL solo vive en `db/repos/`**. Si SQL aparece en UI o servicios, es error. Capas:
+**SQL solo vive en `backend/db/repos/`**. Si SQL aparece en UI o servicios, es error. Capas:
 ```
-UI (PySide6) → Servicios (lógica) → Repositorios (SQL) → SQLite (.presup)
+frontend/ui (PySide6) → backend/servicios (lógica) → backend/db/repos (SQL) → SQLite (.presup)
 ```
 
-## Estado del repo
-Pre-código. Solo hay documentación de diseño (`docs/`) y datos de muestra OPUS (`CASA EG/`).
-No existe `main.py`, `requirements.txt`, testing framework ni licencia todavía.
-
-## Estructura a implementar
+## Estructura actual
 ```
 main.py
-db/
-  conexion.py
-  migraciones/     ← archivos .sql numerados, tabla schema_version
-  repos/           ← base.py, insumos.py, conceptos.py, partidas.py, apu.py, familias.py, busqueda.py
-servicios/         ← calculo.py, importador_opus.py, exportador.py, reportes.py
-ui/
-  ventana_principal.py
-  modelos/
-  widgets/
-themes/            ← dark.qss, light.qss
-theme_manager.py   ← ThemeManager con QSettings (docs/Guia diseño.md sección 17)
+backend/
+  __init__.py
+  db/
+    conexion.py
+    migraciones/     ← archivos .sql numerados, tabla schema_version
+    repos/           ← base.py, insumos.py, conceptos.py, partidas.py, apu.py
+  servicios/         ← importador_opus.py
+  opus/              ← proxy a Conversor de opus/backend/core.py
+frontend/
+  __init__.py
+  ui/
+    ventana_principal.py
+    modelos/
+    widgets/
+  themes/            ← dark.qss, light.qss
+  theme_manager.py   ← ThemeManager con QSettings
+Conversor de opus/   ← standalone, importado vía backend/opus/
 ```
 
 ## Decisiones técnicas (de docs/vision_producto.md)
@@ -65,7 +67,7 @@ Delimitación exacta en `docs/vision_producto.md` sección "Funciones y caracter
 - Estilo botones/inputs/tablas: `docs/Guia diseño.md` secciones 10-12
 - Tipografía: Inter (sistema), escala en `docs/Guia diseño.md` sección 5
 - Espaciado: escala 4-8-12-16-24-32 px, no valores arbitrarios
-- Temas: `theme_manager.py` carga `themes/dark.qss` o `themes/light.qss` según QSettings
+- Temas: `frontend/theme_manager.py` carga `frontend/themes/*.qss` según QSettings
 
 ## Referencias
 - Visión completa del producto: `docs/vision_producto.md`

@@ -1,4 +1,4 @@
-from db.repos.base import RepoBase
+from backend.db.repos.base import RepoBase
 
 
 class ConceptoRepo(RepoBase):

@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QPoint, QRect, QSize
 from PySide6.QtGui import QColor, QIcon, QPixmap, QPainter, QFont, QShortcut, QKeySequence
 
-from theme_manager import ThemeManager
+from frontend.theme_manager import ThemeManager
 
 
 def _icon(char, size=20, font_size=None):
@@ -79,14 +79,14 @@ class VentanaPrincipal(QMainWindow):
 
     def _init_db(self):
         import os
-        from db.conexion import DatabaseManager
-        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        from backend.db.conexion import DatabaseManager
+        base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         db_path = os.path.join(base, "CASA EG.presup")
         opus_dir = os.path.join(base, "Ejemplo opus CASA EG")
         if os.path.exists(db_path):
             self._db = DatabaseManager.abrir(db_path)
         elif os.path.exists(opus_dir):
-            from servicios.importador_opus import importar_opus
+            from backend.servicios.importador_opus import importar_opus
             result = importar_opus(opus_dir, db_path)
             self._db = DatabaseManager.abrir(db_path)
 
@@ -356,7 +356,7 @@ class VentanaPrincipal(QMainWindow):
     # ── Explorador ──
 
     def _build_sidebar(self):
-        from ui.widgets.tabla_base import draw_tree_connectors
+        from frontend.ui.widgets.tabla_base import draw_tree_connectors
 
         class _SidebarTree(QTreeWidget):
             def drawBranches(self, painter, rect, index):
@@ -414,13 +414,55 @@ class VentanaPrincipal(QMainWindow):
         return self._tabs
 
     def _build_presupuesto(self):
-        from ui.widgets.tabla_presupuesto import TablaPresupuesto
-        from db.repos.partidas import PartidaRepo
-        from db.repos.conceptos import ConceptoRepo
+        from frontend.ui.widgets.tabla_presupuesto import TablaPresupuesto
 
         tree = TablaPresupuesto()
-        if not self._db:
-            return tree
+
+        opus_db = self._find_opus_db()
+        if opus_db:
+            self._populate_from_opus(tree, opus_db)
+        elif self._db:
+            self._populate_from_repos(tree)
+
+        tree.renumerar()
+        return tree
+
+    def _find_opus_db(self):
+        import os
+        base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        dbs = [
+            os.path.join(base, "Conversor de opus", "D60JALISCOT.sqlite"),
+            os.path.join(base, "Conversor de opus", "D60JALISCOT.db"),
+        ]
+        for p in dbs:
+            if os.path.exists(p):
+                return p
+        return None
+
+    def _populate_from_opus(self, tree, db_path):
+        from backend.opus.core import build_budget_tree
+        root_nodes = build_budget_tree(db_path)
+        self._opus_add_nodes(tree, root_nodes, None)
+
+    def _opus_add_nodes(self, tree, nodes, parent):
+        for node in nodes:
+            if node["es_capitulo"]:
+                item = tree.add_agrupador(
+                    node["desc"], "#8B6FB5",
+                    total=node["importe"],
+                    parent=parent,
+                )
+                self._opus_add_nodes(tree, node["hijos"], item)
+            else:
+                tree.add_registro(
+                    0, node["clave"], node["desc"],
+                    node["unidad"], node["cantidad"] or 0, node["precio"] or 0,
+                    parent=parent,
+                )
+
+    def _populate_from_repos(self, tree):
+        from backend.db.repos.partidas import PartidaRepo
+        from backend.db.repos.conceptos import ConceptoRepo
 
         partida_repo = PartidaRepo(self._db.conn)
         concepto_repo = ConceptoRepo(self._db.conn)
@@ -439,13 +481,10 @@ class VentanaPrincipal(QMainWindow):
                 total += c["cantidad"] * c["precio_unitario"]
             cap.setText(7, f"${total:,.2f}")
 
-        tree.renumerar()
-        return tree
-
     def _build_conceptos(self):
         from PySide6.QtWidgets import QHeaderView
-        from ui.widgets.tabla_base import TreeTableWidget
-        from db.repos.conceptos import ConceptoRepo
+        from frontend.ui.widgets.tabla_base import TreeTableWidget
+        from backend.db.repos.conceptos import ConceptoRepo
         t = TreeTableWidget(["Clave", "Descripción", "Unidad", "Cant", "P.U.", "Total"], flat=True)
         t.set_column_modes({
             c: (QHeaderView.ResizeMode.Interactive, w)
@@ -464,7 +503,7 @@ class VentanaPrincipal(QMainWindow):
 
     def _build_indirectos(self):
         from PySide6.QtWidgets import QHeaderView
-        from ui.widgets.tabla_base import TreeTableWidget
+        from frontend.ui.widgets.tabla_base import TreeTableWidget
         t = TreeTableWidget(["Renglón", "Variable", "Descripción", "Fórmula"], flat=True)
         t.set_column_modes({
             c: (QHeaderView.ResizeMode.Interactive, w)
@@ -478,12 +517,12 @@ class VentanaPrincipal(QMainWindow):
 
     def _on_importar_opus(self):
         from PySide6.QtWidgets import QFileDialog, QMessageBox
-        from db.conexion import DatabaseManager
+        from backend.db.conexion import DatabaseManager
         dir_path = QFileDialog.getExistingDirectory(self, "Seleccionar carpeta del proyecto OPUS")
         if not dir_path:
             return
         import os
-        from servicios.importador_opus import importar_opus
+        from backend.servicios.importador_opus import importar_opus
         base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         nombre = os.path.basename(dir_path.rstrip("/\\"))
         db_path = os.path.join(base, f"{nombre}.presup")
@@ -559,8 +598,8 @@ class VentanaPrincipal(QMainWindow):
             self._temp_tab_widget = content
 
     def _build_insumos(self, title):
-        from ui.widgets.tabla_insumos import TablaInsumos
-        from db.repos.insumos import InsumoRepo
+        from frontend.ui.widgets.tabla_insumos import TablaInsumos
+        from backend.db.repos.insumos import InsumoRepo
         tipo_map = {
             "📚 Todos": None,
             "🧱 Materiales": 1,

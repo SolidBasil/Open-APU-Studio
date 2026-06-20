@@ -4,8 +4,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication
 
-from theme_manager import ThemeManager
-from ui.ventana_principal import VentanaPrincipal
+from frontend.theme_manager import ThemeManager
+from frontend.ui.ventana_principal import VentanaPrincipal
 
 
 def main():
