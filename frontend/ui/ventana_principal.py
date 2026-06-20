@@ -421,17 +421,9 @@ class VentanaPrincipal(QMainWindow):
             self._populate_from_repos(tree)
 
         tree.setEditTriggers(QAbstractItemView.EditTrigger.EditKeyPressed)
-        tree.itemDoubleClicked.connect(self._on_presupuesto_dblclick)
+        tree.itemDoubleClicked.connect(self._on_item_dblclick)
 
         return tree
-
-    def _on_presupuesto_dblclick(self, item, column):
-        if column != 5:
-            return
-        clave = item.text(1).strip()
-        if not clave:
-            return
-        self._open_apu_tab(clave)
 
     def _open_apu_tab(self, clave):
         from frontend.ui.widgets.tabla_base import TreeTableWidget
@@ -487,6 +479,8 @@ class VentanaPrincipal(QMainWindow):
                     f"${imp:,.2f}", tn,
                 ], editable=False)
 
+        detail.itemDoubleClicked.connect(self._on_apu_detail_dblclick)
+
         title = f"APU: {clave}"
         for i in range(self._tabs.count()):
             if self._tabs.tabText(i) == title:
@@ -495,6 +489,36 @@ class VentanaPrincipal(QMainWindow):
 
         idx = self._tabs.addTab(detail, title)
         self._tabs.setCurrentIndex(idx)
+
+    def _has_apu(self, clave):
+        if self._db:
+            return bool(self._db.conn.execute(
+                "SELECT 1 FROM apu_componentes WHERE concepto_clave = ? LIMIT 1",
+                (clave,)).fetchone())
+        if opus_db := self._find_opus_db():
+            import sqlite3
+            conn = sqlite3.connect(opus_db)
+            exists = conn.execute(
+                "SELECT 1 FROM D60JALISCOTF WHERE NOMBRE = ? AND _deleted = 0 LIMIT 1",
+                (clave,)).fetchone()
+            conn.close()
+            return bool(exists)
+        return False
+
+    def _on_item_dblclick(self, item, column):
+        clave = item.text(0).strip()
+        if not clave:
+            clave = item.text(1).strip()
+        if not clave:
+            return
+        if self._has_apu(clave):
+            self._open_apu_tab(clave)
+
+    def _on_apu_detail_dblclick(self, item, column):
+        clave = item.text(0).strip()
+        if not clave or not self._has_apu(clave):
+            return
+        self._open_apu_tab(clave)
 
     def _find_opus_db(self):
         import os
@@ -586,6 +610,7 @@ class VentanaPrincipal(QMainWindow):
                     f"${r[3] * r[4]:,.2f}",
                 ], editable=False)
             conn.close()
+        t.itemDoubleClicked.connect(self._on_item_dblclick)
         return t
 
     def _build_indirectos(self):
@@ -716,16 +741,21 @@ class VentanaPrincipal(QMainWindow):
             else:
                 insumos = repo.todos()
             tabla.poblar(insumos)
+            tabla.itemDoubleClicked.connect(self._on_item_dblclick)
             return tabla
 
         tipo = tipo_map.get(title)
         if tipo is None and title != "📚 Todos":
-            return TablaInsumos()
+            t = TablaInsumos()
+            t.itemDoubleClicked.connect(self._on_item_dblclick)
+            return t
 
         from PySide6.QtWidgets import QHeaderView
         from frontend.ui.widgets.tabla_base import TreeTableWidget
         if not (opus_db := self._find_opus_db()):
-            return TablaInsumos()
+            t = TablaInsumos()
+            t.itemDoubleClicked.connect(self._on_item_dblclick)
+            return t
 
         import sqlite3
         conn = sqlite3.connect(opus_db)
@@ -756,6 +786,7 @@ class VentanaPrincipal(QMainWindow):
             precio = f"${r[3]:,.2f}" if r[3] else ""
             tn = tipo_label.get(r[4], f"Tipo {r[4]}")
             t.add_row([r[0], r[1] or "", r[2] or "", precio, tn], editable=False)
+        t.itemDoubleClicked.connect(self._on_item_dblclick)
         return t
 
     def _next_tab(self):
