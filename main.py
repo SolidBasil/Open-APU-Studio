@@ -1,11 +1,17 @@
-import sys
+"""
+main.py
+=======
+Punto de entrada de Open APU Studio.
+"""
 
+import sys
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication
 
-from frontend.theme_manager import ThemeManager
-from frontend.ui.ventana_principal import VentanaPrincipal
+from backend.db import Config, Rutas
+from frontend.temas import Temas
+from frontend.ventana import VentanaPrincipal
 
 
 def main():
@@ -14,8 +20,9 @@ def main():
     app.setOrganizationName("OpenAPU")
     app.setFont(QFont("Segoe UI", 10))
 
-    theme = ThemeManager.load_preference()
-    ThemeManager.apply(app, theme)
+    # Aplicar tema guardado (default: dark)
+    tema = Config.get("tema", "dark")
+    Temas.aplicar(app, tema)
 
     win = VentanaPrincipal()
     win.show()

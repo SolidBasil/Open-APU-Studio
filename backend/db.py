@@ -1,0 +1,239 @@
+"""
+db.py
+=====
+Gestión de la conexión SQLite, carpeta de datos del usuario
+y aplicación automática del esquema.
+
+Estructura de carpetas en el sistema del usuario:
+    Windows: C:/Users/<usuario>/AppData/Local/Open APU Studio/
+    Linux:   ~/.local/share/Open APU Studio/
+    macOS:   ~/Library/Application Support/Open APU Studio/
+    ├── config.json       ← preferencias de la app
+    ├── proyectos/        ← archivos .db de cada proyecto
+    └── logs/             ← log de errores e importaciones
+
+Uso:
+    from backend.db import Rutas, Database
+
+    # Rutas del sistema
+    db_path = Rutas.proyectos() / "D60JALISCOT.db"
+
+    # Abrir un proyecto
+    db = Database.abrir(db_path)
+    conn = db.conn
+    Database.cerrar()
+"""
+
+import json
+import sqlite3
+from pathlib import Path
+
+try:
+    import platformdirs
+    _BASE = Path(platformdirs.user_data_dir("Open APU Studio", "OpenAPU"))
+except ImportError:
+    # Fallback si platformdirs no está instalado — carpeta junto al ejecutable
+    _BASE = Path(__file__).parent.parent / "datos_usuario"
+
+
+# =============================================================================
+# RUTAS DEL SISTEMA
+# =============================================================================
+
+class Rutas:
+    """
+    Centraliza todas las rutas de datos del usuario.
+    Crea las carpetas si no existen al primer acceso.
+    """
+
+    @staticmethod
+    def base() -> Path:
+        """Carpeta raíz de datos del usuario."""
+        _BASE.mkdir(parents=True, exist_ok=True)
+        return _BASE
+
+    @staticmethod
+    def proyectos() -> Path:
+        """Carpeta donde se guardan los archivos .db de proyectos."""
+        p = _BASE / "proyectos"
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    @staticmethod
+    def logs() -> Path:
+        """Carpeta de logs de importación y errores."""
+        p = _BASE / "logs"
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    @staticmethod
+    def config_path() -> Path:
+        """Ruta al archivo de configuración de la app."""
+        return _BASE / "config.json"
+
+    @staticmethod
+    def listar_proyectos() -> list[Path]:
+        """Devuelve la lista de archivos .db disponibles, ordenados por fecha."""
+        return sorted(
+            Rutas.proyectos().glob("*.db"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,   # más reciente primero
+        )
+
+    @staticmethod
+    def db_proyecto(nombre: str) -> Path:
+        """
+        Devuelve la ruta al .db de un proyecto dado su nombre.
+        Ejemplo: Rutas.db_proyecto("D60JALISCOT") → .../proyectos/D60JALISCOT.db
+        """
+        nombre_limpio = nombre.strip().replace(" ", "_")
+        return Rutas.proyectos() / f"{nombre_limpio}.db"
+
+
+# =============================================================================
+# CONFIGURACIÓN DE LA APP
+# =============================================================================
+
+class Config:
+    """
+    Lee y escribe preferencias en config.json.
+    Valores disponibles: tema, ultimo_proyecto.
+
+    Uso:
+        Config.get("tema", "dark")
+        Config.set("ultimo_proyecto", "D60JALISCOT")
+    """
+
+    _cache: dict | None = None
+
+    @classmethod
+    def _cargar(cls) -> dict:
+        if cls._cache is not None:
+            return cls._cache
+        ruta = Rutas.config_path()
+        if ruta.exists():
+            try:
+                cls._cache = json.loads(ruta.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                cls._cache = {}
+        else:
+            cls._cache = {}
+        return cls._cache
+
+    @classmethod
+    def get(cls, clave: str, default=None):
+        return cls._cargar().get(clave, default)
+
+    @classmethod
+    def set(cls, clave: str, valor):
+        datos = cls._cargar()
+        datos[clave] = valor
+        Rutas.config_path().write_text(
+            json.dumps(datos, indent=2, ensure_ascii=False),
+            encoding="utf-8"
+        )
+
+    @classmethod
+    def ultimo_proyecto(cls) -> Path | None:
+        """Devuelve la ruta al último proyecto abierto, o None si no existe."""
+        nombre = cls.get("ultimo_proyecto")
+        if not nombre:
+            return None
+        ruta = Rutas.db_proyecto(nombre)
+        return ruta if ruta.exists() else None
+
+    @classmethod
+    def guardar_ultimo_proyecto(cls, db_path: str | Path):
+        """Guarda el nombre del último proyecto abierto."""
+        cls.set("ultimo_proyecto", Path(db_path).stem)
+
+
+# =============================================================================
+# CONEXIÓN A LA BASE DE DATOS
+# =============================================================================
+
+class Database:
+    """
+    Gestiona la conexión SQLite activa.
+    Singleton — una sola conexión abierta a la vez.
+    Aplica schema.sql automáticamente si la DB es nueva.
+    """
+
+    _instancia = None
+
+    def __init__(self, db_path=None):
+        self._conn    = None
+        self._db_path = None
+        if db_path:
+            self._abrir(db_path)
+
+    # ── Conexión ──────────────────────────────────────────────────────────
+
+    def _abrir(self, db_path: str | Path):
+        self._cerrar()
+        self._db_path = str(db_path)
+        self._conn = sqlite3.connect(self._db_path)
+        self._conn.execute("PRAGMA foreign_keys = ON")
+        self._conn.execute("PRAGMA journal_mode = WAL")
+        self._conn.row_factory = sqlite3.Row
+        self._aplicar_schema()
+        Config.guardar_ultimo_proyecto(db_path)
+        return self
+
+    def _cerrar(self):
+        if self._conn:
+            self._conn.close()
+            self._conn    = None
+            self._db_path = None
+
+    @property
+    def conn(self) -> sqlite3.Connection:
+        return self._conn
+
+    @property
+    def db_path(self) -> str:
+        return self._db_path
+
+    # ── Schema ────────────────────────────────────────────────────────────
+
+    def _aplicar_schema(self):
+        """Aplica schema.sql si la base de datos es nueva."""
+        schema_path = Path(__file__).parent / "schema.sql"
+        if not schema_path.exists():
+            raise FileNotFoundError(f"No se encontró el schema en {schema_path}")
+
+        cur = self._conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS schema_version (
+                version     INTEGER PRIMARY KEY,
+                aplicado_en TEXT NOT NULL DEFAULT (datetime('now')),
+                descripcion TEXT
+            )
+        """)
+
+        aplicadas = {r[0] for r in cur.execute(
+            "SELECT version FROM schema_version"
+        ).fetchall()}
+
+        if 1 not in aplicadas:
+            sql = schema_path.read_text(encoding="utf-8")
+            self._conn.executescript(sql)
+            self._conn.commit()
+
+    # ── Singleton ─────────────────────────────────────────────────────────
+
+    @classmethod
+    def instancia(cls) -> "Database":
+        if cls._instancia is None:
+            cls._instancia = cls()
+        return cls._instancia
+
+    @classmethod
+    def abrir(cls, db_path: str | Path) -> "Database":
+        inst = cls.instancia()
+        inst._abrir(db_path)
+        return inst
+
+    @classmethod
+    def cerrar(cls):
+        cls.instancia()._cerrar()

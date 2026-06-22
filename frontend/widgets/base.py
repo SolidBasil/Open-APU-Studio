@@ -1,26 +1,44 @@
+"""
+base.py
+=======
+Widget base reutilizable: TreeTableWidget con conectores visuales,
+filtrado, edición y clipboard.
+
+Uso:
+    from frontend.widgets.base import TreeTableWidget
+"""
+
 from PySide6.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QAbstractItemView,
     QHeaderView, QApplication, QStyledItemDelegate,
 )
 from PySide6.QtCore import Qt
-from PySide6.QtGui import (
-    QColor, QKeySequence, QPainter, QPen,
-)
+from PySide6.QtGui import QColor, QKeySequence, QPainter, QPen
+
+import re
+
+
+SISTEMA_PREFIJOS = re.compile(rf"^[{re.escape('▶🧱👷🔧🚜⚙️📄📚')}]\s?")
 
 
 LINE_COLOR = QColor("#5E92B8")
-LINE_WIDTH = 1.5
+LINE_WIDTH  = 1.5
+
+
+def _strip_icons(text: str) -> str:
+    """Quita prefijos del sistema (▶ y emojis de tipo) sin afectar datos del usuario."""
+    return SISTEMA_PREFIJOS.sub("", text)
 
 
 def draw_tree_connectors(tree, painter, rect, index, line_color=LINE_COLOR):
     info = []
-    idx = index
+    idx  = index
     while True:
         parent = idx.parent()
-        total = idx.model().rowCount(parent)
-        row = idx.row()
+        total  = idx.model().rowCount(parent)
+        row    = idx.row()
         info.append({
-            "has_below": row < total - 1,
+            "has_below":    row < total - 1,
             "has_children": idx.model().hasChildren(idx),
         })
         if not parent.isValid():
@@ -28,9 +46,9 @@ def draw_tree_connectors(tree, painter, rect, index, line_color=LINE_COLOR):
         idx = parent
 
     cur_depth = len(info) - 1
-    indent = tree.indentation()
-    mid_y = rect.top() + rect.height() // 2
-    pen = QPen(line_color, LINE_WIDTH)
+    indent    = tree.indentation()
+    mid_y     = rect.top() + rect.height() // 2
+    pen       = QPen(line_color, LINE_WIDTH)
 
     painter.save()
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -43,7 +61,7 @@ def draw_tree_connectors(tree, painter, rect, index, line_color=LINE_COLOR):
         x = d * indent + indent // 2
         painter.drawLine(x, rect.top(), x, rect.bottom())
 
-    x = cur_depth * indent + indent // 2
+    x            = cur_depth * indent + indent // 2
     branch_right = (cur_depth + 1) * indent
 
     if cur_depth > 0 or index.row() > 0:
@@ -70,8 +88,8 @@ class TreeTableWidget(QTreeWidget):
     def __init__(self, columns, editable_cols=frozenset(), flat=False,
                  line_color=None, parent=None):
         super().__init__(parent)
-        self._flat = flat
-        self._line_color = line_color or LINE_COLOR
+        self._flat         = flat
+        self._line_color   = line_color or LINE_COLOR
         self._editable_cols = editable_cols
 
         self.setColumnCount(len(columns))
@@ -80,12 +98,8 @@ class TreeTableWidget(QTreeWidget):
         self.setAnimated(True)
         self.setIndentation(24 if not flat else 0)
         self.setRootIsDecorated(not flat)
-        self.setSelectionMode(
-            QAbstractItemView.SelectionMode.ExtendedSelection
-        )
-        self.setSelectionBehavior(
-            QAbstractItemView.SelectionBehavior.SelectRows
-        )
+        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.setMouseTracking(True)
         self.setEditTriggers(
             QAbstractItemView.EditTrigger.DoubleClicked
@@ -105,28 +119,19 @@ class TreeTableWidget(QTreeWidget):
             if width is not None:
                 h.resizeSection(c, width)
 
-    # ── Row builder ──
-
     def add_row(self, data, parent=None, editable=True):
         parent = parent or self
-        item = QTreeWidgetItem(parent, data)
+        item   = QTreeWidgetItem(parent, data)
         if not editable:
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
         return item
-
-    # ── Tree connector lines ──
 
     def drawBranches(self, painter, rect, index):
         super().drawBranches(painter, rect, index)
         if not self._flat:
             draw_tree_connectors(self, painter, rect, index, self._line_color)
 
-    # ── Clipboard ──
-
-    # ── Search / filter ──
-
     def filter_rows(self, text):
-        """Filter visible rows by description column match."""
         desc_col = 2
         for c in range(self.columnCount()):
             if "descrip" in self.headerItem().text(c).lower():
@@ -140,10 +145,9 @@ class TreeTableWidget(QTreeWidget):
             self._filter_item(self.topLevelItem(i), text, desc_col)
 
     def _show_all(self, parent=None):
-        if parent is None:
-            items = [self.topLevelItem(i) for i in range(self.topLevelItemCount())]
-        else:
-            items = [parent.child(i) for i in range(parent.childCount())]
+        items = ([self.topLevelItem(i) for i in range(self.topLevelItemCount())]
+                 if parent is None
+                 else [parent.child(i) for i in range(parent.childCount())])
         for item in items:
             item.setHidden(False)
             if item.childCount():
@@ -167,22 +171,52 @@ class TreeTableWidget(QTreeWidget):
         else:
             super().keyPressEvent(event)
 
+    def copy_selection(self) -> bool:
+        """
+        Copy selected rows as TSV (tab-separated values) to clipboard.
+        Returns True if something was copied.
+        Called by Ctrl+C and toolbar 'Copiar' button.
+        """
+        items = self.selectedItems()
+        if not items:
+            return False
+
+        rows: dict[int, list[str]] = {}
+        cols = self.columnCount()
+        for item in items:
+            parent = item.parent()
+            row_idx = parent.indexOfChild(item) if parent else self.indexOfTopLevelItem(item)
+            if row_idx < 0:
+                continue
+            if row_idx not in rows:
+                rows[row_idx] = [_strip_icons(item.text(c)) for c in range(cols)]
+
+        if not rows:
+            return False
+
+        header = [_strip_icons(self.headerItem().text(c)) for c in range(cols)]
+        lines = ["\t".join(header)]
+        for row_data in rows.values():
+            lines.append("\t".join(row_data))
+
+        QApplication.clipboard().setText("\n".join(lines))
+        return True
+
     def _copy(self):
+        if self.copy_selection():
+            return
         item = self.currentItem()
-        col = self.currentColumn()
+        col  = self.currentColumn()
         if not item or col < 0:
             return
-        QApplication.clipboard().setText(item.text(col))
+        QApplication.clipboard().setText(_strip_icons(item.text(col)))
 
     def _paste(self):
         text = QApplication.clipboard().text()
         if not text:
             return
         item = self.currentItem()
-        col = self.currentColumn()
-        if not item or col < 0:
+        col  = self.currentColumn()
+        if not item or col < 0 or col not in self._editable_cols:
             return
-        if col not in self._editable_cols:
-            return
-        lines = text.strip().split("\n")
-        item.setText(col, lines[0].strip())
+        item.setText(col, text.strip().split("\n")[0].strip())
