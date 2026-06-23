@@ -49,8 +49,7 @@ def build_budget_tree(db_path: str, proyecto_id: int = 1) -> list[dict]:
             "notas_rapidas":    str | None,
             "modificado_en":    str | None,
             "creado_en":        str | None,
-            "estado_nombre":    str,            # "Verificado", etc.
-            "estado_color":     str,            # "#4CAF7D"
+            "estado":           int,            # 0=sin revisar, 1=en revisión, 2=verificado, 3=cuestionado
             "hijos":            list[dict],     # recursivo
         }
 
@@ -85,11 +84,8 @@ def build_budget_tree(db_path: str, proyecto_id: int = 1) -> list[dict]:
                 n.notas_rapidas,
                 n.modificado_en,
                 n.creado_en,
-                e.nombre  AS estado_nombre,
-                e.color   AS estado_color,
-                e.clave   AS estado_clave
-            FROM nodos n
-            JOIN estados_nodo e ON e.id = n.estado_id
+                n.estado
+            FROM estructura_presupuesto n
             WHERE n.proyecto_id = ? AND n.activo = 1
             ORDER BY n.wbs
         """, (proyecto_id,))
@@ -123,7 +119,7 @@ def get_proyecto(db_path: str, proyecto_id: int = 1) -> dict | None:
     Devuelve los metadatos del proyecto (nombre, total, config).
 
     Returns:
-        Dict con campos de 'proyectos' + 'proyecto_config', o None si no existe.
+        Dict con campos de 'proyectos' + 'configuracion_proyecto', o None si no existe.
     """
     con = sqlite3.connect(db_path)
     con.row_factory = sqlite3.Row
@@ -133,7 +129,7 @@ def get_proyecto(db_path: str, proyecto_id: int = 1) -> dict | None:
             SELECT p.*, pc.horas_dia, pc.tasa_seguro, pc.tasa_interes,
                    pc.decimales_costo, pc.decimales_cantidad
             FROM proyectos p
-            LEFT JOIN proyecto_config pc ON pc.proyecto_id = p.id
+            LEFT JOIN configuracion_proyecto pc ON pc.proyecto_id = p.id
             WHERE p.id = ? AND p.activo = 1
         """, (proyecto_id,))
         row = cur.fetchone()
@@ -175,16 +171,16 @@ def get_apu(db_path: str, nodo_id: int) -> dict:
                 t.clave             AS tipo_clave,
                 t.nombre            AS tipo_nombre,
                 t.id                AS tipo_id
-            FROM apu_detalle ad
+            FROM apu_componentes ad
             JOIN insumos i      ON i.id  = ad.insumo_id
             JOIN tipos_insumo t ON t.id  = i.tipo_id
-            WHERE (ad.nodo_id = ? OR ad.apu_nodo_id = ?)
+            WHERE (ad.nodo_id = ? OR ad.apu_auxiliar_id = ?)
             ORDER BY ad.orden
         """, (nodo_id, nodo_id))
         detalle = [dict(r) for r in cur.fetchall()]
 
         cur.execute("""
-            SELECT * FROM apu_totales WHERE (nodo_id = ? OR apu_nodo_id = ?)
+            SELECT * FROM apu_resumen WHERE (nodo_id = ? OR apu_auxiliar_id = ?)
         """, (nodo_id, nodo_id))
         row = cur.fetchone()
         totales = dict(row) if row else None
@@ -264,21 +260,21 @@ def validar(db_path: str, proyecto_id: int = 1) -> dict:
 
         # Conteos básicos
         cur.execute("""
-            SELECT COUNT(*) FROM nodos
+            SELECT COUNT(*) FROM estructura_presupuesto
             WHERE proyecto_id = ? AND activo = 1
         """, (proyecto_id,))
         total_nodos = cur.fetchone()[0]
 
         cur.execute("""
-            SELECT COUNT(*) FROM nodos
+            SELECT COUNT(*) FROM estructura_presupuesto
             WHERE proyecto_id = ? AND tipo = 'concepto' AND activo = 1
         """, (proyecto_id,))
         total_conceptos = cur.fetchone()[0]
 
         # Conceptos sin APU
         cur.execute("""
-            SELECT COUNT(*) FROM nodos n
-            LEFT JOIN apu_detalle ad ON ad.nodo_id = n.id
+            SELECT COUNT(*) FROM estructura_presupuesto n
+            LEFT JOIN apu_componentes ac ON ac.nodo_id = n.id
             WHERE n.proyecto_id = ? AND n.tipo = 'concepto'
               AND n.activo = 1 AND ad.id IS NULL
         """, (proyecto_id,))
@@ -288,11 +284,11 @@ def validar(db_path: str, proyecto_id: int = 1) -> dict:
 
         # Nodos huérfanos (padre_id apunta a un id que no existe)
         cur.execute("""
-            SELECT COUNT(*) FROM nodos n
+            SELECT COUNT(*) FROM estructura_presupuesto n
             WHERE n.proyecto_id = ? AND n.activo = 1
               AND n.padre_id IS NOT NULL
               AND n.padre_id NOT IN (
-                  SELECT id FROM nodos WHERE activo = 1
+                  SELECT id FROM estructura_presupuesto WHERE activo = 1
               )
         """, (proyecto_id,))
         huerfanos = cur.fetchone()[0]
@@ -301,7 +297,7 @@ def validar(db_path: str, proyecto_id: int = 1) -> dict:
 
         # Verificar subtotales (diff > $1 = posible desincronización)
         cur.execute("""
-            SELECT COUNT(*) FROM nodos n
+            SELECT COUNT(*) FROM estructura_presupuesto n
             WHERE n.proyecto_id = ? AND n.tipo = 'capitulo' AND n.activo = 1
               AND ABS(n.subtotal - (
                   SELECT COALESCE(SUM(
@@ -310,7 +306,7 @@ def validar(db_path: str, proyecto_id: int = 1) -> dict:
                            ELSE COALESCE(subtotal, 0)
                       END
                   ), 0)
-                  FROM nodos WHERE padre_id = n.id AND activo = 1
+                  FROM estructura_presupuesto WHERE padre_id = n.id AND activo = 1
               )) > 1.0
         """, (proyecto_id,))
         subtotales_mal = cur.fetchone()[0]

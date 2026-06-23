@@ -162,7 +162,7 @@ def importar(carpeta: str, db_path: str, nombre: str | None = None) -> dict:
         nombre:   Nombre del proyecto (default: se infiere del prefijo)
 
     Returns:
-        Dict con estadísticas: nodos, insumos, apu_detalle, apu_totales, etc.
+        Dict con estadísticas: nodos, insumos, apu_componentes, apu_resumen, etc.
     """
     carpeta = Path(carpeta)
     if not carpeta.is_dir():
@@ -209,7 +209,7 @@ def importar(carpeta: str, db_path: str, nombre: str | None = None) -> dict:
     proyecto_id = cur.lastrowid
 
     cur.execute("""
-        INSERT INTO proyecto_config
+        INSERT INTO configuracion_proyecto
             (proyecto_id, horas_dia, tasa_seguro, tasa_interes)
         VALUES (?, ?, ?, ?)
     """, (proyecto_id, _f(cfg.get("HORASDIA"), 8),
@@ -221,7 +221,7 @@ def importar(carpeta: str, db_path: str, nombre: str | None = None) -> dict:
     # ── Pie de precios ────────────────────────────────────────────────────
     for r in regs_i:
         cur.execute("""
-            INSERT INTO pie_precios
+            INSERT INTO sobrecostos
                 (proyecto_id, orden, variable, descripcion, formula,
                  porcentaje_mn, porcentaje_me, suma_en_total,
                  es_egreso_financ, es_ingreso_financ, se_imprime)
@@ -235,7 +235,7 @@ def importar(carpeta: str, db_path: str, nombre: str | None = None) -> dict:
               1 if r.get("ES_INGR") else 0,
               1 if r.get("SE_IMPR") else 0))
     con.commit()
-    print(f"  → pie_precios: {len(regs_i)}")
+    print(f"  → sobrecostos: {len(regs_i)}")
 
     # ── Insumos ───────────────────────────────────────────────────────────
     insumo_id_por_clave: dict[str, int] = {}
@@ -279,11 +279,11 @@ def importar(carpeta: str, db_path: str, nombre: str | None = None) -> dict:
     insumo_por_clave = {_s(r.get("NOMBRE")): r for r in regs_p if _s(r.get("NOMBRE"))}
     padres_con_apu = {_s(r.get("NOMBRE")) for r in regs_f if _s(r.get("NOMBRE"))}
 
-    cur.execute("SELECT clave FROM nodos WHERE proyecto_id = ? AND clave IS NOT NULL",
+    cur.execute("SELECT clave FROM estructura_presupuesto WHERE proyecto_id = ? AND clave IS NOT NULL",
                 (proyecto_id,))
     claves_existentes = {r["clave"] for r in cur.fetchall()}
 
-    n_apu_nodos = 0
+    n_apu_auxiliares = 0
     for clave in padres_con_apu:
         if clave in claves_existentes:
             continue
@@ -291,22 +291,22 @@ def importar(carpeta: str, db_path: str, nombre: str | None = None) -> dict:
         if not rec:
             continue
         cur.execute("""
-            INSERT OR IGNORE INTO apu_nodos
+            INSERT OR IGNORE INTO apu_auxiliares
                 (proyecto_id, clave, descripcion, descripcion_corta, unidad)
             VALUES (?, ?, ?, ?, ?)
         """, (proyecto_id, clave,
               _s(rec.get("DESCRIPCIO") or rec.get("DESCCORTA")),
               _s(rec.get("DESCCORTA")),
               _s(rec.get("UNIDAD"))))
-        n_apu_nodos += 1
+        n_apu_auxiliares += 1
 
-    if n_apu_nodos:
+    if n_apu_auxiliares:
         con.commit()
-        print(f"  → apu_nodos: {n_apu_nodos}")
+        print(f"  → apu_auxiliares: {n_apu_auxiliares}")
 
     # ── APU detalle ───────────────────────────────────────────────────────
     cur.execute("""
-        SELECT clave, id FROM nodos
+        SELECT clave, id FROM estructura_presupuesto
         WHERE proyecto_id = ? AND clave IS NOT NULL
     """, (proyecto_id,))
     clave_a_nodos: dict[str, list[int]] = {}
@@ -314,12 +314,12 @@ def importar(carpeta: str, db_path: str, nombre: str | None = None) -> dict:
         clave_a_nodos.setdefault(r["clave"], []).append(r["id"])
 
     cur.execute("""
-        SELECT clave, id FROM apu_nodos
+        SELECT clave, id FROM apu_auxiliares
         WHERE proyecto_id = ?
     """, (proyecto_id,))
-    clave_a_apu_nodos: dict[str, list[int]] = {}
+    clave_a_apu_auxiliares: dict[str, list[int]] = {}
     for r in cur.fetchall():
-        clave_a_apu_nodos.setdefault(r["clave"], []).append(r["id"])
+        clave_a_apu_auxiliares.setdefault(r["clave"], []).append(r["id"])
 
     n_comp = 0
     n_skip_padre = 0
@@ -335,16 +335,16 @@ def importar(carpeta: str, db_path: str, nombre: str | None = None) -> dict:
         padres = clave_a_nodos.get(concepto_clave, [])
         es_apu_nodo = False
         if not padres:
-            padres = clave_a_apu_nodos.get(concepto_clave, [])
+            padres = clave_a_apu_auxiliares.get(concepto_clave, [])
             es_apu_nodo = True
         if not padres:
             n_skip_padre += 1
             continue
 
-        col = "apu_nodo_id" if es_apu_nodo else "nodo_id"
+        col = "apu_auxiliar_id" if es_apu_nodo else "nodo_id"
         for pid in padres:
             cur.execute(f"""
-                INSERT INTO apu_detalle
+                INSERT INTO apu_componentes
                     ({col}, insumo_id, rendimiento, cantidad,
                      precio, formula, orden, creado_por)
                 VALUES (?, ?, ?, ?, ?, ?, ?, 1)
@@ -356,7 +356,7 @@ def importar(carpeta: str, db_path: str, nombre: str | None = None) -> dict:
             n_comp += 1
 
     con.commit()
-    msg = f"  → apu_detalle: {n_comp}"
+    msg = f"  → apu_componentes: {n_comp}"
     if n_skip_padre:
         msg += f"  |  {n_skip_padre} saltados (padre no encontrado)"
     if n_skip_insumo:
@@ -374,7 +374,7 @@ def importar(carpeta: str, db_path: str, nombre: str | None = None) -> dict:
         cd = sum(_f(r.get(k)) for k in ["MM","OO","HH","EE","AA","SUBCONT"])
         for nodo_id in nodos_ids:
             cur.execute("""
-                INSERT OR REPLACE INTO apu_totales
+                INSERT OR REPLACE INTO apu_resumen
                     (nodo_id, materiales, mano_obra, herramienta, equipo,
                      auxiliares, subcontratos, costo_directo,
                      indirectos_pct, financiamiento_pct, utilidad_pct, precio_venta)
@@ -386,7 +386,7 @@ def importar(carpeta: str, db_path: str, nombre: str | None = None) -> dict:
             n_tot += 1
 
     con.commit()
-    msg = f"  → apu_totales: {n_tot}"
+    msg = f"  → apu_resumen: {n_tot}"
     if n_skip_totales:
         msg += f"  |  {n_skip_totales} saltados (concepto no encontrado)"
     print(msg)
@@ -414,7 +414,7 @@ def importar(carpeta: str, db_path: str, nombre: str | None = None) -> dict:
 
     cur.execute("""
         UPDATE proyectos SET total_obra = (
-            SELECT COALESCE(SUM(subtotal), 0) FROM nodos
+            SELECT COALESCE(SUM(subtotal), 0) FROM estructura_presupuesto
             WHERE proyecto_id = ? AND padre_id IS NULL AND activo = 1
         ) WHERE id = ?
     """, (proyecto_id, proyecto_id))
@@ -422,9 +422,9 @@ def importar(carpeta: str, db_path: str, nombre: str | None = None) -> dict:
 
     # ── Verificación post-import ────────────────────────────────────────
     cur.execute("""
-        SELECT COUNT(*) FROM nodos
+        SELECT COUNT(*) FROM estructura_presupuesto
         WHERE proyecto_id = ? AND tipo = 'concepto' AND activo = 1
-          AND id NOT IN (SELECT DISTINCT nodo_id FROM apu_detalle)
+          AND id NOT IN (SELECT DISTINCT nodo_id FROM apu_componentes)
     """, (proyecto_id,))
     sin_apu = cur.fetchone()[0]
     if sin_apu:
@@ -434,10 +434,10 @@ def importar(carpeta: str, db_path: str, nombre: str | None = None) -> dict:
         "proyecto_id": proyecto_id,
         "nodos":       len(nodo_id_sqlite),
         "insumos":     len(insumo_id_por_clave),
-        "apu_detalle": n_comp,
-        "apu_totales": n_tot,
+        "apu_componentes": n_comp,
+        "apu_resumen": n_tot,
         "auxiliares":  n_aux,
-        "pie_precios": len(regs_i),
+        "sobrecostos": len(regs_i),
     }
     print("\n--- Resumen ---")
     for k, v in stats.items():
@@ -501,10 +501,10 @@ def _arbol_numerico(con, cur, proyecto_id, regs_1, regs_a, regs_p) -> dict:
             unidad = cantidad = pu = None
 
         cur.execute("""
-            INSERT INTO nodos
+            INSERT INTO estructura_presupuesto
                 (proyecto_id, padre_id, wbs, nivel, orden, tipo,
                  clave, descripcion, descripcion_corta, unidad,
-                 cantidad, precio_unitario, subtotal, estado_id, creado_por)
+                 cantidad, precio_unitario, subtotal, estado, creado_por)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, 1)
         """, (proyecto_id, padre_id, wbs, nivel,
               int(wbs[-2:]) if len(wbs) >= 2 else 0,
@@ -545,9 +545,9 @@ def _arbol_clasico(con, cur, proyecto_id, regs_f, regs_p) -> dict:
     for orden_cap, cap in enumerate(sorted(caps), start=1):
         wbs_cap = str(orden_cap)
         cur.execute("""
-            INSERT INTO nodos
+            INSERT INTO estructura_presupuesto
                 (proyecto_id, padre_id, wbs, nivel, orden, tipo,
-                 clave, descripcion, descripcion_corta, subtotal, estado_id, creado_por)
+                 clave, descripcion, descripcion_corta, subtotal, estado, creado_por)
             VALUES (?, NULL, ?, 1, ?, 'capitulo', ?, ?, ?, 0, 1, 1)
         """, (proyecto_id, wbs_cap, orden_cap, str(cap),
               f"Capítulo {cap}" if cap else "Generales",
@@ -559,11 +559,11 @@ def _arbol_clasico(con, cur, proyecto_id, regs_f, regs_p) -> dict:
             clave = _s(r.get("NOMBRE"))
             rec   = egp.get(clave, {})
             cur.execute("""
-                INSERT INTO nodos
+                INSERT INTO estructura_presupuesto
                     (proyecto_id, padre_id, wbs, nivel, orden, tipo,
                      clave, descripcion, descripcion_corta,
                      unidad, cantidad, precio_unitario,
-                     subtotal, estado_id, creado_por)
+                     subtotal, estado, creado_por)
                 VALUES (?, ?, ?, 2, ?, 'concepto', ?, ?, ?, ?, ?, ?, 0, 1, 1)
             """, (proyecto_id, cap_id, f"{wbs_cap}{i:02d}", i, clave,
                   _s(rec.get("DESCRIPCIO") or rec.get("DESCCORTA")),
@@ -584,13 +584,13 @@ def _arbol_clasico(con, cur, proyecto_id, regs_f, regs_p) -> dict:
 def _recalcular_subtotales(con, proyecto_id: int):
     cur = con.cursor()
     cur.execute("""
-        SELECT MAX(nivel) FROM nodos WHERE proyecto_id = ? AND activo = 1
+        SELECT MAX(nivel) FROM estructura_presupuesto WHERE proyecto_id = ? AND activo = 1
     """, (proyecto_id,))
     max_nivel = cur.fetchone()[0] or 0
 
     for nivel in range(max_nivel, -1, -1):
         cur.execute("""
-            UPDATE nodos SET
+            UPDATE estructura_presupuesto SET
                 subtotal = (
                     SELECT COALESCE(SUM(
                         CASE WHEN tipo = 'concepto'
@@ -598,8 +598,8 @@ def _recalcular_subtotales(con, proyecto_id: int):
                              ELSE COALESCE(subtotal, 0)
                         END
                     ), 0)
-                    FROM nodos h
-                    WHERE h.padre_id = nodos.id AND h.activo = 1
+                    FROM estructura_presupuesto h
+                    WHERE h.padre_id = estructura_presupuesto.id AND h.activo = 1
                 ),
                 modificado_en = datetime('now')
             WHERE proyecto_id = ? AND nivel = ?

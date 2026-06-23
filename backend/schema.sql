@@ -1,141 +1,84 @@
 -- =============================================================================
--- 001_inicial.sql
--- Esquema inicial de Open APU Studio
+-- schema.sql — Open APU Studio v2
 -- =============================================================================
 -- CONVENCIONES:
---   - Llaves primarias: siempre INTEGER PRIMARY KEY AUTOINCREMENT
---   - Fechas: TEXT en formato ISO 8601 'YYYY-MM-DD HH:MM:SS'
+--   - Llaves primarias: INTEGER PRIMARY KEY AUTOINCREMENT
+--   - Fechas: TEXT en ISO 8601 'YYYY-MM-DD HH:MM:SS'
 --   - Booleanos: INTEGER 0/1
 --   - Soft-delete: columna 'activo INTEGER NOT NULL DEFAULT 1'
---   - Toda tabla editable tiene: creado_en, modificado_en, creado_por, modificado_por
---   - Las tablas de catálogo/semilla no llevan auditoría (son datos del sistema)
+--   - Auditoría: creado_por, creado_en, modificado_por, modificado_en
+--   - Catálogos de semilla: sin auditoría
 -- =============================================================================
 
 PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
 
--- =============================================================================
--- BLOQUE 1: IDENTIDAD Y ROLES
--- Infraestructura mínima para escalar a trabajo colaborativo.
--- La lógica de login/sesión vive en la app, no en el esquema.
--- =============================================================================
 
-CREATE TABLE IF NOT EXISTS roles (
-    id      INTEGER PRIMARY KEY AUTOINCREMENT,
-    clave   TEXT    NOT NULL UNIQUE,  -- 'admin','editor','revisor','lector'
-    nombre  TEXT    NOT NULL,
-    nivel   INTEGER NOT NULL DEFAULT 0  -- mayor nivel = más permisos
-);
-
--- Semilla de roles
-INSERT INTO roles (clave, nombre, nivel) VALUES
-    ('admin',    'Administrador', 3),
-    ('editor',   'Editor',        2),
-    ('revisor',  'Revisor',       1),
-    ('lector',   'Lector',        0);
+-- =============================================================================
+-- BLOQUE 1: USUARIOS
+-- Sin tabla de roles — app monousuario en esta versión.
+-- La infraestructura de colaboración (historial, notas) ya referencia usuario_id
+-- para cuando se active el trabajo en red.
+-- =============================================================================
 
 CREATE TABLE IF NOT EXISTS usuarios (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     nombre          TEXT    NOT NULL,
-    email           TEXT    UNIQUE,          -- NULL válido para uso local/offline
-    rol_id          INTEGER NOT NULL REFERENCES roles(id),
+    email           TEXT    UNIQUE,
     activo          INTEGER NOT NULL DEFAULT 1,
     creado_en       TEXT    NOT NULL DEFAULT (datetime('now')),
     ultimo_acceso   TEXT
 );
 
--- Usuario local por defecto (para uso sin login)
-INSERT INTO usuarios (nombre, email, rol_id) VALUES
-    ('Usuario local', NULL, (SELECT id FROM roles WHERE clave = 'admin'));
+-- Usuario local por defecto
+INSERT OR IGNORE INTO usuarios (nombre, email) VALUES ('Usuario local', NULL);
 
 
 -- =============================================================================
--- BLOQUE 2: CATÁLOGOS DEL SISTEMA (semilla fija, no editable por el usuario)
+-- BLOQUE 2: CATÁLOGOS DEL SISTEMA (semilla fija)
 -- =============================================================================
 
--- Tipos de insumo según OPUS (sistema de bits en PREFIJO)
+-- Tipos de insumo según OPUS (sistema de bits en campo PREFIJO)
+-- ids 1-32 coinciden con el sistema de bits de OPUS
+-- ids 64 y 128 son extensiones para fletes y trabajos (versiones futuras de OPUS)
 CREATE TABLE IF NOT EXISTS tipos_insumo (
-    id      INTEGER PRIMARY KEY,   -- coincide con el bit de OPUS: 1,2,4,8,16,32
+    id      INTEGER PRIMARY KEY,
     clave   TEXT    NOT NULL UNIQUE,
     nombre  TEXT    NOT NULL,
     orden   INTEGER NOT NULL DEFAULT 0
 );
 
-INSERT INTO tipos_insumo (id, clave, nombre, orden) VALUES
-    (1,  'material',    'Material',           1),
-    (2,  'mano_obra',   'Mano de obra',       2),
-    (4,  'herramienta', 'Herramienta',        3),
-    (8,  'equipo',      'Equipo',             4),
-    (16, 'auxiliar',    'Auxiliar',           5),
-    (32, 'concepto',    'Concepto compuesto', 6),
-    (64, 'flete',       'Flete',              7),
-    (128,'trabajo',     'Trabajo',            8);
-
--- Subtipo de herramienta (campo "Tipo de factor" en OPUS)
-CREATE TABLE IF NOT EXISTS tipos_herramienta (
-    id     INTEGER PRIMARY KEY AUTOINCREMENT,
-    clave  TEXT NOT NULL UNIQUE,
-    nombre TEXT NOT NULL
-);
-
-INSERT INTO tipos_herramienta (clave, nombre) VALUES
-    ('estandar',          'Estándar'),
-    ('herramienta_mano',  'Herramienta de mano'),
-    ('equipo_seguridad',  'Equipo de seguridad');
-
--- Subtipo de equipo (H=costo horario, R=renta horaria, C=compuesto)
-CREATE TABLE IF NOT EXISTS tipos_equipo (
-    id     INTEGER PRIMARY KEY AUTOINCREMENT,
-    clave  TEXT NOT NULL UNIQUE,
-    nombre TEXT NOT NULL
-);
-
-INSERT INTO tipos_equipo (clave, nombre) VALUES
-    ('costo_horario', 'Costo horario'),
-    ('renta_horaria', 'Renta horaria'),
-    ('compuesto',     'Compuesto');
-
--- Tipo de material (consumo vs instalación permanente)
-CREATE TABLE IF NOT EXISTS tipos_material (
-    id     INTEGER PRIMARY KEY AUTOINCREMENT,
-    clave  TEXT NOT NULL UNIQUE,
-    nombre TEXT NOT NULL
-);
-
-INSERT INTO tipos_material (clave, nombre) VALUES
-    ('consumo',      'De consumo'),
-    ('instalacion',  'De instalación permanente');
-
--- Estados de confiabilidad (semáforo) para nodos del árbol
-CREATE TABLE IF NOT EXISTS estados_nodo (
-    id      INTEGER PRIMARY KEY AUTOINCREMENT,
-    clave   TEXT    NOT NULL UNIQUE,
-    nombre  TEXT    NOT NULL,
-    color   TEXT    NOT NULL,   -- hex: '#RRGGBB'
-    orden   INTEGER NOT NULL DEFAULT 0
-);
-
-INSERT INTO estados_nodo (clave, nombre, color, orden) VALUES
-    ('sin_revisar',  'Sin revisar',  '#808080', 0),
-    ('en_revision',  'En revisión',  '#F5A623', 1),
-    ('verificado',   'Verificado',   '#4CAF7D', 2),
-    ('cuestionado',  'Cuestionado',  '#E05252', 3);
+INSERT OR IGNORE INTO tipos_insumo (id, clave, nombre, orden) VALUES
+    (1,   'material',    'Material',           1),
+    (2,   'mano_obra',   'Mano de obra',       2),
+    (4,   'herramienta', 'Herramienta',        3),
+    (8,   'equipo',      'Equipo',             4),
+    (16,  'auxiliar',    'Auxiliar',           5),
+    (32,  'concepto',    'Concepto compuesto', 6),
+    (64,  'flete',       'Flete',              7),
+    (128, 'trabajo',     'Trabajo',            8);
 
 
 -- =============================================================================
 -- BLOQUE 3: CATÁLOGOS DEL PROYECTO (editables por el usuario)
 -- =============================================================================
 
--- Árbol de familias/subfamilias de insumos
--- Es un árbol recursivo: subfamilia tiene padre_id != NULL
+-- Familias de insumos — nivel superior de clasificación
 CREATE TABLE IF NOT EXISTS familias (
-    id        INTEGER PRIMARY KEY AUTOINCREMENT,
-    padre_id  INTEGER REFERENCES familias(id) ON DELETE CASCADE,
-    nombre    TEXT    NOT NULL,
-    activo    INTEGER NOT NULL DEFAULT 1
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    nombre  TEXT    NOT NULL,
+    activo  INTEGER NOT NULL DEFAULT 1
 );
 
-CREATE INDEX IF NOT EXISTS idx_familias_padre ON familias(padre_id);
+-- Subfamilias — segundo nivel, siempre ligadas a una familia
+CREATE TABLE IF NOT EXISTS subfamilias (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    familia_id  INTEGER NOT NULL REFERENCES familias(id) ON DELETE CASCADE,
+    nombre      TEXT    NOT NULL,
+    activo      INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE INDEX IF NOT EXISTS idx_subfamilias_familia ON subfamilias(familia_id);
 
 -- Proveedores de insumos
 CREATE TABLE IF NOT EXISTS proveedores (
@@ -155,136 +98,141 @@ CREATE TABLE IF NOT EXISTS proveedores (
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS proyectos (
-    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    nombre              TEXT    NOT NULL,
-    descripcion         TEXT,
-    clave_opus          TEXT,               -- prefijo original de OPUS, ej 'D60JALISCOT'
+    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+    nombre                  TEXT    NOT NULL,
+    descripcion             TEXT,
+    clave_opus              TEXT,       -- prefijo original de OPUS, ej 'D60JALISCOT'
 
     -- Concursante
-    concursante_nombre  TEXT,
-    concursante_domicilio TEXT,
-    concursante_ciudad  TEXT,
-    concursante_cp      TEXT,
-    concursante_pais    TEXT    DEFAULT 'México',
-    concursante_email   TEXT,
-    concursante_tel     TEXT,
-    rep_legal_nombre    TEXT,
-    rep_legal_cargo     TEXT,
+    concursante_nombre      TEXT,
+    concursante_domicilio   TEXT,
+    concursante_ciudad      TEXT,
+    concursante_cp          TEXT,
+    concursante_pais        TEXT    DEFAULT 'México',
+    concursante_email       TEXT,
+    concursante_tel         TEXT,
+    rep_legal_nombre        TEXT,
+    rep_legal_cargo         TEXT,
 
     -- Cliente
-    cliente_nombre      TEXT,
-    cliente_domicilio   TEXT,
-    cliente_ciudad      TEXT,
-    cliente_cp          TEXT,
-    cliente_pais        TEXT    DEFAULT 'México',
-    cliente_email       TEXT,
-    cliente_tel         TEXT,
+    cliente_nombre          TEXT,
+    cliente_domicilio       TEXT,
+    cliente_ciudad          TEXT,
+    cliente_cp              TEXT,
+    cliente_pais            TEXT    DEFAULT 'México',
+    cliente_email           TEXT,
+    cliente_tel             TEXT,
 
     -- Licitación
-    licitacion_desc     TEXT,
-    licitacion_fecha    TEXT,
-    licitacion_numero   TEXT,
-    licitacion_tipo     TEXT,   -- 'publica','directa','restringida','otra'
+    licitacion_desc         TEXT,
+    licitacion_fecha        TEXT,
+    licitacion_numero       TEXT,
+    licitacion_tipo         TEXT,   -- 'publica','directa','restringida','otra'
 
-    -- Divisiones organizacionales (gobierno/grandes empresas)
-    division_1          TEXT,
-    division_2          TEXT,
-    division_3          TEXT,
-    division_4          TEXT,
-    division_5          TEXT,
-    division_6          TEXT,
-    division_7          TEXT,
+    -- Divisiones organizacionales (gobierno / grandes empresas)
+    division_1              TEXT,
+    division_2              TEXT,
+    division_3              TEXT,
+    division_4              TEXT,
+    division_5              TEXT,
+    division_6              TEXT,
+    division_7              TEXT,
 
     -- Financiero
-    moneda_nombre       TEXT    NOT NULL DEFAULT 'Peso mexicano',
-    moneda_simbolo      TEXT    NOT NULL DEFAULT '$',
-    moneda_abrev        TEXT    NOT NULL DEFAULT 'MXN',
-    iva_nombre          TEXT    NOT NULL DEFAULT 'IVA',
-    iva_porcentaje      REAL    NOT NULL DEFAULT 16.0,
-    tiie_nombre         TEXT    NOT NULL DEFAULT 'TIIE',
-    tiie_tasa           REAL    NOT NULL DEFAULT 0.0,
-    puntos_bancarios_pagar  REAL NOT NULL DEFAULT 0.0,
-    puntos_bancarios_favor  REAL NOT NULL DEFAULT 0.0,
+    moneda_nombre           TEXT    NOT NULL DEFAULT 'Peso mexicano',
+    moneda_simbolo          TEXT    NOT NULL DEFAULT '$',
+    moneda_abrev            TEXT    NOT NULL DEFAULT 'MXN',
+    iva_nombre              TEXT    NOT NULL DEFAULT 'IVA',
+    iva_porcentaje          REAL    NOT NULL DEFAULT 16.0,
+    tiie_nombre             TEXT    NOT NULL DEFAULT 'TIIE',
+    tiie_tasa               REAL    NOT NULL DEFAULT 0.0,
+    puntos_bancarios_pagar  REAL    NOT NULL DEFAULT 0.0,
+    puntos_bancarios_favor  REAL    NOT NULL DEFAULT 0.0,
 
-    -- Totales (actualizados por Python al recalcular)
-    total_obra          REAL    NOT NULL DEFAULT 0.0,
+    -- Total (actualizado por Python al recalcular)
+    total_obra              REAL    NOT NULL DEFAULT 0.0,
 
     -- Auditoría
-    activo              INTEGER NOT NULL DEFAULT 1,
-    creado_por          INTEGER NOT NULL DEFAULT 1 REFERENCES usuarios(id),
-    creado_en           TEXT    NOT NULL DEFAULT (datetime('now')),
-    modificado_por      INTEGER REFERENCES usuarios(id),
-    modificado_en       TEXT    NOT NULL DEFAULT (datetime('now')),
-    importado_en        TEXT    -- fecha de última importación desde OPUS
+    activo                  INTEGER NOT NULL DEFAULT 1,
+    creado_por              INTEGER NOT NULL DEFAULT 1 REFERENCES usuarios(id),
+    creado_en               TEXT    NOT NULL DEFAULT (datetime('now')),
+    modificado_por          INTEGER REFERENCES usuarios(id),
+    modificado_en           TEXT    NOT NULL DEFAULT (datetime('now')),
+    importado_en            TEXT
 );
 
--- Configuración técnica del proyecto (separada para no mezclar con metadatos)
-CREATE TABLE IF NOT EXISTS proyecto_config (
-    proyecto_id         INTEGER PRIMARY KEY REFERENCES proyectos(id) ON DELETE CASCADE,
-    horas_dia           REAL    NOT NULL DEFAULT 8.0,
-    tasa_seguro         REAL    NOT NULL DEFAULT 0.0,
-    tasa_interes        REAL    NOT NULL DEFAULT 0.0,
-    decimales_costo     INTEGER NOT NULL DEFAULT 2,
-    decimales_cantidad  INTEGER NOT NULL DEFAULT 3,
-    decimales_factor    INTEGER NOT NULL DEFAULT 4,
-    decimales_porcentaje INTEGER NOT NULL DEFAULT 2,
-    -- Opciones de cálculo
-    capturar_rendimientos   INTEGER NOT NULL DEFAULT 0,  -- 0=cantidad directa, 1=rendimiento
-    unidad_cantidad_agrup   INTEGER NOT NULL DEFAULT 0   -- habilitar cantidad en agrupadores
+-- Configuración técnica del proyecto
+CREATE TABLE IF NOT EXISTS configuracion_proyecto (
+    proyecto_id             INTEGER PRIMARY KEY REFERENCES proyectos(id) ON DELETE CASCADE,
+    horas_dia               REAL    NOT NULL DEFAULT 8.0,
+    tasa_seguro             REAL    NOT NULL DEFAULT 0.0,
+    tasa_interes            REAL    NOT NULL DEFAULT 0.0,
+    decimales_costo         INTEGER NOT NULL DEFAULT 2,
+    decimales_cantidad      INTEGER NOT NULL DEFAULT 3,
+    decimales_factor        INTEGER NOT NULL DEFAULT 4,
+    decimales_porcentaje    INTEGER NOT NULL DEFAULT 2,
+    capturar_rendimientos   INTEGER NOT NULL DEFAULT 0,
+    unidad_cantidad_agrup   INTEGER NOT NULL DEFAULT 0
 );
 
--- Pie de precios unitarios (sobrecostos/indirectos) — uno por proyecto
-CREATE TABLE IF NOT EXISTS pie_precios (
+-- Sobrecostos / indirectos — renglones del pie de precios unitarios
+CREATE TABLE IF NOT EXISTS sobrecostos (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     proyecto_id     INTEGER NOT NULL REFERENCES proyectos(id) ON DELETE CASCADE,
     orden           INTEGER NOT NULL DEFAULT 0,
-    variable        TEXT    NOT NULL,       -- nombre de la variable, ej 'CI'
-    descripcion     TEXT    NOT NULL,       -- ej 'Costos indirectos'
-    formula         TEXT,                  -- ej 'CD'
+    variable        TEXT    NOT NULL,   -- ej 'CI'
+    descripcion     TEXT    NOT NULL,   -- ej 'Costos indirectos'
+    formula         TEXT,               -- ej 'CD'
     porcentaje_mn   REAL    NOT NULL DEFAULT 0.0,
     porcentaje_me   REAL    NOT NULL DEFAULT 0.0,
     suma_en_total   INTEGER NOT NULL DEFAULT 1,
-    es_egreso_financ   INTEGER NOT NULL DEFAULT 0,
-    es_ingreso_financ  INTEGER NOT NULL DEFAULT 0,
+    es_egreso_financ    INTEGER NOT NULL DEFAULT 0,
+    es_ingreso_financ   INTEGER NOT NULL DEFAULT 0,
     se_imprime      INTEGER NOT NULL DEFAULT 1,
     tipo            TEXT    NOT NULL DEFAULT 'formula_porcentaje'
-                    CHECK(tipo IN ('formula_porcentaje','solo_formula'))
+                    CHECK(tipo IN ('formula_porcentaje', 'solo_formula'))
 );
 
-CREATE INDEX IF NOT EXISTS idx_pie_precios_proyecto ON pie_precios(proyecto_id);
+CREATE INDEX IF NOT EXISTS idx_sobrecostos_proyecto ON sobrecostos(proyecto_id);
 
 
 -- =============================================================================
--- BLOQUE 5: ÁRBOL DEL PRESUPUESTO
--- Fuente de verdad: PRE_WBS (ver GUIA_ONBOARDING.md sección 6.3)
--- El importador filtra _deleted=0 antes de insertar.
--- Los subtotales se recalculan en Python (bottom-up) al editar.
+-- BLOQUE 5: ESTRUCTURA DEL PRESUPUESTO
+-- Fuente de verdad jerárquica: campo wbs (PRE_WBS en OPUS).
+-- El importador filtra _deleted=True antes de insertar.
+-- Los subtotales se recalculan en Python bottom-up al editar.
+--
+-- Campo estado (semáforo de confiabilidad):
+--   0 = Sin revisar  (#808080 gris)
+--   1 = En revisión  (#F5A623 ámbar)
+--   2 = Verificado   (#4CAF7D verde)
+--   3 = Cuestionado  (#E05252 rojo)
+-- El frontend mapea el entero al color — sin JOIN, sin tabla auxiliar.
 -- =============================================================================
 
-CREATE TABLE IF NOT EXISTS nodos (
+CREATE TABLE IF NOT EXISTS estructura_presupuesto (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     proyecto_id     INTEGER NOT NULL REFERENCES proyectos(id) ON DELETE CASCADE,
-    padre_id        INTEGER REFERENCES nodos(id) ON DELETE CASCADE,  -- NULL = raíz
+    padre_id        INTEGER REFERENCES estructura_presupuesto(id) ON DELETE CASCADE,
 
     -- Posición en el árbol
-    wbs             TEXT    NOT NULL,   -- '1', '11', '111', '11101' — fuente de verdad jerárquica
-    nivel           INTEGER NOT NULL,   -- 0=raíz, 1=capítulo, 2=subcapítulo... 5=concepto hoja
-    orden           INTEGER NOT NULL DEFAULT 0,  -- posición entre hermanos
+    wbs             TEXT    NOT NULL,
+    nivel           INTEGER NOT NULL,
+    orden           INTEGER NOT NULL DEFAULT 0,
 
     -- Tipo de nodo
     tipo            TEXT    NOT NULL DEFAULT 'capitulo'
-                    CHECK(tipo IN ('capitulo','concepto','auxiliar')),
+                    CHECK(tipo IN ('capitulo', 'concepto')),
 
     -- Identificación
-    clave           TEXT,               -- código OPUS ej '0201002', solo en conceptos
+    clave           TEXT,
     descripcion     TEXT    NOT NULL DEFAULT '',
-    descripcion_corta TEXT,             -- máx ~40 chars, para vistas resumidas
+    descripcion_corta TEXT,
 
     -- Medición (solo conceptos hoja)
     unidad          TEXT,
     cantidad        REAL,
     precio_unitario REAL,
-    -- importe = cantidad × precio_unitario, columna computada
     importe         REAL GENERATED ALWAYS AS (
                         CASE
                             WHEN cantidad IS NOT NULL AND precio_unitario IS NOT NULL
@@ -293,13 +241,13 @@ CREATE TABLE IF NOT EXISTS nodos (
                         END
                     ) STORED,
 
-    -- Acumulado de hijos (actualizado por Python al editar)
+    -- Acumulado de hijos (actualizado por Python)
     subtotal        REAL    NOT NULL DEFAULT 0.0,
 
-    -- Confiabilidad (semáforo)
-    estado_id       INTEGER NOT NULL DEFAULT 1 REFERENCES estados_nodo(id),
+    -- Semáforo de confiabilidad: 0=sin revisar, 1=en revisión, 2=verificado, 3=cuestionado
+    estado          INTEGER NOT NULL DEFAULT 0,
 
-    -- Notas rápidas inline (para notas largas o colaborativas usar tabla 'notas')
+    -- Nota rápida inline
     notas_rapidas   TEXT,
 
     -- Soft-delete y auditoría
@@ -310,17 +258,20 @@ CREATE TABLE IF NOT EXISTS nodos (
     modificado_en   TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX IF NOT EXISTS idx_nodos_proyecto ON nodos(proyecto_id);
-CREATE INDEX IF NOT EXISTS idx_nodos_padre    ON nodos(padre_id);
-CREATE INDEX IF NOT EXISTS idx_nodos_wbs      ON nodos(proyecto_id, wbs);
-CREATE INDEX IF NOT EXISTS idx_nodos_tipo     ON nodos(tipo);
-CREATE INDEX IF NOT EXISTS idx_nodos_estado   ON nodos(estado_id);
-CREATE INDEX IF NOT EXISTS idx_nodos_activo   ON nodos(activo);
+CREATE INDEX IF NOT EXISTS idx_ep_proyecto ON estructura_presupuesto(proyecto_id);
+CREATE INDEX IF NOT EXISTS idx_ep_padre    ON estructura_presupuesto(padre_id);
+CREATE INDEX IF NOT EXISTS idx_ep_wbs      ON estructura_presupuesto(proyecto_id, wbs);
+CREATE INDEX IF NOT EXISTS idx_ep_tipo     ON estructura_presupuesto(tipo);
+CREATE INDEX IF NOT EXISTS idx_ep_estado   ON estructura_presupuesto(estado);
+CREATE INDEX IF NOT EXISTS idx_ep_activo   ON estructura_presupuesto(activo);
 
 
 -- =============================================================================
 -- BLOQUE 6: INSUMOS
--- Catálogo maestro del proyecto. Un insumo puede aparecer en múltiples APUs.
+-- Catálogo maestro del proyecto.
+-- Un insumo puede aparecer en múltiples APUs.
+-- tipo_trabajo solo aplica cuando tipo_id = 128 (trabajo), NULL en el resto.
+-- subfamilia_id siempre debe pertenecer a la familia_id indicada.
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS insumos (
@@ -329,7 +280,7 @@ CREATE TABLE IF NOT EXISTS insumos (
 
     -- Identificación
     clave               TEXT    NOT NULL,
-    clave_usuario       TEXT,               -- clave alternativa para estandarización
+    clave_usuario       TEXT,
     tipo_id             INTEGER NOT NULL REFERENCES tipos_insumo(id),
     es_compuesto        INTEGER NOT NULL DEFAULT 0,
 
@@ -338,37 +289,37 @@ CREATE TABLE IF NOT EXISTS insumos (
     descripcion_corta   TEXT,
     unidad              TEXT,
     familia_id          INTEGER REFERENCES familias(id),
+    subfamilia_id       INTEGER REFERENCES subfamilias(id),
     proveedor_id        INTEGER REFERENCES proveedores(id),
 
-    -- Costos (tres monedas según OPUS)
-    costo_mn            REAL    NOT NULL DEFAULT 0.0,  -- moneda nacional
-    costo_me            REAL    NOT NULL DEFAULT 0.0,  -- moneda extranjera
-    costo_base          REAL    NOT NULL DEFAULT 0.0,  -- suma convertida a moneda obra
-    costo_final         REAL    NOT NULL DEFAULT 0.0,  -- base + fórmulas adicionales
+    -- Costos
+    costo_mn            REAL    NOT NULL DEFAULT 0.0,
+    costo_me            REAL    NOT NULL DEFAULT 0.0,
+    costo_base          REAL    NOT NULL DEFAULT 0.0,
+    costo_final         REAL    NOT NULL DEFAULT 0.0,
 
-    -- Mano de obra específico
+    -- Mano de obra
     salario_nominal     REAL,
-    salario_real        REAL,               -- nominal × FASAR
+    salario_real        REAL,
     usar_hoja_fasar     INTEGER NOT NULL DEFAULT 0,
 
-    -- Herramienta específico
-    tipo_herramienta_id INTEGER REFERENCES tipos_herramienta(id),
-
-    -- Equipo específico
-    tipo_equipo_id      INTEGER REFERENCES tipos_equipo(id),
-
-    -- Material específico
-    tipo_material_id    INTEGER REFERENCES tipos_material(id),
+    -- Material
     marca               TEXT,
     pais_origen         TEXT,
+
+    -- Trabajo (tipo_id = 128)
+    -- 'subcontrato' incluye todos los recursos
+    -- 'acarreo' contempla traslado de materiales
+    -- 'destajo' incluye solo la ejecución
+    tipo_trabajo        TEXT    CHECK(tipo_trabajo IN ('subcontrato', 'acarreo', 'destajo')),
 
     -- Datos adicionales (todos los tipos)
     fecha_precio        TEXT,
     indice_inegi        TEXT,
-    peso_kg             REAL,               -- kg por unidad, para explosión de insumos
+    peso_kg             REAL,
     comentarios         TEXT,
 
-    -- Fórmulas de costo (invalidan la fórmula general del proyecto)
+    -- Fórmulas de costo
     formula_costo_mn    TEXT,
     formula_costo_me    TEXT,
 
@@ -380,7 +331,7 @@ CREATE TABLE IF NOT EXISTS insumos (
     indice_5            REAL,
     indice_6            REAL,
 
-    -- Soft-delete y auditoría
+    -- Auditoría
     activo              INTEGER NOT NULL DEFAULT 1,
     es_basico           INTEGER NOT NULL DEFAULT 0,
     creado_por          INTEGER NOT NULL DEFAULT 1 REFERENCES usuarios(id),
@@ -391,72 +342,79 @@ CREATE TABLE IF NOT EXISTS insumos (
     UNIQUE(proyecto_id, clave)
 );
 
-CREATE INDEX IF NOT EXISTS idx_insumos_proyecto  ON insumos(proyecto_id);
-CREATE INDEX IF NOT EXISTS idx_insumos_tipo      ON insumos(tipo_id);
-CREATE INDEX IF NOT EXISTS idx_insumos_clave     ON insumos(proyecto_id, clave);
-CREATE INDEX IF NOT EXISTS idx_insumos_familia   ON insumos(familia_id);
-CREATE INDEX IF NOT EXISTS idx_insumos_activo    ON insumos(activo);
+CREATE INDEX IF NOT EXISTS idx_insumos_proyecto   ON insumos(proyecto_id);
+CREATE INDEX IF NOT EXISTS idx_insumos_tipo       ON insumos(tipo_id);
+CREATE INDEX IF NOT EXISTS idx_insumos_clave      ON insumos(proyecto_id, clave);
+CREATE INDEX IF NOT EXISTS idx_insumos_familia    ON insumos(familia_id);
+CREATE INDEX IF NOT EXISTS idx_insumos_subfamilia ON insumos(subfamilia_id);
+CREATE INDEX IF NOT EXISTS idx_insumos_activo     ON insumos(activo);
 
 
 -- =============================================================================
 -- BLOQUE 7: APU (Análisis de Precio Unitario)
+-- apu_auxiliares: insumos compuestos con APU propio que no son nodos del árbol
+-- apu_componentes: desglose de insumos por concepto (ligado por id entero)
+-- apu_resumen: subtotales por tipo (actualizado por Python)
 -- =============================================================================
 
--- Nodos sintéticos para insumos compuestos que no están en el árbol
--- (materiales, auxiliares, mano de obra, etc. con su propia composición)
-CREATE TABLE IF NOT EXISTS apu_nodos (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    proyecto_id     INTEGER NOT NULL REFERENCES proyectos(id),
-    clave           TEXT    NOT NULL,
-    descripcion     TEXT    NOT NULL DEFAULT '',
-    descripcion_corta TEXT,
-    unidad          TEXT,
-    creado_por      INTEGER NOT NULL DEFAULT 1 REFERENCES usuarios(id),
-    creado_en       TEXT    NOT NULL DEFAULT (datetime('now')),
+-- Auxiliares con APU propio fuera del árbol del presupuesto
+CREATE TABLE IF NOT EXISTS apu_auxiliares (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    proyecto_id         INTEGER NOT NULL REFERENCES proyectos(id),
+    clave               TEXT    NOT NULL,
+    descripcion         TEXT    NOT NULL DEFAULT '',
+    descripcion_corta   TEXT,
+    unidad              TEXT,
+    creado_por          INTEGER NOT NULL DEFAULT 1 REFERENCES usuarios(id),
+    creado_en           TEXT    NOT NULL DEFAULT (datetime('now')),
     UNIQUE(proyecto_id, clave)
 );
 
-CREATE INDEX IF NOT EXISTS idx_apu_nodos_clave ON apu_nodos(proyecto_id, clave);
+CREATE INDEX IF NOT EXISTS idx_apu_aux_clave ON apu_auxiliares(proyecto_id, clave);
 
--- Desglose de insumos por concepto
-CREATE TABLE IF NOT EXISTS apu_detalle (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    nodo_id         INTEGER REFERENCES nodos(id) ON DELETE CASCADE,
-    apu_nodo_id     INTEGER REFERENCES apu_nodos(id) ON DELETE CASCADE,
-    insumo_id       INTEGER NOT NULL REFERENCES insumos(id),
+-- Componentes del APU — relaciona por id entero, no por clave texto
+-- nodo_id: liga a estructura_presupuesto
+-- apu_auxiliar_id: liga a apu_auxiliares
+-- Solo uno de los dos puede tener valor por fila
+CREATE TABLE IF NOT EXISTS apu_componentes (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    nodo_id             INTEGER REFERENCES estructura_presupuesto(id) ON DELETE CASCADE,
+    apu_auxiliar_id     INTEGER REFERENCES apu_auxiliares(id) ON DELETE CASCADE,
+    insumo_id           INTEGER NOT NULL REFERENCES insumos(id),
 
-    rendimiento     REAL    NOT NULL DEFAULT 0.0,
-    cantidad        REAL    NOT NULL DEFAULT 0.0,
-    precio          REAL    NOT NULL DEFAULT 0.0,   -- snapshot del precio al momento del APU
-    -- importe = cantidad × precio, columna computada
-    importe         REAL GENERATED ALWAYS AS (ROUND(cantidad * precio, 6)) STORED,
+    rendimiento         REAL    NOT NULL DEFAULT 0.0,
+    cantidad            REAL    NOT NULL DEFAULT 0.0,
+    precio              REAL    NOT NULL DEFAULT 0.0,
+    importe             REAL GENERATED ALWAYS AS (ROUND(cantidad * precio, 6)) STORED,
 
-    formula         TEXT,   -- fórmula de cálculo de cantidad (de OPUS campo EXPRESION)
-    orden           INTEGER NOT NULL DEFAULT 0,
+    formula             TEXT,
+    orden               INTEGER NOT NULL DEFAULT 0,
 
     -- Auditoría
-    creado_por      INTEGER NOT NULL DEFAULT 1 REFERENCES usuarios(id),
-    creado_en       TEXT    NOT NULL DEFAULT (datetime('now')),
-    modificado_por  INTEGER REFERENCES usuarios(id),
-    modificado_en   TEXT    NOT NULL DEFAULT (datetime('now'))
+    creado_por          INTEGER NOT NULL DEFAULT 1 REFERENCES usuarios(id),
+    creado_en           TEXT    NOT NULL DEFAULT (datetime('now')),
+    modificado_por      INTEGER REFERENCES usuarios(id),
+    modificado_en       TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX IF NOT EXISTS idx_apu_detalle_nodo      ON apu_detalle(nodo_id);
-CREATE INDEX IF NOT EXISTS idx_apu_detalle_apu_nodo  ON apu_detalle(apu_nodo_id);
-CREATE INDEX IF NOT EXISTS idx_apu_detalle_insumo    ON apu_detalle(insumo_id);
+CREATE INDEX IF NOT EXISTS idx_apu_comp_nodo    ON apu_componentes(nodo_id);
+CREATE INDEX IF NOT EXISTS idx_apu_comp_aux     ON apu_componentes(apu_auxiliar_id);
+CREATE INDEX IF NOT EXISTS idx_apu_comp_insumo  ON apu_componentes(insumo_id);
 
--- Totales APU por concepto (actualizados por Python al editar apu_detalle)
-CREATE TABLE IF NOT EXISTS apu_totales (
+-- Resumen APU por tipo de costo
+CREATE TABLE IF NOT EXISTS apu_resumen (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    nodo_id             INTEGER REFERENCES nodos(id) ON DELETE CASCADE,
-    apu_nodo_id         INTEGER REFERENCES apu_nodos(id) ON DELETE CASCADE,
+    nodo_id             INTEGER REFERENCES estructura_presupuesto(id) ON DELETE CASCADE,
+    apu_auxiliar_id     INTEGER REFERENCES apu_auxiliares(id) ON DELETE CASCADE,
     materiales          REAL    NOT NULL DEFAULT 0.0,
     mano_obra           REAL    NOT NULL DEFAULT 0.0,
     herramienta         REAL    NOT NULL DEFAULT 0.0,
     equipo              REAL    NOT NULL DEFAULT 0.0,
     auxiliares          REAL    NOT NULL DEFAULT 0.0,
     subcontratos        REAL    NOT NULL DEFAULT 0.0,
-    costo_directo       REAL    NOT NULL DEFAULT 0.0,   -- suma de los anteriores
+    fletes              REAL    NOT NULL DEFAULT 0.0,
+    trabajos            REAL    NOT NULL DEFAULT 0.0,
+    costo_directo       REAL    NOT NULL DEFAULT 0.0,
     indirectos_pct      REAL    NOT NULL DEFAULT 0.0,
     financiamiento_pct  REAL    NOT NULL DEFAULT 0.0,
     utilidad_pct        REAL    NOT NULL DEFAULT 0.0,
@@ -465,7 +423,7 @@ CREATE TABLE IF NOT EXISTS apu_totales (
     modificado_en       TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
--- Auxiliares (insumos compuestos intermedios, tabla *EGX en OPUS)
+-- Auxiliares de insumos (tabla *EGX en OPUS)
 CREATE TABLE IF NOT EXISTS auxiliares (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     proyecto_id     INTEGER NOT NULL REFERENCES proyectos(id) ON DELETE CASCADE,
@@ -481,31 +439,32 @@ CREATE INDEX IF NOT EXISTS idx_auxiliares_insumo ON auxiliares(insumo_id);
 
 -- =============================================================================
 -- BLOQUE 8: COLABORACIÓN
--- Infraestructura lista para escalar. La lógica de permisos vive en la app.
+-- historial: base para Ctrl+Z colaborativo — ver DECISIONES_PENDIENTES.md FE-02
+-- notas: comentarios inline por nodo del presupuesto
 -- =============================================================================
 
--- Notas por nodo (múltiples por nodo, con autor y fecha)
 CREATE TABLE IF NOT EXISTS notas (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    nodo_id         INTEGER NOT NULL REFERENCES nodos(id) ON DELETE CASCADE,
+    nodo_id         INTEGER NOT NULL REFERENCES estructura_presupuesto(id) ON DELETE CASCADE,
     usuario_id      INTEGER NOT NULL DEFAULT 1 REFERENCES usuarios(id),
     texto           TEXT    NOT NULL,
-    resuelta        INTEGER NOT NULL DEFAULT 0,   -- 0=abierta, 1=resuelta
+    resuelta        INTEGER NOT NULL DEFAULT 0,
     creado_en       TEXT    NOT NULL DEFAULT (datetime('now')),
     modificado_en   TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_notas_nodo ON notas(nodo_id);
 
--- Historial de cambios (auditoría genérica para cualquier tabla)
--- Agrupa cambios de una misma operación por 'sesion' (UUID generado en Python)
+-- Historial de cambios — auditoría genérica y base del Ctrl+Z colaborativo
+-- sesion: UUID generado en Python para agrupar cambios de una misma operación
+-- valor_anterior / valor_nuevo: siempre TEXT, Python hace la conversión de tipo
 CREATE TABLE IF NOT EXISTS historial (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    sesion          TEXT    NOT NULL,       -- UUID para agrupar cambios de una operación
+    sesion          TEXT    NOT NULL,
     tabla           TEXT    NOT NULL,
     registro_id     INTEGER NOT NULL,
     campo           TEXT    NOT NULL,
-    valor_anterior  TEXT,                   -- siempre TEXT; Python hace la conversión
+    valor_anterior  TEXT,
     valor_nuevo     TEXT,
     usuario_id      INTEGER NOT NULL DEFAULT 1 REFERENCES usuarios(id),
     cambiado_en     TEXT    NOT NULL DEFAULT (datetime('now'))
@@ -517,8 +476,7 @@ CREATE INDEX IF NOT EXISTS idx_historial_usuario  ON historial(usuario_id);
 
 
 -- =============================================================================
--- BLOQUE 9: CONTROL DE VERSIONES DEL ESQUEMA
--- Usado por DatabaseManager.aplicar_migraciones() para saber qué SQL ya corrió.
+-- BLOQUE 9: VERSIÓN DEL ESQUEMA
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -527,6 +485,5 @@ CREATE TABLE IF NOT EXISTS schema_version (
     descripcion TEXT
 );
 
-INSERT INTO schema_version (version, descripcion) VALUES
-    (1, 'Esquema inicial: identidad, proyecto, árbol, insumos, APU, colaboración');
-
+INSERT OR IGNORE INTO schema_version (version, descripcion) VALUES
+    (2, 'v2: renombres, eliminar roles/tipos extra/estados_nodo, subfamilias, fletes/trabajos, estado como entero');

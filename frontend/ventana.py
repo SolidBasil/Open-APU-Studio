@@ -172,6 +172,7 @@ class VentanaPrincipal(QMainWindow):
         right_layout.addWidget(self._build_content(), 1)
         splitter.addWidget(right)
 
+        splitter.setCollapsible(0, False)
         splitter.setStretchFactor(0, 2)
         splitter.setStretchFactor(1, 8)
         splitter.setSizes([220, 1040])
@@ -484,6 +485,7 @@ class VentanaPrincipal(QMainWindow):
     def _build_sidebar(self):
         tree = QTreeWidget()
         tree.setHeaderLabel("Explorador")
+        tree.setMinimumWidth(150)
         tree.setAnimated(True)
         tree.setIndentation(16)
         tree.setRootIsDecorated(True)
@@ -628,7 +630,7 @@ class VentanaPrincipal(QMainWindow):
         if self._db:
             cur = self._db.conn.cursor()
             cur.execute(
-                "SELECT clave FROM apu_nodos WHERE proyecto_id=?",
+                "SELECT clave FROM apu_auxiliares WHERE proyecto_id=?",
                 (1,),
             )
             claves_con_apu = {r[0] for r in cur.fetchall()}
@@ -677,18 +679,18 @@ class VentanaPrincipal(QMainWindow):
         if not clave or not self._db:
             return
 
-        from backend.repos import NodoRepo, ApuDetalleRepo, ApuNodoRepo
+        from backend.repos import NodoRepo, ApuComponentesRepo, ApuAuxiliarRepo
         nodo = NodoRepo(self._db.conn).buscar_por_clave(clave, proyecto_id=1)
         if nodo:
             nodo_id = nodo["id"]
         else:
-            apu_nodo = ApuNodoRepo(self._db.conn).buscar_por_clave(clave, proyecto_id=1)
+            apu_nodo = ApuAuxiliarRepo(self._db.conn).buscar_por_clave(clave, proyecto_id=1)
             if not apu_nodo:
                 self._sb.showMessage(f"'{clave}' no encontrado", 4000)
                 return
             nodo_id = apu_nodo["id"]
 
-        if not ApuDetalleRepo(self._db.conn).por_nodo(nodo_id):
+        if not ApuComponentesRepo(self._db.conn).por_nodo(nodo_id):
             self._sb.showMessage(f"'{clave}' no tiene APU", 4000)
             return
 
@@ -725,11 +727,11 @@ class VentanaPrincipal(QMainWindow):
             insumos = (repo.por_tipo(1, tipo) if tipo
                        else repo.todos(1))
             cur = self._db.conn.cursor()
-            cur.execute("SELECT clave FROM apu_nodos WHERE proyecto_id=1")
+            cur.execute("SELECT clave FROM apu_auxiliares WHERE proyecto_id=1")
             claves = {r["clave"] for r in cur.fetchall()}
             cur.execute("""
-                SELECT DISTINCT n.clave FROM nodos n
-                JOIN apu_detalle ad ON ad.nodo_id = n.id
+                SELECT DISTINCT n.clave FROM estructura_presupuesto n
+                JOIN apu_componentes ad ON ad.nodo_id = n.id
                 WHERE n.proyecto_id=1 AND n.clave IS NOT NULL
             """)
             claves |= {r["clave"] for r in cur.fetchall()}
@@ -767,31 +769,6 @@ class VentanaPrincipal(QMainWindow):
                     f"${c.get('importe', 0):,.2f}",
                 ], editable=False)
         t.itemDoubleClicked.connect(self._on_item_dblclick)
-        return t
-
-    # ── Indirectos (Pie de Precios) ──────────────────────────────────────
-    # Muestra los renglones de sobrecostos e indirectos del proyecto.
-
-    def _build_indirectos(self):
-        from frontend.widgets.base import TreeTableWidget
-        from backend.repos import PiePreciosRepo
-
-        t = TreeTableWidget(
-            ["Renglón", "Variable", "Descripción", "Fórmula"], flat=True
-        )
-        t.set_column_modes({
-            c: (QHeaderView.ResizeMode.Interactive, w)
-            for c, w in enumerate([60, 100, 250, 200])
-        })
-        if self._db:
-            repo = PiePreciosRepo(self._db.conn)
-            for r in repo.por_proyecto(1):
-                t.add_row([
-                    str(r.get("orden", "")),
-                    r.get("variable", ""),
-                    r.get("descripcion", ""),
-                    r.get("formula", ""),
-                ], editable=False)
         return t
 
     # ── Gestión de proyectos (Abrir / Cerrar / Duplicar / Eliminar) ─────
@@ -1031,7 +1008,7 @@ class VentanaPrincipal(QMainWindow):
                 Database.cerrar()
             self._db = Database.abrir(db_path)
             print(f"[import] {nombre}: nodos={result['nodos']}, insumos={result['insumos']}, "
-                  f"apu_detalle={result['apu_detalle']}, apu_totales={result['apu_totales']}, "
+                  f"apu_componentes={result['apu_componentes']}, apu_resumen={result['apu_resumen']}, "
                   f"auxiliares={result['auxiliares']}")
             QMessageBox.information(self, "Importación exitosa",
                                     f"'{nombre}' importado correctamente.")
@@ -1106,7 +1083,7 @@ class VentanaPrincipal(QMainWindow):
     # Widget genérico para secciones no implementadas aún (MVP).
     # Muestra icono, título y mensaje "no implementado" de forma visual.
 
-    def _build_placeholder(self, title):
+    def _build_placeholder(self, title, msg="Esta sección aún no ha sido implementada."):
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1118,15 +1095,15 @@ class VentanaPrincipal(QMainWindow):
         f2 = QFont("Inter", 16)
         f2.setBold(True)
         name.setFont(f2)
-        msg = QLabel("Esta sección aún no ha sido implementada.")
-        msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        msg.setFont(QFont("Inter", 11))
+        msg_label = QLabel(msg)
+        msg_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        msg_label.setFont(QFont("Inter", 11))
         layout.addStretch()
         layout.addWidget(icon)
         layout.addSpacing(16)
         layout.addWidget(name)
         layout.addSpacing(8)
-        layout.addWidget(msg)
+        layout.addWidget(msg_label)
         layout.addStretch()
         return w
 
@@ -1178,7 +1155,7 @@ class VentanaPrincipal(QMainWindow):
         elif title == "📐 Conceptos":
             content = self._build_conceptos()
         elif title == "💰 Cálculo de indirectos":
-            content = self._build_indirectos()
+            content = self._build_placeholder(title, "En desarrollo")
         elif title in insumos_titles:
             content = self._build_insumos(title)
         else:
