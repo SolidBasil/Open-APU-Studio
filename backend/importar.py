@@ -42,6 +42,7 @@ except ImportError:
 # UTILIDADES
 # =============================================================================
 
+# ── convertir a float con valor por defecto ──
 def _f(val, default=0.0):
     if val is None:
         return default
@@ -51,12 +52,14 @@ def _f(val, default=0.0):
         return default
 
 
+# ── convertir a string limpio con valor por defecto ──
 def _s(val, default=""):
     if val is None:
         return default
     return str(val).strip()
 
 
+# ── leer archivo DBF filtrando registros borrados ──
 def _leer_dbf(ruta: Path, encoding="latin-1") -> list[dict]:
     """Lee un .DBF devolviendo solo registros activos (_deleted=False)."""
     if not ruta or not ruta.exists():
@@ -85,6 +88,7 @@ _SUFIJOS = {
 }
 
 
+# ── detectar prefijo y formato del proyecto ──
 def _detectar(carpeta: Path) -> tuple[str, str]:
     """Devuelve (prefijo, formato) — 'clasico' o 'numerico'."""
     for f in sorted(carpeta.glob("*EGP.DBF")) + sorted(carpeta.glob("*egp.dbf")):
@@ -100,6 +104,7 @@ def _detectar(carpeta: Path) -> tuple[str, str]:
     raise ValueError(f"No se encontraron archivos OPUS en {carpeta}")
 
 
+# ── resolver ruta de archivo DBF por sufijo ──
 def _ruta_dbf(carpeta: Path, prefijo: str, formato: str, clave: str) -> Path | None:
     sufijo = _SUFIJOS[formato].get(clave, "")
     for nombre in [f"{prefijo}{sufijo}.DBF", f"{prefijo}{sufijo}.dbf"]:
@@ -113,6 +118,7 @@ def _ruta_dbf(carpeta: Path, prefijo: str, formato: str, clave: str) -> Path | N
 # JERARQUÍA — ALGORITMO WBS
 # =============================================================================
 
+# ── determinar padre truncando WBS de derecha a izquierda ──
 def _padre_por_wbs(wbs: str, wbs_a_id: dict) -> int | None:
     """
     Trunca PRE_WBS de derecha a izquierda hasta encontrar un nodo activo.
@@ -132,6 +138,7 @@ def _padre_por_wbs(wbs: str, wbs_a_id: dict) -> int | None:
 # TIPO DE INSUMO
 # =============================================================================
 
+# ── bit de mayor peso del prefijo OPUS → id de tipo de insumo ──
 def _tipo_id(prefijo: int) -> int:
     """Bit de mayor peso del campo PREFIJO de OPUS → id de tipos_insumo."""
     p = int(prefijo or 0)
@@ -444,6 +451,7 @@ def importar(carpeta: str, db_path: str, nombre: str | None = None) -> dict:
 # ÁRBOL — FORMATO NUMÉRICO (*1 + *A)
 # =============================================================================
 
+# ── construir árbol desde formato numérico ──
 def _arbol_numerico(con, cur, proyecto_id, regs_1, regs_a, regs_p) -> dict:
     nombres = {int(r["IDUNI"]): r for r in regs_a if r.get("IDUNI") is not None}
     egp     = {_s(r.get("NOMBRE")): r for r in regs_p if _s(r.get("NOMBRE"))}
@@ -520,6 +528,7 @@ def _arbol_numerico(con, cur, proyecto_id, regs_1, regs_a, regs_p) -> dict:
 # ÁRBOL — FORMATO CLÁSICO (*EGF con PREF=16)
 # =============================================================================
 
+# ── construir árbol desde formato clásico ──
 def _arbol_clasico(con, cur, proyecto_id, regs_f, regs_p) -> dict:
     from collections import defaultdict
 
@@ -571,6 +580,7 @@ def _arbol_clasico(con, cur, proyecto_id, regs_f, regs_p) -> dict:
 # SUBTOTALES BOTTOM-UP
 # =============================================================================
 
+# ── recalcular subtotales de capítulos desde hojas hacia raíz ──
 def _recalcular_subtotales(con, proyecto_id: int):
     cur = con.cursor()
     cur.execute("""

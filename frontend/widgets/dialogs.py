@@ -10,8 +10,12 @@ from PySide6.QtWidgets import (
 _SEL_BG = "#2A4158"
 
 
+# ── Diálogo de selección de proyecto ──────────────────────────────
+
 class ProjectDialog(QDialog):
     _items: list[QListWidgetItem] = []
+
+    # ── Constructor y layout ──────────────────────────────────────
 
     def __init__(self, proyectos: list[Path], titulo: str, accion: str,
                  accion_color: str = "#7FAFD6", seleccionado: str | None = None,
@@ -25,14 +29,14 @@ class ProjectDialog(QDialog):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # Header
+        # ── Cabecera ──────────────────────────────────────────────
         header = QLabel(titulo)
         header.setObjectName("dlgHeader")
         header.setFixedHeight(48)
         header.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(header)
 
-        # Search
+        # ── Búsqueda ──────────────────────────────────────────────
         search = QLineEdit()
         search.setObjectName("dlgSearch")
         search.setPlaceholderText("\U0001f50d  Buscar proyecto\u2026")
@@ -43,7 +47,7 @@ class ProjectDialog(QDialog):
         sl.addWidget(search)
         layout.addWidget(sc)
 
-        # List
+        # ── Lista de proyectos ────────────────────────────────────
         self._lista = QListWidget()
         self._lista.setObjectName("dlgList")
         self._lista.setAlternatingRowColors(True)
@@ -97,7 +101,7 @@ class ProjectDialog(QDialog):
         sep.setObjectName("dlgSep")
         layout.addWidget(sep)
 
-        # Buttons
+        # ── Botones de acción ─────────────────────────────────────
         bl = QHBoxLayout()
         bl.setContentsMargins(16, 10, 16, 14)
         bl.setSpacing(8)
@@ -129,6 +133,8 @@ class ProjectDialog(QDialog):
 
         search.textChanged.connect(self._filtrar)
 
+    # ── Resaltado visual del ítem seleccionado ────────────────────
+
     def _on_seleccion(self, current, previous):
         for item in (current, previous):
             if not item:
@@ -139,6 +145,8 @@ class ProjectDialog(QDialog):
                 bg = _SEL_BG if selected else "transparent"
                 w.setStyleSheet(f"background-color: {bg}; border-radius: 4px;")
 
+    # ── Filtro por nombre ─────────────────────────────────────────
+
     def _filtrar(self, texto: str):
         t = texto.lower()
         for i in range(self._lista.count()):
@@ -147,6 +155,8 @@ class ProjectDialog(QDialog):
             name = w.findChild(QLabel, "dlgName").text().lower()
             visible = t in name
             item.setHidden(not visible)
+
+    # ── Propiedad: proyecto actual ────────────────────────────────
 
     @property
     def proyecto_seleccionado(self) -> str | None:

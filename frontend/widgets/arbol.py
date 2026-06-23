@@ -15,7 +15,12 @@ from frontend.widgets.base import TreeTableWidget
 from backend.db import Config
 
 
+# ── Roles de datos ────────────────────────────────────────────────
+
 WBS_ROLE     = Qt.ItemDataRole.UserRole
+
+# ── Configuración de columnas ─────────────────────────────────────
+
 COLUMNAS     = [
     "Nivel", "Clave", "Descripción", "Unid", "Cant", "P.U.", "Total",
     "Subtotal", "Desc. Corta", "Tipo", "Estado", "Notas", "Creado", "Modificado",
@@ -23,6 +28,8 @@ COLUMNAS     = [
 _VISIBLE    = {0, 1, 2, 3, 4, 5, 6}
 EDITABLE    = frozenset({1, 2, 3, 4, 5})
 _AGRUP_COLS = {0, 1, 2, 6}
+
+# ── Colores por nivel jerárquico ─────────────────────────────────
 
 COLORES_NIVEL = [
     "#8B6FB5",  # 0: púrpura  — capítulo raíz
@@ -33,6 +40,8 @@ COLORES_NIVEL = [
     "#A06A6A",  # 5+: vino
 ]
 
+
+# ── Formateo de valores ───────────────────────────────────────────
 
 def _fmt(v, decimals=2):
     if v is None:
@@ -45,6 +54,8 @@ def _num(v, decimals=2):
         return ""
     return f"{v:,.{decimals}f}" if isinstance(v, (int, float)) else str(v)
 
+
+# ── Tabla jerárquica del presupuesto ──────────────────────────────
 
 class TablaArbol(TreeTableWidget):
     _HEADER_KEY = "arbol_header_state"
@@ -75,7 +86,7 @@ class TablaArbol(TreeTableWidget):
         if saved:
             self.header().restoreState(QByteArray.fromBase64(saved.encode("ascii")))
 
-    # ── helpers ──────────────────────────────────────────────────────────
+    # ── Helpers de WBS ────────────────────────────────────────────
 
     @staticmethod
     def _calc_wbs(wbs: str, parent):
@@ -91,6 +102,8 @@ class TablaArbol(TreeTableWidget):
             return str(int(wbs))
         suffix = wbs[len(pwbs):]
         return f"{parent.text(0)}.{str(int(suffix))}"
+
+    # ── Construcción de celdas desde dict ─────────────────────────
 
     @staticmethod
     def _celdas(n, wbs):
@@ -112,7 +125,7 @@ class TablaArbol(TreeTableWidget):
             str(n.get("modificado_en", "") or ""),         # 13 Modificado
         ]
 
-    # ── inserción ────────────────────────────────────────────────────────
+    # ── Inserción de agrupadores ──────────────────────────────────
 
     def add_agrupador(self, n, parent=None, expanded=True):
         parent = parent or self
@@ -136,11 +149,13 @@ class TablaArbol(TreeTableWidget):
         item.setExpanded(expanded)
         return item
 
+    # ── Inserción de registros hoja ───────────────────────────────
+
     def add_registro(self, n, parent=None):
         data = self._celdas(n, "")
         return self.add_row(data, parent, editable=True)
 
-    # ── poblar ───────────────────────────────────────────────────────────
+    # ── Poblado del árbol ─────────────────────────────────────────
 
     def poblar(self, nodos_raiz: list[dict]):
         self.clear()

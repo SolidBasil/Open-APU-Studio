@@ -18,17 +18,25 @@ from PySide6.QtGui import QColor, QKeySequence, QPainter, QPen
 import re
 
 
+# ── Expresiones regulares ──────────────────────────────────────────
+
 SISTEMA_PREFIJOS = re.compile(rf"^[{re.escape('▶🧱👷🔧🚜⚙️📄📚')}]\s?")
 
+
+# ── Constantes de conectores ──────────────────────────────────────
 
 LINE_COLOR = QColor("#5E92B8")
 LINE_WIDTH  = 1.5
 
 
+# ── Utilidades de texto ───────────────────────────────────────────
+
 def _strip_icons(text: str) -> str:
     """Quita prefijos del sistema (▶ y emojis de tipo) sin afectar datos del usuario."""
     return SISTEMA_PREFIJOS.sub("", text)
 
+
+# ── Dibujado de conectores jerárquicos ────────────────────────────
 
 def draw_tree_connectors(tree, painter, rect, index, line_color=LINE_COLOR):
     info = []
@@ -73,6 +81,8 @@ def draw_tree_connectors(tree, painter, rect, index, line_color=LINE_COLOR):
     painter.restore()
 
 
+# ── Delegado de edición ───────────────────────────────────────────
+
 class _Delegate(QStyledItemDelegate):
     def __init__(self, parent, editable_cols):
         super().__init__(parent)
@@ -84,7 +94,12 @@ class _Delegate(QStyledItemDelegate):
         return None
 
 
+# ── Widget tabla base ─────────────────────────────────────────────
+
 class TreeTableWidget(QTreeWidget):
+
+    # ── Constructor ───────────────────────────────────────────────
+
     def __init__(self, columns, editable_cols=frozenset(), flat=False,
                  line_color=None, parent=None):
         super().__init__(parent)
@@ -114,12 +129,16 @@ class TreeTableWidget(QTreeWidget):
         for c in range(len(columns)):
             h.setSectionResizeMode(c, QHeaderView.ResizeMode.Interactive)
 
+    # ── Modos de columna ──────────────────────────────────────────
+
     def set_column_modes(self, modes):
         h = self.header()
         for c, (mode, width) in modes.items():
             h.setSectionResizeMode(c, mode)
             if width is not None:
                 h.resizeSection(c, width)
+
+    # ── Menú contextual de cabecera ───────────────────────────────
 
     def _header_context_menu(self, pos):
         menu = QMenu(self)
@@ -133,6 +152,8 @@ class TreeTableWidget(QTreeWidget):
             act.toggled.connect(lambda checked, col=c: self.setColumnHidden(col, not checked))
         menu.exec(self.header().mapToGlobal(pos))
 
+    # ── Inserción de filas ────────────────────────────────────────
+
     def add_row(self, data, parent=None, editable=True):
         parent = parent or self
         item   = QTreeWidgetItem(parent, data)
@@ -140,12 +161,14 @@ class TreeTableWidget(QTreeWidget):
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
         return item
 
+    # ── Dibujado de ramas ─────────────────────────────────────────
+
     def drawBranches(self, painter, rect, index):
         super().drawBranches(painter, rect, index)
         if not self._flat:
             draw_tree_connectors(self, painter, rect, index, self._line_color)
 
-    # ── Desplegar / Expandir ────────────────────────────────────────────
+    # ── Control de expansión / visibilidad ────────────────────────
 
     def show_primer_nivel(self):
         self._show_all()
@@ -174,6 +197,8 @@ class TreeTableWidget(QTreeWidget):
             for i in range(item.childCount()):
                 TreeTableWidget._hide_leaves(item.child(i))
 
+    # ── Filtrado de filas ─────────────────────────────────────────
+
     def filter_rows(self, text):
         desc_col = 2
         for c in range(self.columnCount()):
@@ -186,6 +211,8 @@ class TreeTableWidget(QTreeWidget):
         text = text.lower()
         for i in range(self.topLevelItemCount()):
             self._filter_item(self.topLevelItem(i), text, desc_col)
+
+    # ── Mostrar todo / filtrar internos ───────────────────────────
 
     def _show_all(self, parent=None):
         items = ([self.topLevelItem(i) for i in range(self.topLevelItemCount())]
@@ -206,6 +233,8 @@ class TreeTableWidget(QTreeWidget):
         item.setHidden(not visible)
         return visible
 
+    # ── Manejo de teclado ─────────────────────────────────────────
+
     def keyPressEvent(self, event):
         if event.matches(QKeySequence.StandardKey.Copy):
             self._copy()
@@ -223,6 +252,8 @@ class TreeTableWidget(QTreeWidget):
             path.append(idx)
             item = parent
         return tuple(reversed(path))
+
+    # ── Portapapeles (copiar / pegar) ─────────────────────────────
 
     def copy_selection(self) -> bool:
         """

@@ -45,16 +45,19 @@ class RepoBase:
 
 class ProyectoRepo(RepoBase):
 
+    # ── lista de proyectos activos ──
     def todos(self):
         return self._lista("""
             SELECT * FROM proyectos WHERE activo = 1 ORDER BY creado_en DESC
         """)
 
+    # ── buscar proyecto por ID ──
     def buscar(self, proyecto_id):
         return self._uno("""
             SELECT * FROM proyectos WHERE id = ? AND activo = 1
         """, [proyecto_id])
 
+    # ── configuración del proyecto ──
     def config(self, proyecto_id):
         return self._uno("""
             SELECT * FROM proyecto_config WHERE proyecto_id = ?
@@ -155,6 +158,7 @@ class NodoRepo(RepoBase):
             ORDER BY n.wbs
         """, [proyecto_id])
 
+    # ── buscar nodo por ID ──
     def buscar(self, nodo_id):
         return self._uno("""
             SELECT n.*, e.nombre AS estado_nombre, e.color AS estado_color
@@ -215,6 +219,7 @@ class NodoRepo(RepoBase):
             ORDER BY n.wbs
         """, [proyecto_id, estado_clave])
 
+    # ── actualizar cantidad y propagar subtotal ──
     def actualizar_cantidad(self, nodo_id, cantidad, usuario_id=1):
         self._ejecutar("""
             UPDATE nodos SET
@@ -225,6 +230,7 @@ class NodoRepo(RepoBase):
         """, [cantidad, usuario_id, nodo_id])
         self.actualizar_subtotal(nodo_id)
 
+    # ── actualizar precio unitario y propagar subtotal ──
     def actualizar_precio(self, nodo_id, precio, usuario_id=1):
         self._ejecutar("""
             UPDATE nodos SET
@@ -235,6 +241,7 @@ class NodoRepo(RepoBase):
         """, [precio, usuario_id, nodo_id])
         self.actualizar_subtotal(nodo_id)
 
+    # ── cambiar semáforo del nodo ──
     def actualizar_estado(self, nodo_id, estado_clave, usuario_id=1):
         estado = self._uno("""
             SELECT id FROM estados_nodo WHERE clave = ?
@@ -306,6 +313,7 @@ class ConceptoRepo(RepoBase):
     Para operaciones de árbol completo usar NodoRepo.
     """
 
+    # ── conceptos hijos de un capítulo ──
     def por_padre(self, padre_id):
         return self._lista("""
             SELECT * FROM nodos
@@ -313,12 +321,14 @@ class ConceptoRepo(RepoBase):
             ORDER BY wbs
         """, [padre_id])
 
+    # ── buscar concepto por clave OPUS ──
     def buscar_por_clave(self, clave, proyecto_id):
         return self._uno("""
             SELECT * FROM nodos
             WHERE clave = ? AND proyecto_id = ? AND tipo = 'concepto' AND activo = 1
         """, [clave, proyecto_id])
 
+    # ── todos los conceptos del proyecto ──
     def todos(self, proyecto_id):
         return self._lista("""
             SELECT * FROM nodos
@@ -343,6 +353,7 @@ class InsumoRepo(RepoBase):
             LEFT JOIN proveedores p ON p.id = i.proveedor_id
         """
 
+    # ── todos los insumos del proyecto ──
     def todos(self, proyecto_id):
         return self._lista(
             self._select_sql() + " WHERE i.proyecto_id = ? AND i.activo = 1 ORDER BY t.orden, i.clave",
@@ -354,11 +365,13 @@ class InsumoRepo(RepoBase):
             self._select_sql() + " WHERE i.proyecto_id = ? AND t.clave = ? AND i.activo = 1 ORDER BY i.clave",
             [proyecto_id, tipo_clave])
 
+    # ── buscar insumo por ID ──
     def buscar(self, insumo_id):
         return self._uno(
             self._select_sql() + " WHERE i.id = ? AND i.activo = 1",
             [insumo_id])
 
+    # ── buscar insumo por clave ──
     def buscar_por_clave(self, clave, proyecto_id):
         return self._uno(
             self._select_sql() + " WHERE i.clave = ? AND i.proyecto_id = ? AND i.activo = 1",
@@ -397,6 +410,7 @@ class InsumoRepo(RepoBase):
             WHERE ad.insumo_id = ?
         """, [insumo_id])
 
+    # ── actualizar precio del insumo ──
     def actualizar_precio(self, insumo_id, precio, usuario_id=1):
         self._ejecutar("""
             UPDATE insumos SET
@@ -438,6 +452,7 @@ class ApuDetalleRepo(RepoBase):
             ORDER BY ad.orden
         """, [nodo_id, nodo_id])
 
+    # ── insertar componente al APU ──
     def insertar(self, datos):
         return self._ejecutar("""
             INSERT INTO apu_detalle
@@ -456,6 +471,7 @@ class ApuDetalleRepo(RepoBase):
             datos.get("creado_por", 1),
         ])
 
+    # ── cambiar cantidad de un componente ──
     def actualizar_cantidad(self, detalle_id, cantidad, usuario_id=1):
         self._ejecutar("""
             UPDATE apu_detalle SET
@@ -465,6 +481,7 @@ class ApuDetalleRepo(RepoBase):
             WHERE id = ?
         """, [cantidad, usuario_id, detalle_id])
 
+    # ── cambiar precio de un componente ──
     def actualizar_precio(self, detalle_id, precio, usuario_id=1):
         self._ejecutar("""
             UPDATE apu_detalle SET
@@ -474,11 +491,13 @@ class ApuDetalleRepo(RepoBase):
             WHERE id = ?
         """, [precio, usuario_id, detalle_id])
 
+    # ── eliminar un componente del APU ──
     def eliminar(self, detalle_id):
         self._ejecutar("""
             DELETE FROM apu_detalle WHERE id = ?
         """, [detalle_id])
 
+    # ── eliminar todos los componentes de un nodo ──
     def limpiar(self, nodo_id):
         self._ejecutar("""
             DELETE FROM apu_detalle WHERE (nodo_id = ? OR apu_nodo_id = ?)
@@ -491,12 +510,14 @@ class ApuDetalleRepo(RepoBase):
 
 class ApuNodoRepo(RepoBase):
 
+    # ── buscar APU sintético por clave ──
     def buscar_por_clave(self, clave, proyecto_id):
         return self._uno("""
             SELECT * FROM apu_nodos
             WHERE clave = ? AND proyecto_id = ?
         """, [clave, proyecto_id])
 
+    # ── todos los APU sintéticos del proyecto ──
     def todos(self, proyecto_id):
         return self._lista("""
             SELECT * FROM apu_nodos WHERE proyecto_id = ? ORDER BY clave
@@ -509,6 +530,7 @@ class ApuNodoRepo(RepoBase):
 
 class ApuTotalesRepo(RepoBase):
 
+    # ── totales por tipo de un APU ──
     def por_nodo(self, nodo_id):
         return self._uno("""
             SELECT * FROM apu_totales WHERE (nodo_id = ? OR apu_nodo_id = ?)
@@ -561,7 +583,7 @@ class ApuTotalesRepo(RepoBase):
                 modificado_en       = datetime('now')
             WHERE (nodo_id = ? OR apu_nodo_id = ?)
         """, [indirectos_pct, financiamiento_pct, utilidad_pct,
-              cargo_adicional_pct, round(pv, 6), nodo_id, nodo_id])
+                cargo_adicional_pct, round(pv, 6), nodo_id, nodo_id])
 
 
 # =============================================================================
@@ -570,6 +592,7 @@ class ApuTotalesRepo(RepoBase):
 
 class AuxiliarRepo(RepoBase):
 
+    # ── componentes auxiliares de un insumo ──
     def por_insumo(self, insumo_id):
         return self._lista("""
             SELECT a.*, i.clave AS comp_clave, i.descripcion AS comp_desc
@@ -578,6 +601,7 @@ class AuxiliarRepo(RepoBase):
             WHERE a.insumo_id = ?
         """, [insumo_id])
 
+    # ── todos los auxiliares del proyecto ──
     def todos(self, proyecto_id):
         return self._lista("""
             SELECT a.*,
@@ -596,6 +620,7 @@ class AuxiliarRepo(RepoBase):
 
 class NotaRepo(RepoBase):
 
+    # ── notas de un nodo ──
     def por_nodo(self, nodo_id):
         return self._lista("""
             SELECT n.*, u.nombre AS autor
@@ -605,12 +630,14 @@ class NotaRepo(RepoBase):
             ORDER BY n.creado_en DESC
         """, [nodo_id])
 
+    # ── agregar nota a un nodo ──
     def insertar(self, nodo_id, texto, usuario_id=1):
         return self._ejecutar("""
             INSERT INTO notas (nodo_id, usuario_id, texto)
             VALUES (?, ?, ?)
         """, [nodo_id, usuario_id, texto])
 
+    # ── marcar nota como resuelta ──
     def resolver(self, nota_id):
         self._ejecutar("""
             UPDATE notas SET resuelta = 1, modificado_en = datetime('now')

@@ -475,6 +475,9 @@ class VentanaPrincipal(QMainWindow):
         self._update_statusbar()
 
     # ── Sidebar (explorador lateral) ─────────────────────────────────────
+    # Construye el panel lateral izquierdo con el explorador jerárquico.
+    # Las secciones (Propuesta, Insumos, Ejecución) contienen subsecciones
+    # que se abren como pestañas temporales (click) o permanentes (doble click).
     # Árbol de secciones del proyecto. Click simple → pestaña temporal,
     # doble click → pestaña permanente.
 
@@ -515,7 +518,8 @@ class VentanaPrincipal(QMainWindow):
         return tree
 
     # ── Contenido central (QTabWidget) ───────────────────────────────────
-    # Pestañas de contenido: presupuesto, APU, insumos, conceptos, etc.
+    # Área de pestañas donde se muestran los datos del proyecto abierto.
+    # Las pestañas se crean al navegar desde el sidebar o al abrir APU.
     # Se cierran con la X. Ctrl+Tab / Ctrl+Shift+Tab navega entre ellas.
 
     def _build_content(self):
@@ -979,6 +983,10 @@ class VentanaPrincipal(QMainWindow):
         ruta.unlink()
         self._sb.showMessage(f"'{nombre}' eliminado", 4000)
 
+    # ── Importación OPUS ──────────────────────────────────────────────────
+    # Importa proyectos completos desde formato OPUS 2010 (archivos .DBF).
+    # Convierte jerarquía, insumos, APU y auxiliares a SQLite.
+
     def _on_importar_opus(self):
         from PySide6.QtWidgets import QFileDialog, QMessageBox
         from backend.db import Config, Database, Rutas
@@ -1055,6 +1063,8 @@ class VentanaPrincipal(QMainWindow):
             widget.selectAll()
 
     # ── Desplegar (Primer nivel / Resumen / Todo / Nivel) ────────────────
+    # Controla la expansión y colapso del árbol del presupuesto activo.
+    # Primer nivel: solo raíces. Resumen: solo agrupadores. Todo: expande completo. Nivel: hasta N.
 
     def _on_desplegar_primer_nivel(self):
         widget = self._tabs.currentWidget()
@@ -1093,6 +1103,8 @@ class VentanaPrincipal(QMainWindow):
             ))
 
     # ── Placeholder ───────────────────────────────────────────────────────
+    # Widget genérico para secciones no implementadas aún (MVP).
+    # Muestra icono, título y mensaje "no implementado" de forma visual.
 
     def _build_placeholder(self, title):
         w = QWidget()
@@ -1119,6 +1131,8 @@ class VentanaPrincipal(QMainWindow):
         return w
 
     # ── Navegación ────────────────────────────────────────────────────────
+    # Gestiona la interacción con el sidebar: click simple (pestaña temporal),
+    # doble click (permanente). También atajos de teclado Ctrl+Tab.
 
     def _on_sidebar_click(self, item, column):
         if item.childCount() > 0:
@@ -1188,6 +1202,8 @@ class VentanaPrincipal(QMainWindow):
         self._tabs.removeTab(idx)
 
     # ── Búsqueda ──────────────────────────────────────────────────────────
+    # Filtro en tiempo real sobre el TreeTableWidget activo.
+    # Se re-ejecuta al escribir o al cambiar de pestaña.
 
     def _on_search(self, text):
         from frontend.widgets.base import TreeTableWidget
@@ -1199,6 +1215,8 @@ class VentanaPrincipal(QMainWindow):
         self._on_search(self._search_input.text())
 
     # ── StatusBar ─────────────────────────────────────────────────────────
+    # Barra de estado inferior que muestra información del tema activo
+    # y la versión de la aplicación.
 
     def _build_statusbar(self):
         self._sb = QStatusBar(self)

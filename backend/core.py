@@ -22,6 +22,7 @@ import sqlite3
 # ÁRBOL DEL PRESUPUESTO
 # =============================================================================
 
+# ── construir árbol jerárquico del presupuesto ──
 def build_budget_tree(db_path: str, proyecto_id: int = 1) -> list[dict]:
     """
     Lee el árbol de presupuesto desde el SQLite y lo devuelve como lista
@@ -116,6 +117,7 @@ def build_budget_tree(db_path: str, proyecto_id: int = 1) -> list[dict]:
     return raices
 
 
+# ── obtener metadatos del proyecto ──
 def get_proyecto(db_path: str, proyecto_id: int = 1) -> dict | None:
     """
     Devuelve los metadatos del proyecto (nombre, total, config).
@@ -140,6 +142,7 @@ def get_proyecto(db_path: str, proyecto_id: int = 1) -> dict | None:
         con.close()
 
 
+# ── obtener APU completo de un concepto ──
 def get_apu(db_path: str, nodo_id: int) -> dict:
     """
     Devuelve el APU completo de un concepto.
@@ -195,6 +198,7 @@ def get_apu(db_path: str, nodo_id: int) -> dict:
 # MÉTRICAS DEL ÁRBOL
 # =============================================================================
 
+# ── contar todos los nodos del árbol ──
 def count_nodes(nodes: list[dict]) -> int:
     """Cuenta todos los nodos del árbol (recursivo)."""
     total = len(nodes)
@@ -203,6 +207,7 @@ def count_nodes(nodes: list[dict]) -> int:
     return total
 
 
+# ── contar solo nodos tipo concepto ──
 def count_concepts(nodes: list[dict]) -> int:
     """Cuenta solo los nodos de tipo 'concepto' (recursivo)."""
     total = sum(1 for n in nodes if n["tipo"] == "concepto")
@@ -211,11 +216,13 @@ def count_concepts(nodes: list[dict]) -> int:
     return total
 
 
+# ── suma de subtotales de nodos raíz ──
 def total_obra(nodes: list[dict]) -> float:
     """Suma los subtotales de los nodos raíz."""
     return sum(n.get("subtotal") or n.get("importe") or 0 for n in nodes)
 
 
+# ── aplanar árbol a lista secuencial ──
 def flatten(nodes: list[dict]) -> list[dict]:
     """
     Aplana el árbol en una lista ordenada por WBS.
@@ -233,6 +240,7 @@ def flatten(nodes: list[dict]) -> list[dict]:
 # VALIDACIÓN DE INTEGRIDAD
 # =============================================================================
 
+# ── validar integridad del proyecto ──
 def validar(db_path: str, proyecto_id: int = 1) -> dict:
     """
     Corre checks de integridad sobre el proyecto y devuelve un reporte.

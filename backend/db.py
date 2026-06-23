@@ -24,6 +24,7 @@ Uso:
     Database.cerrar()
 """
 
+# ── imports / platformdirs ──
 import json
 import sqlite3
 from pathlib import Path
@@ -106,6 +107,7 @@ class Config:
 
     _cache: dict | None = None
 
+    # ── cargar configuración desde JSON ──
     @classmethod
     def _cargar(cls) -> dict:
         if cls._cache is not None:
@@ -120,10 +122,12 @@ class Config:
             cls._cache = {}
         return cls._cache
 
+    # ── leer valor de configuración ──
     @classmethod
     def get(cls, clave: str, default=None):
         return cls._cargar().get(clave, default)
 
+    # ── guardar valor de configuración ──
     @classmethod
     def set(cls, clave: str, valor):
         datos = cls._cargar()
@@ -169,6 +173,7 @@ class Database:
 
     # ── Conexión ──────────────────────────────────────────────────────────
 
+    # ── abrir conexión a SQLite ──
     def _abrir(self, db_path: str | Path):
         self._cerrar()
         self._db_path = str(db_path)
@@ -180,6 +185,7 @@ class Database:
         Config.guardar_ultimo_proyecto(db_path)
         return self
 
+    # ── cerrar conexión SQLite ──
     def _cerrar(self):
         if self._conn:
             self._conn.close()

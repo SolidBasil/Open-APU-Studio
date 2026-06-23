@@ -13,11 +13,15 @@ from frontend.widgets.base import TreeTableWidget
 from backend.db import Config
 
 
+# ── Configuración de columnas ─────────────────────────────────────
+
 COLUMNAS = [
     "Clave", "Descripción", "Unidad", "Precio", "Tipo",
     "Familia", "Proveedor", "F. Precio", "Desc. Corta", "Costo MN", "Costo ME",
 ]
 EDITABLE = frozenset()
+
+# ── Mapeo tipo_id → nombre ───────────────────────────────────────
 
 TIPO_NOMBRE = {
     1:  "🧱 Material",
@@ -30,6 +34,8 @@ TIPO_NOMBRE = {
     128:"🏗️ Trabajo",
 }
 
+
+# ── Tabla plana de insumos ────────────────────────────────────────
 
 class TablaInsumos(TreeTableWidget):
     _HEADER_KEY = "insumos_header_state"
@@ -57,6 +63,8 @@ class TablaInsumos(TreeTableWidget):
         saved = Config.get(self._HEADER_KEY)
         if saved:
             self.header().restoreState(QByteArray.fromBase64(saved.encode("ascii")))
+
+    # ── Poblado de la tabla ───────────────────────────────────────
 
     def poblar(self, insumos: list[dict], claves_con_apu: set[str] | None = None):
         """

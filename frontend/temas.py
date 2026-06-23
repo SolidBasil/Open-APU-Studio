@@ -17,6 +17,8 @@ from PySide6.QtWidgets import QApplication
 from backend.db import Config
 
 
+# ── Gestor de temas visuales ──────────────────────────────────────
+
 class Temas:
     OPCIONES = {
         "dark":   "dark.qss",
@@ -35,19 +37,27 @@ class Temas:
         "verde":  "Verde",
     }
 
+    # ── Aplicar un tema por clave ─────────────────────────────────
+
     @staticmethod
     def aplicar(app: QApplication, clave: str):
         ruta = Path(__file__).parent / "temas" / Temas.OPCIONES.get(clave, "dark.qss")
         if ruta.exists():
             app.setStyleSheet(ruta.read_text(encoding="utf-8"))
 
+    # ── Persistir preferencia ─────────────────────────────────────
+
     @staticmethod
     def guardar_preferencia(clave: str):
         Config.set("tema", clave)
 
+    # ── Recuperar preferencia guardada ────────────────────────────
+
     @staticmethod
     def cargar_preferencia() -> str:
         return Config.get("tema", "dark")
+
+    # ── Obtener nombre legible de un tema ─────────────────────────
 
     @staticmethod
     def nombre(clave: str) -> str:
