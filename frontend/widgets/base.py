@@ -10,7 +10,7 @@ Uso:
 
 from PySide6.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QAbstractItemView,
-    QHeaderView, QApplication, QStyledItemDelegate,
+    QHeaderView, QApplication, QStyledItemDelegate, QMenu,
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QKeySequence, QPainter, QPen
@@ -109,6 +109,8 @@ class TreeTableWidget(QTreeWidget):
 
         h = self.header()
         h.setStretchLastSection(False)
+        h.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        h.customContextMenuRequested.connect(self._header_context_menu)
         for c in range(len(columns)):
             h.setSectionResizeMode(c, QHeaderView.ResizeMode.Interactive)
 
@@ -118,6 +120,18 @@ class TreeTableWidget(QTreeWidget):
             h.setSectionResizeMode(c, mode)
             if width is not None:
                 h.resizeSection(c, width)
+
+    def _header_context_menu(self, pos):
+        menu = QMenu(self)
+        for c in range(self.columnCount()):
+            name = self.headerItem().text(c)
+            if not name:
+                continue
+            act = menu.addAction(name)
+            act.setCheckable(True)
+            act.setChecked(not self.isColumnHidden(c))
+            act.toggled.connect(lambda checked, col=c: self.setColumnHidden(col, not checked))
+        menu.exec(self.header().mapToGlobal(pos))
 
     def add_row(self, data, parent=None, editable=True):
         parent = parent or self
@@ -130,6 +144,35 @@ class TreeTableWidget(QTreeWidget):
         super().drawBranches(painter, rect, index)
         if not self._flat:
             draw_tree_connectors(self, painter, rect, index, self._line_color)
+
+    # ── Desplegar / Expandir ────────────────────────────────────────────
+
+    def show_primer_nivel(self):
+        self._show_all()
+        self.collapseAll()
+
+    def show_solo_agrupadores(self):
+        self._show_all()
+        self.expandAll()
+        for i in range(self.topLevelItemCount()):
+            self._hide_leaves(self.topLevelItem(i))
+
+    def show_todo(self):
+        self._show_all()
+        self.expandAll()
+
+    def show_nivel(self, depth: int):
+        self._show_all()
+        self.collapseAll()
+        self.expandToDepth(depth)
+
+    @staticmethod
+    def _hide_leaves(item):
+        if item.childCount() == 0:
+            item.setHidden(True)
+        else:
+            for i in range(item.childCount()):
+                TreeTableWidget._hide_leaves(item.child(i))
 
     def filter_rows(self, text):
         desc_col = 2
@@ -171,6 +214,16 @@ class TreeTableWidget(QTreeWidget):
         else:
             super().keyPressEvent(event)
 
+    @staticmethod
+    def _item_sort_key(item):
+        path = []
+        while item:
+            parent = item.parent()
+            idx = parent.indexOfChild(item) if parent else item.treeWidget().indexOfTopLevelItem(item)
+            path.append(idx)
+            item = parent
+        return tuple(reversed(path))
+
     def copy_selection(self) -> bool:
         """
         Copy selected rows as TSV (tab-separated values) to clipboard.
@@ -181,23 +234,13 @@ class TreeTableWidget(QTreeWidget):
         if not items:
             return False
 
-        rows: dict[int, list[str]] = {}
+        items.sort(key=self._item_sort_key)
+
         cols = self.columnCount()
-        for item in items:
-            parent = item.parent()
-            row_idx = parent.indexOfChild(item) if parent else self.indexOfTopLevelItem(item)
-            if row_idx < 0:
-                continue
-            if row_idx not in rows:
-                rows[row_idx] = [_strip_icons(item.text(c)) for c in range(cols)]
-
-        if not rows:
-            return False
-
         header = [_strip_icons(self.headerItem().text(c)) for c in range(cols)]
         lines = ["\t".join(header)]
-        for row_data in rows.values():
-            lines.append("\t".join(row_data))
+        for item in items:
+            lines.append("\t".join(_strip_icons(item.text(c)) for c in range(cols)))
 
         QApplication.clipboard().setText("\n".join(lines))
         return True

@@ -297,3 +297,65 @@ QScrollBar::handle:horizontal:hover {
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
     width: 0;
 }
+
+/* ── ProjectDialog ── */
+#dlgHeader {
+    background-color: #1B2330;
+    font-size: 15px;
+    font-weight: bold;
+    border-bottom: 1px solid #203244;
+}
+#dlgSearch {
+    background-color: #1B2330;
+    border: 1px solid #203244;
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 13px;
+}
+#dlgSearch:focus {
+    border-color: #7FAFD6;
+}
+#dlgList {
+    border: none;
+    background-color: #12161D;
+    alternate-background-color: #19212E;
+    outline: none;
+    font-size: 13px;
+}
+#dlgList::item {
+    padding: 0;
+    border: none;
+}
+#dlgList::item:selected {
+    background-color: #203244;
+}
+#dlgList::item:hover:!selected {
+    background-color: #1B2330;
+}
+#dlgName {
+    font-size: 13px;
+    font-weight: bold;
+    color: #E8EDF2;
+}
+#dlgDetail {
+    font-size: 11px;
+    color: #B7C0C8;
+}
+#dlgIcon {
+    font-size: 22px;
+}
+#dlgSep {
+    background-color: #203244;
+    margin: 0 16px;
+}
+#dlgCancel {
+    background-color: #2A4158;
+    color: #E8EDF2;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 20px;
+    font-size: 13px;
+}
+#dlgCancel:hover {
+    background-color: #37628F;
+}

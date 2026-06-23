@@ -45,6 +45,9 @@ def build_budget_tree(db_path: str, proyecto_id: int = 1) -> list[dict]:
             "precio_unitario":  float | None,
             "importe":          float | None,  # columna GENERATED: cant × pu
             "subtotal":         float,          # acumulado de hijos
+            "notas_rapidas":    str | None,
+            "modificado_en":    str | None,
+            "creado_en":        str | None,
             "estado_nombre":    str,            # "Verificado", etc.
             "estado_color":     str,            # "#4CAF7D"
             "hijos":            list[dict],     # recursivo
@@ -79,6 +82,8 @@ def build_budget_tree(db_path: str, proyecto_id: int = 1) -> list[dict]:
                 n.importe,
                 n.subtotal,
                 n.notas_rapidas,
+                n.modificado_en,
+                n.creado_en,
                 e.nombre  AS estado_nombre,
                 e.color   AS estado_color,
                 e.clave   AS estado_clave
@@ -159,6 +164,7 @@ def get_apu(db_path: str, nodo_id: int) -> dict:
                 ad.precio,
                 ad.importe,
                 ad.formula,
+                i.es_compuesto      AS insumo_es_compuesto,
                 i.clave             AS insumo_clave,
                 i.descripcion       AS insumo_descripcion,
                 i.descripcion_corta AS insumo_desc_corta,

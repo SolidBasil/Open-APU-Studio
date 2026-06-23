@@ -333,52 +333,43 @@ class ConceptoRepo(RepoBase):
 
 class InsumoRepo(RepoBase):
 
-    def todos(self, proyecto_id):
-        return self._lista("""
-            SELECT i.*, t.clave AS tipo_clave, t.nombre AS tipo_nombre
+    def _select_sql(self):
+        return """
+            SELECT i.*, t.clave AS tipo_clave, t.nombre AS tipo_nombre,
+                   f.nombre AS familia_nombre, p.nombre AS proveedor_nombre
             FROM insumos i
             JOIN tipos_insumo t ON t.id = i.tipo_id
-            WHERE i.proyecto_id = ? AND i.activo = 1
-            ORDER BY t.orden, i.clave
-        """, [proyecto_id])
+            LEFT JOIN familias f ON f.id = i.familia_id
+            LEFT JOIN proveedores p ON p.id = i.proveedor_id
+        """
+
+    def todos(self, proyecto_id):
+        return self._lista(
+            self._select_sql() + " WHERE i.proyecto_id = ? AND i.activo = 1 ORDER BY t.orden, i.clave",
+            [proyecto_id])
 
     def por_tipo(self, proyecto_id, tipo_clave):
         """tipo_clave: 'material', 'mano_obra', 'herramienta', 'equipo', 'auxiliar'"""
-        return self._lista("""
-            SELECT i.*, t.clave AS tipo_clave, t.nombre AS tipo_nombre
-            FROM insumos i
-            JOIN tipos_insumo t ON t.id = i.tipo_id
-            WHERE i.proyecto_id = ? AND t.clave = ? AND i.activo = 1
-            ORDER BY i.clave
-        """, [proyecto_id, tipo_clave])
+        return self._lista(
+            self._select_sql() + " WHERE i.proyecto_id = ? AND t.clave = ? AND i.activo = 1 ORDER BY i.clave",
+            [proyecto_id, tipo_clave])
 
     def buscar(self, insumo_id):
-        return self._uno("""
-            SELECT i.*, t.clave AS tipo_clave, t.nombre AS tipo_nombre
-            FROM insumos i
-            JOIN tipos_insumo t ON t.id = i.tipo_id
-            WHERE i.id = ? AND i.activo = 1
-        """, [insumo_id])
+        return self._uno(
+            self._select_sql() + " WHERE i.id = ? AND i.activo = 1",
+            [insumo_id])
 
     def buscar_por_clave(self, clave, proyecto_id):
-        return self._uno("""
-            SELECT i.*, t.clave AS tipo_clave, t.nombre AS tipo_nombre
-            FROM insumos i
-            JOIN tipos_insumo t ON t.id = i.tipo_id
-            WHERE i.clave = ? AND i.proyecto_id = ? AND i.activo = 1
-        """, [clave, proyecto_id])
+        return self._uno(
+            self._select_sql() + " WHERE i.clave = ? AND i.proyecto_id = ? AND i.activo = 1",
+            [clave, proyecto_id])
 
     def buscar_texto(self, proyecto_id, texto):
         """Búsqueda libre en clave y descripción."""
         q = f"%{texto}%"
-        return self._lista("""
-            SELECT i.*, t.clave AS tipo_clave, t.nombre AS tipo_nombre
-            FROM insumos i
-            JOIN tipos_insumo t ON t.id = i.tipo_id
-            WHERE i.proyecto_id = ? AND i.activo = 1
-              AND (i.clave LIKE ? OR i.descripcion LIKE ? OR i.descripcion_corta LIKE ?)
-            ORDER BY t.orden, i.clave
-        """, [proyecto_id, q, q, q])
+        return self._lista(
+            self._select_sql() + " WHERE i.proyecto_id = ? AND i.activo = 1 AND (i.clave LIKE ? OR i.descripcion LIKE ? OR i.descripcion_corta LIKE ?) ORDER BY t.orden, i.clave",
+            [proyecto_id, q, q, q])
 
     def resumen_por_tipo(self, proyecto_id):
         """Conteo y costo total por tipo de insumo."""

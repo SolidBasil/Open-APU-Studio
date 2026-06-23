@@ -7,11 +7,16 @@ Uso:
     from frontend.widgets.insumos import TablaInsumos
 """
 
+from PySide6.QtCore import QByteArray
 from PySide6.QtWidgets import QHeaderView
 from frontend.widgets.base import TreeTableWidget
+from backend.db import Config
 
 
-COLUMNAS = ["Clave", "Descripción", "Unidad", "Precio", "Tipo"]
+COLUMNAS = [
+    "Clave", "Descripción", "Unidad", "Precio", "Tipo",
+    "Familia", "Proveedor", "F. Precio", "Desc. Corta", "Costo MN", "Costo ME",
+]
 EDITABLE = frozenset()
 
 TIPO_NOMBRE = {
@@ -27,12 +32,31 @@ TIPO_NOMBRE = {
 
 
 class TablaInsumos(TreeTableWidget):
+    _HEADER_KEY = "insumos_header_state"
+
     def __init__(self, parent=None):
         super().__init__(COLUMNAS, EDITABLE, flat=True, parent=parent)
         self.set_column_modes({
             c: (QHeaderView.ResizeMode.Interactive, w)
-            for c, w in enumerate([90, 250, 60, 100, 130])
+            for c, w in enumerate([90, 250, 60, 100, 120, 120, 140, 85, 140, 95, 95])
         })
+        # columnas de detalle ocultas por defecto
+        for c in (7, 8, 9, 10):
+            self.setColumnHidden(c, True)
+        self._restore_header_state()
+
+    def _header_context_menu(self, pos):
+        super()._header_context_menu(pos)
+        self._save_header_state()
+
+    def _save_header_state(self):
+        raw = self.header().saveState()
+        Config.set(self._HEADER_KEY, raw.toBase64().data().decode("ascii"))
+
+    def _restore_header_state(self):
+        saved = Config.get(self._HEADER_KEY)
+        if saved:
+            self.header().restoreState(QByteArray.fromBase64(saved.encode("ascii")))
 
     def poblar(self, insumos: list[dict], claves_con_apu: set[str] | None = None):
         """
@@ -54,4 +78,10 @@ class TablaInsumos(TreeTableWidget):
                 ins.get("unidad", "") or "",
                 f"${precio:,.2f}",
                 tipo_txt,
+                ins.get("familia_nombre") or "",
+                ins.get("proveedor_nombre") or "",
+                ins.get("fecha_precio") or "",
+                ins.get("descripcion_corta") or "",
+                f"${ins.get('costo_mn', 0) or 0:,.2f}",
+                f"${ins.get('costo_me', 0) or 0:,.2f}",
             ], editable=False)

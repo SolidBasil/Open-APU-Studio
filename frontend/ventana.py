@@ -46,8 +46,10 @@ def _icon(char, size=20, font_size=None):
 
 _TOOLBAR_CFG = {
     "PROYECTO": [
-        ("Nuevo proyecto", [("+", "Nuevo"), ("📂", "Abrir"), ("💾", "Guardar"), ("💾", "Guardar como")]),
-        ("Transferir",     [("📤", "Exportar"), ("📥", "Importar OPUS")]),
+        ("Archivo",      [("+", "Nuevo"), ("📂", "Abrir"), ("✕", "Cerrar")]),
+        ("Guardar",      [("💾", "Guardar"), ("💾", "Guardar como")]),
+        ("Gestión",      [("📋", "Duplicar"), ("🗑", "Eliminar proyecto")]),
+        ("Transferir",   [("📤", "Exportar"), ("📥", "Importar OPUS")]),
     ],
     "INICIO": [
         ("Historial",     [[("↩", "Deshacer"), ("↪", "Rehacer")]]),
@@ -58,10 +60,42 @@ _TOOLBAR_CFG = {
         ("Exportar", [("📄", "Generar PDF"), ("📊", "Exportar Excel")]),
         ("Vista",    [("👁", "Vista previa")]),
     ],
-    "VISTA PRINCIPAL": [
+    "VISTA": [
+        ("Datos", [
+            ("↔", "Ajustar"),
+            ("👁", "Mostrar"),
+        ]),
+
+        ("Presentación de datos", [
+            ("▦", "Formato de columnas"),
+            [("↺", "Restablecer formato"), ("📂", "Cargar formato")],
+            [("☑", "Calculados"), ("👤", "Personalizados"), ("↻", "Actualizar")],
+            ("🗂", "Mantener vistas"),
+            ("▼", "Vista"),
+        ]),
+
+        ("Ventanas", [
+            ("▣", "Pantalla completa"),
+            [("◫", "Mosaico horizontal"), ("◧", "Mosaico vertical"), ("⧉", "Cascada")],
+        ]),
+
+        ("Aspecto", [
+            # galería (aunque lo dejes plano por ahora, esto es una deuda técnica clara)
+            ("🎨", "Tema 1"), ("🎨", "Tema 2"), ("🎨", "Tema 3"), ("🎨", "Tema 4"),
+            ("🎨", "Tema 5"), ("🎨", "Tema 6"), ("🎨", "Tema 7"), ("🎨", "Tema 8"),
+        ]),
+
+        ("Ver", [
+            ("📋", "Auditoría"),
+            ("🗔", "Explorador de vistas"),
+            ("📑", "Explorador de reportes"),
+            ("⚙", "Explorador de paramétricos"),
+        ]),
+    ],
+    "PRINCIPAL": [
         ("Portapapeles", [("📋", "Copiar"), [("✂", "Cortar"), ("📄", "Pegar"), ("☑", "Seleccionar todo")]]),
         ("Editar",       [("+", "Agregar elemento"), ("✎", "Modificar"), ("→", "Desglosar"), ("✕", "Eliminar"), ("↩", "Deshacer")]),
-        ("Estructura",   [[("▲", "Subir"), ("▼", "Bajar")]]),
+        ("Estructura",   [[("◀", "Izquierda"), ("▶", "Derecha")],[("▲", "Subir"), ("▼", "Bajar")]]),
         ("Buscar",       [("📚", "En catálogos"), ("👁", "En vista")]),
         ("Desplegar",    [("1", "Primer nivel"), ("Σ", "Resumen agrupadores"), ("⊞", "Todo"), ("≡", "Nivel")]),
         ("Filtrar",      [("🌐", "Global"), ("☰", "Por columna"), ("✏", "Editor")]),
@@ -141,7 +175,7 @@ class VentanaPrincipal(QMainWindow):
         layout.setSpacing(0)
 
         self._tab_btns = []
-        for name in ["PROYECTO", "INICIO", "INFORMES", "VISTA PRINCIPAL", "HERRAMIENTAS"]:
+        for name in ["PROYECTO", "INICIO", "INFORMES", "VISTA", "PRINCIPAL", "HERRAMIENTAS"]:
             btn = QPushButton(name)
             btn.setCheckable(True)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -185,7 +219,7 @@ class VentanaPrincipal(QMainWindow):
             self._tb_pages[tab_name] = self._tb.addWidget(page)
 
         parent_layout.addWidget(self._tb)
-        self._build_page("VISTA PRINCIPAL")
+        self._build_page("PRINCIPAL")
 
     def _build_page(self, tab_name):
         page = self._tb.widget(self._tb_pages[tab_name])
@@ -264,17 +298,21 @@ class VentanaPrincipal(QMainWindow):
             return wrap
 
         if has_stack:
-            # Solo apilados: columna vertical
-            item     = items[0]
-            sz, fs   = (18, 11) if len(item) == 2 else (12, 9)
-            wrap     = QWidget()
-            bl       = QVBoxLayout(wrap)
+            # Solo apilados: fila horizontal, cada grupo en su columna
+            wrap = QWidget()
+            bl   = QHBoxLayout(wrap)
             bl.setContentsMargins(0, 0, 0, 0)
-            bl.setSpacing(0)
-            bl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            for icon_char, tip in item:
-                bl.addWidget(self._make_stacked_btn(icon_char, tip, sz, fs))
-            wrap.setMinimumWidth(80)
+            bl.setSpacing(4)
+            for item in items:
+                col = QWidget()
+                cl  = QVBoxLayout(col)
+                cl.setContentsMargins(0, 0, 0, 0)
+                cl.setSpacing(0)
+                cl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                sz, fs = (18, 11) if len(item) == 2 else (12, 9)
+                for icon_char, tip in item:
+                    cl.addWidget(self._make_stacked_btn(icon_char, tip, sz, fs))
+                bl.addWidget(col)
             wrap.setMinimumHeight(min_height)
             return wrap
 
@@ -299,6 +337,7 @@ class VentanaPrincipal(QMainWindow):
         btn.setMinimumSize(80, 56)
         btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
         self._conectar_btn(btn, tip)
+        self._style_toolbar_btn(btn)
         return btn
 
     def _make_stacked_btn(self, icon_char, tip, sz, fs):
@@ -311,9 +350,11 @@ class VentanaPrincipal(QMainWindow):
         btn.setAutoRaise(True)
         btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self._conectar_btn(btn, tip)
+        self._style_toolbar_btn(btn)
         return btn
 
     def _conectar_btn(self, btn, tip):
+        conn = True
         if "Tema" in tip:
             btn.clicked.connect(self._show_theme_menu)
         elif "Importar OPUS" in tip:
@@ -322,6 +363,31 @@ class VentanaPrincipal(QMainWindow):
             btn.clicked.connect(self._on_abrir_proyecto)
         elif "Copiar" in tip:
             btn.clicked.connect(self._on_copy_toolbar)
+        elif tip == "Primer nivel":
+            btn.clicked.connect(self._on_desplegar_primer_nivel)
+        elif tip == "Resumen agrupadores":
+            btn.clicked.connect(self._on_desplegar_resumen)
+        elif tip == "Todo":
+            btn.clicked.connect(self._on_desplegar_todo)
+        elif tip == "Nivel":
+            btn.clicked.connect(self._on_desplegar_nivel)
+        elif tip == "Cerrar":
+            btn.clicked.connect(self._on_cerrar_proyecto)
+        elif tip == "Duplicar":
+            btn.clicked.connect(self._on_copiar_proyecto)
+        elif tip == "Eliminar proyecto":
+            btn.clicked.connect(self._on_eliminar_proyecto)
+        elif tip == "Seleccionar todo":
+            btn.clicked.connect(self._on_select_all_toolbar)
+        else:
+            conn = False
+        btn._conectado = conn
+
+    def _style_toolbar_btn(self, btn):
+        if getattr(btn, "_conectado", False):
+            return
+        btn.setToolTip(btn.toolTip() + " (beta)")
+        btn.setStyleSheet("color: #6B7884;")
 
     def _switch_tab(self, name):
         self._tab_activa = name
@@ -484,10 +550,13 @@ class VentanaPrincipal(QMainWindow):
             for r in data.get("detalle", []):
                 tid = r.get("tipo_id", 0)
                 tn  = r.get("tipo_nombre", "")
+                desc = r.get("insumo_desc_corta") or r.get("insumo_descripcion", "")
+                if r.get("insumo_es_compuesto"):
+                    desc = f"\u25b6 {desc}"
                 detail.add_row([
                     f"{tipo_emoji.get(tid, '')} {tn}" if tid else tn,
                     r.get("insumo_clave", ""),
-                    r.get("insumo_desc_corta") or r.get("insumo_descripcion", ""),
+                    desc,
                     r.get("insumo_unidad", ""),
                     f"{r.get('cantidad', 0):,.3f}",
                     f"${r.get('precio', 0):,.2f}",
@@ -632,28 +701,136 @@ class VentanaPrincipal(QMainWindow):
     # ── Importar OPUS ─────────────────────────────────────────────────────
 
     def _on_abrir_proyecto(self):
-        """Abre un archivo .db existente desde la carpeta de proyectos."""
-        from PySide6.QtWidgets import QFileDialog
+        from PySide6.QtWidgets import QDialog, QMessageBox
         from backend.db import Database, Rutas
+        from frontend.widgets.dialogs import ProjectDialog
 
-        db_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Abrir proyecto",
-            str(Rutas.proyectos()),
-            "Proyectos Open APU Studio (*.db)",
-        )
-        if not db_path:
+        proyectos = Rutas.listar_proyectos()
+        if not proyectos:
+            QMessageBox.information(self, "Abrir proyecto",
+                                    "No hay proyectos guardados.")
             return
-
+        dlg = ProjectDialog(proyectos, "Abrir proyecto", "Abrir", parent=self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        nombre = dlg.proyecto_seleccionado
+        if not nombre:
+            return
+        db_path = Rutas.db_proyecto(nombre)
+        if not db_path.exists():
+            return
         try:
             if self._db:
                 Database.cerrar()
             self._db = Database.abrir(db_path)
             self._reload_presupuesto()
             self._update_statusbar()
+            self._switch_tab("PRINCIPAL")
         except Exception as e:
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.critical(self, "Error al abrir proyecto", str(e))
+
+    def _on_cerrar_proyecto(self):
+        if not self._db:
+            return
+        from PySide6.QtWidgets import QMessageBox
+        from backend.db import Database
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Cerrar proyecto")
+        msg.setText("¿Cerrar el proyecto actual?")
+        msg.setInformativeText("Los datos no guardados se perderán.")
+        msg.setIcon(QMessageBox.Icon.Question)
+        msg.addButton("Cancelar", QMessageBox.ButtonRole.RejectRole)
+        btn_ok = msg.addButton("Cerrar", QMessageBox.ButtonRole.AcceptRole)
+        msg.setDefaultButton(btn_ok)
+        msg.exec()
+        if msg.clickedButton() != btn_ok:
+            return
+
+        Database.cerrar()
+        self._db = None
+        for i in range(self._tabs.count() - 1, -1, -1):
+            self._tabs.removeTab(i)
+        self._tabs.addTab(self._build_presupuesto(), "📋 Presupuesto programable")
+        self._sb.showMessage("Proyecto cerrado", 3000)
+
+    def _on_copiar_proyecto(self):
+        from pathlib import Path
+        from PySide6.QtWidgets import QDialog, QInputDialog, QMessageBox
+        from backend.db import Rutas
+        from frontend.widgets.dialogs import ProjectDialog
+
+        proyectos = Rutas.listar_proyectos()
+        if not proyectos:
+            QMessageBox.information(self, "Duplicar proyecto",
+                                    "No hay proyectos guardados.")
+            return
+        actual = Path(self._db.db_path).stem if self._db and self._db.db_path else None
+        dlg = ProjectDialog(proyectos, "Duplicar proyecto", "Duplicar",
+                            accion_color="#5B8A72", seleccionado=actual,
+                            parent=self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        source_name = dlg.proyecto_seleccionado
+        if not source_name:
+            return
+        original = Rutas.db_proyecto(source_name)
+        name, ok = QInputDialog.getText(
+            self, "Duplicar proyecto",
+            "Nombre para la copia:",
+            text=source_name + "_copia",
+        )
+        if not ok or not name.strip():
+            return
+        dest = Rutas.db_proyecto(name.strip())
+        if dest.exists():
+            QMessageBox.warning(self, "Ya existe",
+                                f"'{dest.name}' ya existe.")
+            return
+        import shutil
+        shutil.copy2(original, dest)
+        self._sb.showMessage(f"Duplicado como '{dest.name}'", 4000)
+
+    def _on_eliminar_proyecto(self):
+        from pathlib import Path
+        from PySide6.QtWidgets import QDialog, QMessageBox
+        from backend.db import Rutas, Database
+        from frontend.widgets.dialogs import ProjectDialog
+
+        proyectos = Rutas.listar_proyectos()
+        if not proyectos:
+            QMessageBox.information(self, "Eliminar proyecto",
+                                    "No hay proyectos guardados.")
+            return
+        dlg = ProjectDialog(proyectos, "Eliminar proyecto", "Eliminar",
+                            accion_color="#A06A6A", parent=self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        nombre = dlg.proyecto_seleccionado
+        if not nombre:
+            return
+        ruta = Rutas.db_proyecto(nombre)
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Confirmar eliminación")
+        msg.setText(f"¿Eliminar permanentemente '{nombre}'?")
+        msg.setInformativeText("Esta acción no se puede deshacer.")
+        msg.setIcon(QMessageBox.Icon.Warning)
+        btn_ok = msg.addButton("Eliminar", QMessageBox.ButtonRole.DestructiveRole)
+        msg.addButton("Cancelar", QMessageBox.ButtonRole.RejectRole)
+        msg.exec()
+        if msg.clickedButton() != btn_ok:
+            return
+
+        if self._db and self._db.db_path and Path(self._db.db_path).resolve() == ruta.resolve():
+            Database.cerrar()
+            self._db = None
+            for i in range(self._tabs.count() - 1, -1, -1):
+                self._tabs.removeTab(i)
+            self._tabs.addTab(self._build_presupuesto(), "📋 Presupuesto programable")
+        ruta.unlink()
+        self._sb.showMessage(f"'{nombre}' eliminado", 4000)
 
     def _on_importar_opus(self):
         from PySide6.QtWidgets import QFileDialog, QMessageBox
@@ -698,16 +875,14 @@ class VentanaPrincipal(QMainWindow):
             if self._db:
                 Database.cerrar()
             self._db = Database.abrir(db_path)
-            QMessageBox.information(
-                self, "Importación exitosa",
-                f"Nodos:        {result['nodos']}\n"
-                f"Insumos:      {result['insumos']}\n"
-                f"APU detalle:  {result['apu_detalle']}\n"
-                f"APU totales:  {result['apu_totales']}\n"
-                f"Auxiliares:   {result['auxiliares']}"
-            )
+            print(f"[import] {nombre}: nodos={result['nodos']}, insumos={result['insumos']}, "
+                  f"apu_detalle={result['apu_detalle']}, apu_totales={result['apu_totales']}, "
+                  f"auxiliares={result['auxiliares']}")
+            QMessageBox.information(self, "Importación exitosa",
+                                    f"'{nombre}' importado correctamente.")
             # Recargar el presupuesto
             self._reload_presupuesto()
+            self._switch_tab("PRINCIPAL")
         except Exception as e:
             QMessageBox.critical(self, "Error de importación", str(e))
 
@@ -725,6 +900,50 @@ class VentanaPrincipal(QMainWindow):
         widget = self._tabs.currentWidget()
         if widget and hasattr(widget, "copy_selection"):
             widget.copy_selection()
+
+    def _on_select_all_toolbar(self):
+        """Selecciona todas las filas del widget activo."""
+        widget = self._tabs.currentWidget()
+        if widget and hasattr(widget, "selectAll"):
+            widget.selectAll()
+
+    # ── Desplegar (Primer nivel / Resumen / Todo / Nivel) ────────────────
+
+    def _on_desplegar_primer_nivel(self):
+        widget = self._tabs.currentWidget()
+        if widget and hasattr(widget, "show_primer_nivel"):
+            widget.show_primer_nivel()
+
+    def _on_desplegar_resumen(self):
+        widget = self._tabs.currentWidget()
+        if widget and hasattr(widget, "show_solo_agrupadores"):
+            widget.show_solo_agrupadores()
+
+    def _on_desplegar_todo(self):
+        widget = self._tabs.currentWidget()
+        if widget and hasattr(widget, "show_todo"):
+            widget.show_todo()
+
+    def _on_desplegar_nivel(self):
+        widget = self._tabs.currentWidget()
+        if not widget or not hasattr(widget, "show_nivel"):
+            return
+        menu = QMenu(self)
+        for nivel in range(1, 11):
+            act = menu.addAction(f"Nivel {nivel}")
+            act.setData(nivel)
+            act.triggered.connect(
+                lambda checked=False, n=nivel: widget.show_nivel(n - 1)
+            )
+        # Mostrar el menú justo debajo del botón que lo invocó
+        btn = self.sender()
+        if btn:
+            menu.exec(btn.mapToGlobal(btn.rect().bottomLeft()))
+        else:
+            menu.exec(QPoint(
+                self._tb.mapToGlobal(self._tb.rect().topLeft()).x(),
+                self._tb.mapToGlobal(self._tb.rect().bottomLeft()).y(),
+            ))
 
     # ── Placeholder ───────────────────────────────────────────────────────
 
@@ -757,6 +976,8 @@ class VentanaPrincipal(QMainWindow):
     def _on_sidebar_click(self, item, column):
         if item.childCount() > 0:
             return
+        if not self._db:
+            return
         title = item.text(0)
         for i in range(self._tabs.count()):
             if self._tabs.tabText(i) == title:
@@ -766,6 +987,8 @@ class VentanaPrincipal(QMainWindow):
 
     def _on_sidebar_double_click(self, item, column):
         if item.childCount() > 0:
+            return
+        if not self._db:
             return
         title = item.text(0)
         for i in range(self._tabs.count()):

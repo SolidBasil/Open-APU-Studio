@@ -288,7 +288,7 @@ def importar(carpeta: str, db_path: str, nombre: str | None = None) -> dict:
                 (proyecto_id, clave, descripcion, descripcion_corta, unidad)
             VALUES (?, ?, ?, ?, ?)
         """, (proyecto_id, clave,
-              _s(rec.get("DESCCORTA") or rec.get("DESCRIPCIO")),
+              _s(rec.get("DESCRIPCIO") or rec.get("DESCCORTA")),
               _s(rec.get("DESCCORTA")),
               _s(rec.get("UNIDAD"))))
         n_apu_nodos += 1
@@ -481,7 +481,7 @@ def _arbol_numerico(con, cur, proyecto_id, regs_1, regs_a, regs_p) -> dict:
         es_concepto = bool(pre_com)
         if es_concepto:
             rec  = egp.get(pre_com, {})
-            desc = _s(rec.get("DESCCORTA") or rec.get("DESCRIPCIO"))
+            desc = _s(rec.get("DESCRIPCIO") or rec.get("DESCCORTA"))
             desc_corta = _s(rec.get("DESCCORTA"))
             unidad     = _s(rec.get("UNIDAD"))
             cantidad   = _f(r.get("PRE_VOL"))
@@ -557,7 +557,7 @@ def _arbol_clasico(con, cur, proyecto_id, regs_f, regs_p) -> dict:
                      subtotal, estado_id, creado_por)
                 VALUES (?, ?, ?, 2, ?, 'concepto', ?, ?, ?, ?, ?, ?, 0, 1, 1)
             """, (proyecto_id, cap_id, f"{wbs_cap}{i:02d}", i, clave,
-                  _s(rec.get("DESCCORTA") or rec.get("DESCRIPCIO")),
+                  _s(rec.get("DESCRIPCIO") or rec.get("DESCCORTA")),
                   _s(rec.get("DESCCORTA")),
                   _s(rec.get("UNIDAD")),
                   _f(r.get("NOELE")), _f(r.get("COSTO"))))
