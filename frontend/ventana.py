@@ -25,6 +25,9 @@ from frontend.temas import Temas
 # =============================================================================
 
 def _icon(char, size=20, font_size=None):
+    """Genera un QIcon desde un carácter (emoji/unicode) pintado sobre un pixmap transparente.
+    Útil para botones de toolbar sin depender de archivos de imagen.
+    """
     pix = QPixmap(size, size)
     pix.fill(Qt.GlobalColor.transparent)
     p = QPainter(pix)
@@ -48,7 +51,7 @@ _TOOLBAR_CFG = {
     "PROYECTO": [
         ("Archivo",      [("+", "Nuevo"), ("📂", "Abrir"), ("✕", "Cerrar")]),
         ("Guardar",      [("💾", "Guardar"), ("💾", "Guardar como")]),
-        ("Gestión",      [("📋", "Duplicar"), ("🗑", "Eliminar proyecto")]),
+        ("Gestión",      [("📋", "Duplicar"), ("✏", "Renombrar"), ("🗑", "Eliminar proyecto")]),
         ("Transferir",   [("📤", "Exportar"), ("📥", "Importar OPUS")]),
     ],
     "INICIO": [
@@ -79,11 +82,7 @@ _TOOLBAR_CFG = {
             [("◫", "Mosaico horizontal"), ("◧", "Mosaico vertical"), ("⧉", "Cascada")],
         ]),
 
-        ("Aspecto", [
-            # galería (aunque lo dejes plano por ahora, esto es una deuda técnica clara)
-            ("🎨", "Tema 1"), ("🎨", "Tema 2"), ("🎨", "Tema 3"), ("🎨", "Tema 4"),
-            ("🎨", "Tema 5"), ("🎨", "Tema 6"), ("🎨", "Tema 7"), ("🎨", "Tema 8"),
-        ]),
+        ("Aspecto", [("🎨", "__TEMAS__")]),
 
         ("Ver", [
             ("📋", "Auditoría"),
@@ -105,7 +104,6 @@ _TOOLBAR_CFG = {
         ("Sistema",     [("⚙", "Configuración")]),
         ("Datos",       [("📦", "Importar OPUS")]),
         ("Utilidades",  [("🔢", "Calculadora")]),
-        ("Apariencia",  [("🌸", "Tema")]),
     ],
 }
 
@@ -115,15 +113,24 @@ _TOOLBAR_CFG = {
 # =============================================================================
 
 class VentanaPrincipal(QMainWindow):
+    """Ventana principal de la aplicación.
+
+    Coordina:
+      - Toolbar superior con pestañas (PROYECTO, INICIO, INFORMES, VISTA, PRINCIPAL, HERRAMIENTAS)
+      - Sidebar izquierdo con el explorador de secciones
+      - Área central con pestañas de contenido (presupuesto, APU, insumos, etc.)
+      - Barra de búsqueda y barra de estado
+    """
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Open APU Studio  v0.3")
         self.resize(1400, 800)
 
-        self._tema       = Temas.cargar_preferencia()
-        self._tab_activa = "PROYECTO"
-        self._tab_temp   = None
-        self._db         = None
+        self._tema       = Temas.cargar_preferencia()   # tema guardado en config.json
+        self._tab_activa = "PROYECTO"                    # toolbar tab activa
+        self._tab_temp   = None                          # pestaña temporal (click simple)
+        self._db         = None                          # instancia de Database o None
 
         self._init_db()
         self._build_central()
@@ -132,10 +139,17 @@ class VentanaPrincipal(QMainWindow):
     # ── Base de datos ─────────────────────────────────────────────────────
 
     def _init_db(self):
-        """Sin carga automática — el usuario elige el proyecto desde la toolbar."""
+        """Inicializa la BD sin carga automática — el usuario elige el proyecto desde PROYECTO → Abrir."""
         self._db = None
 
     # ── Layout central ────────────────────────────────────────────────────
+    # Jerarquía vertical:
+    #   tab bar (PROYECTO | INICIO | …)
+    #   toolbar contextual (cambia según pestaña activa)
+    #   splitter horizontal:
+    #     - sidebar (explorador de secciones)
+    #     - área derecha: search bar + QTabWidget de contenido
+    # ───────────────────────────────────────────────────────────────────────
 
     def _build_central(self):
         wrapper = QWidget()
@@ -166,6 +180,8 @@ class VentanaPrincipal(QMainWindow):
         self.setCentralWidget(wrapper)
 
     # ── Barra de pestañas ─────────────────────────────────────────────────
+    # Botones superiores que cambian la toolbar contextual.
+    # Cada botón alterna la página mostrada en el QStackedWidget de abajo.
 
     def _build_tab_bar(self, parent_layout):
         bar    = QWidget()
@@ -187,6 +203,8 @@ class VentanaPrincipal(QMainWindow):
         parent_layout.addWidget(bar)
 
     # ── Barra de búsqueda ─────────────────────────────────────────────────
+    # Filtro de texto que se aplica al TreeTableWidget activo.
+    # Conectado a TreeTableWidget.filter_rows().
 
     def _build_search_bar(self, parent_layout):
         bar = QWidget()
@@ -206,8 +224,12 @@ class VentanaPrincipal(QMainWindow):
         parent_layout.addWidget(bar)
 
     # ── Toolbar ───────────────────────────────────────────────────────────
+    # QStackedWidget con una página por pestaña.
+    # Cada página se construye bajo demanda (lazy) desde _TOOLBAR_CFG.
+    # ───────────────────────────────────────────────────────────────────────
 
     def _build_toolbar(self, parent_layout):
+        """Crea el QStackedWidget y reserva una página vacía por cada tab en _TOOLBAR_CFG."""
         self._tb       = QStackedWidget()
         self._tb.setObjectName("tbCustom")
         self._tb_pages  = {}
@@ -222,6 +244,7 @@ class VentanaPrincipal(QMainWindow):
         self._build_page("PRINCIPAL")
 
     def _build_page(self, tab_name):
+        """Construye (una sola vez) la página de toolbar para tab_name."""
         page = self._tb.widget(self._tb_pages[tab_name])
         if tab_name in self._tb_built:
             return
@@ -232,6 +255,7 @@ class VentanaPrincipal(QMainWindow):
         layout.setSpacing(0)
 
         groups         = _TOOLBAR_CFG[tab_name]
+        # Altura mínima: entre más items apilados, más alto el botón
         page_max_rows  = max(
             max((len(item) if isinstance(item, list) else 1) for item in g[1])
             for g in groups
@@ -252,7 +276,10 @@ class VentanaPrincipal(QMainWindow):
             gl.setContentsMargins(6, 0, 6, 0)
             gl.setSpacing(0)
             gl.addStretch()
-            gl.addWidget(self._build_btn_wrap(items, page_min_btn_h))
+            if label == "Aspecto":
+                gl.addWidget(self._build_theme_buttons())
+            else:
+                gl.addWidget(self._build_btn_wrap(items, page_min_btn_h))
 
             lbl = QLabel(label)
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -316,7 +343,7 @@ class VentanaPrincipal(QMainWindow):
             wrap.setMinimumHeight(min_height)
             return wrap
 
-        # Solo simples: fila horizontal de botones grandes
+        # Solo simples: fila horizontal de botones grandes (texto bajo icono)
         wrap = QWidget()
         bl   = QHBoxLayout(wrap)
         bl.setContentsMargins(0, 0, 0, 0)
@@ -328,6 +355,7 @@ class VentanaPrincipal(QMainWindow):
         return wrap
 
     def _make_big_btn(self, icon_char, tip):
+        """Botón grande con icono arriba y texto abajo (ToolButtonTextUnderIcon)."""
         btn = QToolButton()
         btn.setIcon(_icon(icon_char, 40, 22))
         btn.setToolTip(tip)
@@ -341,6 +369,7 @@ class VentanaPrincipal(QMainWindow):
         return btn
 
     def _make_stacked_btn(self, icon_char, tip, sz, fs):
+        """Botón pequeño para grupos apilados (ToolButtonTextBesideIcon)."""
         btn = QToolButton()
         btn.setObjectName("tbStackedBtn")
         btn.setIcon(_icon(icon_char, sz, fs))
@@ -354,10 +383,11 @@ class VentanaPrincipal(QMainWindow):
         return btn
 
     def _conectar_btn(self, btn, tip):
+        """Enruta el click del botón al handler según su tooltip.
+        Marca btn._conectado = True/False para que _style_toolbar_btn decida el estilo.
+        """
         conn = True
-        if "Tema" in tip:
-            btn.clicked.connect(self._show_theme_menu)
-        elif "Importar OPUS" in tip:
+        if "Importar OPUS" in tip:
             btn.clicked.connect(self._on_importar_opus)
         elif tip == "Abrir":
             btn.clicked.connect(self._on_abrir_proyecto)
@@ -375,6 +405,8 @@ class VentanaPrincipal(QMainWindow):
             btn.clicked.connect(self._on_cerrar_proyecto)
         elif tip == "Duplicar":
             btn.clicked.connect(self._on_copiar_proyecto)
+        elif tip == "Renombrar":
+            btn.clicked.connect(self._on_renombrar_proyecto)
         elif tip == "Eliminar proyecto":
             btn.clicked.connect(self._on_eliminar_proyecto)
         elif tip == "Seleccionar todo":
@@ -384,12 +416,14 @@ class VentanaPrincipal(QMainWindow):
         btn._conectado = conn
 
     def _style_toolbar_btn(self, btn):
+        """Aplica estilo atenuado a botones sin handler conectado."""
         if getattr(btn, "_conectado", False):
             return
         btn.setToolTip(btn.toolTip() + " (beta)")
         btn.setStyleSheet("color: #6B7884;")
 
     def _switch_tab(self, name):
+        """Cambia la pestaña activa de la toolbar, construye la página si es necesario."""
         self._tab_activa = name
         for btn in self._tab_btns:
             btn.setChecked(btn.text() == name)
@@ -397,7 +431,10 @@ class VentanaPrincipal(QMainWindow):
         self._tb.setCurrentIndex(self._tb_pages[name])
 
     def _update_label_colors(self):
-        color = {"dark": "#E8EDF2", "light": "#FFFFFF", "hybrid": "#FFFFFF"}.get(self._tema, "#E8EDF2")
+        """Aplica el color de texto correcto a las etiquetas de grupo según el tema activo."""
+        color = {"dark": "#E8EDF2", "light": "#FFFFFF", "hybrid": "#FFFFFF",
+                 "rosa": "#F0E2EA", "cafe": "#EDE4D8", "verde": "#E0EDE4"}.get(
+                     self._tema, "#E8EDF2")
         for lbl in self._tb_labels:
             lbl.setStyleSheet(
                 f"color: {color}; background-color: transparent;"
@@ -406,24 +443,40 @@ class VentanaPrincipal(QMainWindow):
 
     # ── Temas ─────────────────────────────────────────────────────────────
 
-    def _show_theme_menu(self):
-        menu = QMenu(self)
-        for key, label in [("dark", "Oscuro"), ("light", "Claro"), ("hybrid", "Híbrido")]:
-            act = menu.addAction(label)
-            act.triggered.connect(lambda checked=False, k=key: self._set_theme(k))
-        menu.exec(QPoint(
-            self._tb.mapToGlobal(self._tb.rect().topLeft()).x(),
-            self._tb.mapToGlobal(self._tb.rect().bottomLeft()).y(),
-        ))
+    def _build_theme_buttons(self):
+        """Construye una fila de botones, uno por tema registrado en Temas.OPCIONES."""
+        from PySide6.QtWidgets import QToolButton
+        from PySide6.QtCore import QSize
+        wrap = QWidget()
+        bl   = QHBoxLayout(wrap)
+        bl.setContentsMargins(0, 0, 0, 0)
+        bl.setSpacing(2)
+        bl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        for key, nombre in Temas.NOMBRES.items():
+            btn = QToolButton()
+            btn.setIcon(_icon("🎨", 28, 14))
+            btn.setToolTip(nombre)
+            btn.setText(nombre)
+            btn.setIconSize(QSize(28, 28))
+            btn.setAutoRaise(True)
+            btn.setMinimumSize(68, 48)
+            btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+            btn._conectado = True
+            btn.clicked.connect(lambda checked=False, k=key: self._set_theme(k))
+            bl.addWidget(btn)
+        return wrap
 
     def _set_theme(self, key: str):
+        """Cambia el tema visual en caliente y persiste la preferencia en config.json."""
         self._tema = key
         Temas.aplicar(QApplication.instance(), key)
         Temas.guardar_preferencia(key)
         self._switch_tab(self._tab_activa)
         self._update_statusbar()
 
-    # ── Sidebar ───────────────────────────────────────────────────────────
+    # ── Sidebar (explorador lateral) ─────────────────────────────────────
+    # Árbol de secciones del proyecto. Click simple → pestaña temporal,
+    # doble click → pestaña permanente.
 
     def _build_sidebar(self):
         tree = QTreeWidget()
@@ -461,7 +514,9 @@ class VentanaPrincipal(QMainWindow):
         tree.itemDoubleClicked.connect(self._on_sidebar_double_click)
         return tree
 
-    # ── Contenido central ─────────────────────────────────────────────────
+    # ── Contenido central (QTabWidget) ───────────────────────────────────
+    # Pestañas de contenido: presupuesto, APU, insumos, conceptos, etc.
+    # Se cierran con la X. Ctrl+Tab / Ctrl+Shift+Tab navega entre ellas.
 
     def _build_content(self):
         self._tabs = QTabWidget()
@@ -475,6 +530,7 @@ class VentanaPrincipal(QMainWindow):
         return self._tabs
 
     # ── Presupuesto ───────────────────────────────────────────────────────
+    # Pestaña inicial. Si no hay BD abierta, muestra el placeholder clickeable.
 
     def _build_presupuesto(self):
         from frontend.widgets.arbol import TablaArbol
@@ -495,7 +551,11 @@ class VentanaPrincipal(QMainWindow):
         return tree
 
     def _build_sin_proyecto(self) -> QWidget:
-        """Panel vacío que se muestra cuando no hay ningún proyecto cargado."""
+        """Placeholder mostrado cuando no hay proyecto abierto.
+        Al hacer clic en cualquier parte (vía eventFilter) abre el ProjectDialog.
+        """
+        from PySide6.QtCore import QEvent
+
         w      = QWidget()
         layout = QVBoxLayout(w)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -511,8 +571,8 @@ class VentanaPrincipal(QMainWindow):
         titulo.setFont(f)
 
         instruccion = QLabel(
-            "Usa la pestaña  HERRAMIENTAS → Importar OPUS  para cargar un proyecto,\n"
-            "o abre uno existente desde  PROYECTO → Abrir."
+            "Haz clic en cualquier parte para abrir un proyecto, o usa\n"
+            "HERRAMIENTAS → Importar OPUS  para cargar uno nuevo."
         )
         instruccion.setAlignment(Qt.AlignmentFlag.AlignCenter)
         instruccion.setFont(QFont("Segoe UI", 11))
@@ -525,9 +585,24 @@ class VentanaPrincipal(QMainWindow):
         layout.addSpacing(8)
         layout.addWidget(instruccion)
         layout.addStretch()
+
+        w.setCursor(Qt.CursorShape.PointingHandCursor)
+        w.installEventFilter(self)
+
+        for child in w.findChildren(QWidget):
+            child.setCursor(Qt.CursorShape.PointingHandCursor)
+            child.installEventFilter(self)
+        layout.addWidget(icono)
+        layout.addSpacing(16)
+        layout.addWidget(titulo)
+        layout.addSpacing(8)
+        layout.addWidget(instruccion)
+        layout.addStretch()
         return w
 
-    # ── APU ───────────────────────────────────────────────────────────────
+    # ── APU (Análisis de Precio Unitario) ────────────────────────────────
+    # Pestaña que muestra el desglose de insumos de un concepto.
+    # Se abre al hacer doble clic en una celda de P.U. o Precio.
 
     def _build_apu_tab(self, clave: str, nodo_id: int):
         from frontend.widgets.base import TreeTableWidget
@@ -545,13 +620,21 @@ class VentanaPrincipal(QMainWindow):
         tipo_emoji = {
             1: "🧱", 2: "👷", 4: "🔧", 8: "🚜", 16: "⚙️", 32: "📄",
         }
+        claves_con_apu: set[str] = set()
         if self._db:
+            cur = self._db.conn.cursor()
+            cur.execute(
+                "SELECT clave FROM apu_nodos WHERE proyecto_id=?",
+                (1,),
+            )
+            claves_con_apu = {r[0] for r in cur.fetchall()}
+
             data = get_apu(self._db.db_path, nodo_id)
             for r in data.get("detalle", []):
                 tid = r.get("tipo_id", 0)
                 tn  = r.get("tipo_nombre", "")
                 desc = r.get("insumo_desc_corta") or r.get("insumo_descripcion", "")
-                if r.get("insumo_es_compuesto"):
+                if r.get("insumo_clave") in claves_con_apu:
                     desc = f"\u25b6 {desc}"
                 detail.add_row([
                     f"{tipo_emoji.get(tid, '')} {tn}" if tid else tn,
@@ -567,15 +650,18 @@ class VentanaPrincipal(QMainWindow):
         return detail
 
     def _on_apu_detail_dblclick(self, item, column):
+        """Doble clic en APU → abre el APU de ese insumo si es compuesto."""
         if self._es_pu(item, column):
             self._abrir_apu(item.text(1).strip())
 
     def _on_item_dblclick(self, item, column):
+        """Doble clic en presupuesto/insumos → abre APU del concepto."""
         if self._es_pu(item, column):
             self._abrir_apu(item.text(0).strip() or item.text(1).strip())
 
     @staticmethod
     def _es_pu(item, column) -> bool:
+        """Detecta si la columna contiene 'PU' o 'PRECIO' (case-insensitive)."""
         tw = item.treeWidget()
         if not tw:
             return False
@@ -583,6 +669,7 @@ class VentanaPrincipal(QMainWindow):
         return "PU" in h or "PRECIO" in h
 
     def _abrir_apu(self, clave: str):
+        """Busca un concepto por clave y abre su APU en una nueva pestaña."""
         if not clave or not self._db:
             return
 
@@ -610,6 +697,8 @@ class VentanaPrincipal(QMainWindow):
         self._tabs.setCurrentIndex(idx)
 
     # ── Insumos ───────────────────────────────────────────────────────────
+    # Catálogo completo de insumos, filtrable por tipo desde el sidebar.
+    # Muestra ▶ en insumos que tienen APU (compuestos o matrices).
 
     def _build_insumos(self, title: str):
         from frontend.widgets.insumos import TablaInsumos
@@ -647,6 +736,8 @@ class VentanaPrincipal(QMainWindow):
         return tabla
 
     # ── Conceptos ─────────────────────────────────────────────────────────
+    # Vista plana de todos los nodos de tipo 'concepto' en el presupuesto.
+    # Permite navegación rápida y apertura de APU por doble clic en P.U.
 
     def _build_conceptos(self):
         from frontend.widgets.base import TreeTableWidget
@@ -674,7 +765,8 @@ class VentanaPrincipal(QMainWindow):
         t.itemDoubleClicked.connect(self._on_item_dblclick)
         return t
 
-    # ── Indirectos ────────────────────────────────────────────────────────
+    # ── Indirectos (Pie de Precios) ──────────────────────────────────────
+    # Muestra los renglones de sobrecostos e indirectos del proyecto.
 
     def _build_indirectos(self):
         from frontend.widgets.base import TreeTableWidget
@@ -698,9 +790,18 @@ class VentanaPrincipal(QMainWindow):
                 ], editable=False)
         return t
 
-    # ── Importar OPUS ─────────────────────────────────────────────────────
+    # ── Gestión de proyectos (Abrir / Cerrar / Duplicar / Eliminar) ─────
+
+    def eventFilter(self, obj, event):
+        """Captura clics en el placeholder 'Sin proyecto' para abrir el ProjectDialog."""
+        from PySide6.QtCore import QEvent
+        if event.type() == QEvent.Type.MouseButtonPress:
+            self._on_abrir_proyecto()
+            return True
+        return super().eventFilter(obj, event)
 
     def _on_abrir_proyecto(self):
+        """Muestra ProjectDialog para seleccionar y abrir un proyecto .db."""
         from PySide6.QtWidgets import QDialog, QMessageBox
         from backend.db import Database, Rutas
         from frontend.widgets.dialogs import ProjectDialog
@@ -731,6 +832,7 @@ class VentanaPrincipal(QMainWindow):
             QMessageBox.critical(self, "Error al abrir proyecto", str(e))
 
     def _on_cerrar_proyecto(self):
+        """Cierra el proyecto actual con confirmación."""
         if not self._db:
             return
         from PySide6.QtWidgets import QMessageBox
@@ -756,6 +858,7 @@ class VentanaPrincipal(QMainWindow):
         self._sb.showMessage("Proyecto cerrado", 3000)
 
     def _on_copiar_proyecto(self):
+        """Duplica un proyecto existente: selecciona origen, asigna nombre, copia .db."""
         from pathlib import Path
         from PySide6.QtWidgets import QDialog, QInputDialog, QMessageBox
         from backend.db import Rutas
@@ -792,7 +895,51 @@ class VentanaPrincipal(QMainWindow):
         shutil.copy2(original, dest)
         self._sb.showMessage(f"Duplicado como '{dest.name}'", 4000)
 
+    def _on_renombrar_proyecto(self):
+        """Renombra un proyecto .db: selecciona, escribe nuevo nombre, renombra archivo."""
+        from pathlib import Path
+        from PySide6.QtWidgets import QDialog, QInputDialog, QMessageBox
+        from backend.db import Rutas, Database
+        from frontend.widgets.dialogs import ProjectDialog
+
+        proyectos = Rutas.listar_proyectos()
+        if not proyectos:
+            QMessageBox.information(self, "Renombrar proyecto",
+                                    "No hay proyectos guardados.")
+            return
+        dlg = ProjectDialog(proyectos, "Renombrar proyecto", "Renombrar",
+                            accion_color="#D5B39B", parent=self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        source_name = dlg.proyecto_seleccionado
+        if not source_name:
+            return
+
+        name, ok = QInputDialog.getText(
+            self, "Renombrar proyecto",
+            "Nuevo nombre:",
+            text=source_name,
+        )
+        if not ok or not name.strip() or name.strip() == source_name:
+            return
+        name = name.strip()
+        dest = Rutas.db_proyecto(name)
+        if dest.exists():
+            QMessageBox.warning(self, "Ya existe",
+                                f"'{name}' ya existe.")
+            return
+
+        original = Rutas.db_proyecto(source_name)
+        if self._db and self._db.db_path and Path(self._db.db_path).resolve() == original.resolve():
+            Database.cerrar()
+            self._db = Database.abrir(dest)
+            self._update_statusbar()
+
+        original.rename(dest)
+        self._sb.showMessage(f"Renombrado a '{name}'", 4000)
+
     def _on_eliminar_proyecto(self):
+        """Elimina permanentemente un proyecto .db con doble confirmación."""
         from pathlib import Path
         from PySide6.QtWidgets import QDialog, QMessageBox
         from backend.db import Rutas, Database

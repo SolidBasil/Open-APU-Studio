@@ -84,6 +84,7 @@ class ProjectDialog(QDialog):
                 idx_selected = i
 
         self._lista.currentItemChanged.connect(self._on_seleccion)
+        self._lista.itemDoubleClicked.connect(lambda: self.accept())
         layout.addWidget(self._lista, 1)
 
         # Apply initial selection

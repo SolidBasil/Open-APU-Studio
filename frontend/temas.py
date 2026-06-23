@@ -22,11 +22,17 @@ class Temas:
         "dark":   "dark.qss",
         "light":  "light.qss",
         "hybrid": "hybrid.qss",
+        "rosa":   "rosa.qss",
+        "cafe":   "cafe.qss",
+        "verde":  "verde.qss",
     }
     NOMBRES = {
         "dark":   "Oscuro",
         "light":  "Claro",
         "hybrid": "Híbrido",
+        "rosa":   "Rosa",
+        "cafe":   "Café",
+        "verde":  "Verde",
     }
 
     @staticmethod
