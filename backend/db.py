@@ -203,7 +203,9 @@ class Database:
     # ── Schema ────────────────────────────────────────────────────────────
 
     def _aplicar_schema(self):
-        """Aplica schema.sql si la base de datos es nueva."""
+        """Aplica schema.sql si la base de datos es nueva.
+        Migra v2→v3 automáticamente en DBs existentes (agrega matriz_id).
+        """
         schema_path = Path(__file__).parent / "schema.sql"
         if not schema_path.exists():
             raise FileNotFoundError(f"No se encontró el schema en {schema_path}")
@@ -221,9 +223,27 @@ class Database:
             "SELECT version FROM schema_version"
         ).fetchall()}
 
-        if 1 not in aplicadas:
+        if 2 not in aplicadas:
+            # DB nueva (ni v2 ni v3): ejecuta schema.sql completo (v3)
+            # Las primeras tablas ya tienen CREATE IF NOT EXISTS, las migraciones
+            # posteriores usan schema_version para decidir qué aplicar.
             sql = schema_path.read_text(encoding="utf-8")
             self._conn.executescript(sql)
+            self._conn.commit()
+        elif 3 not in aplicadas:
+            # Migración v2 → v3: las tablas existen con columnas concepto_id e
+            # insumo_compuesto_id separadas. Las unificamos en matriz_id.
+            # La columna nueva se llena con COALESCE de ambas, y las originales
+            # se conservan (no se borran por compatibilidad).
+            cur.executescript("""
+                ALTER TABLE apu_matrices ADD COLUMN matriz_id INTEGER;
+                UPDATE apu_matrices SET matriz_id = COALESCE(concepto_id, insumo_compuesto_id);
+                CREATE INDEX IF NOT EXISTS idx_apu_mat_matriz ON apu_matrices(matriz_id);
+                ALTER TABLE apu_resumen_totales ADD COLUMN matriz_id INTEGER;
+                UPDATE apu_resumen_totales SET matriz_id = COALESCE(concepto_id, insumo_compuesto_id);
+                INSERT OR IGNORE INTO schema_version (version, descripcion)
+                    VALUES (3, 'v3: matriz_id unico');
+            """)
             self._conn.commit()
 
     # ── Singleton ─────────────────────────────────────────────────────────

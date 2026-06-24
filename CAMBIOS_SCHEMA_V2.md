@@ -1,7 +1,8 @@
-# Cambios al esquema — Versión 2
+# Cambios al esquema — Versiones 2 y 3
 
-Documento que consolida todas las decisiones de rediseño del schema
-antes de implementarlas. Una vez aprobado, se aplican todos de una sola pasada.
+Documento que consolida las decisiones de rediseño del schema.
+**Estado:** V2 completamente implementado, V3 añade matriz_id unificado.
+Ver `schema.sql` y `db.py` (migración automática v2→v3).
 
 ---
 
@@ -163,4 +164,7 @@ subfamilia_id  INTEGER REFERENCES subfamilias(id)
 
 ---
 
-*Pendiente de aprobación antes de implementar*
+*✅ V2 aprobado e implementado. V3 añade:*
+*- `concepto_id` + `insumo_compuesto_id` → `matriz_id` único en `apu_matrices` y `apu_resumen_totales`*
+*- `es_compuesto` por presencia en `*F.DBF` (además del bit 32 de PREFIJO)*
+*- `pre_idpad` descartado como método de resolución de padres (WBS truncation siempre)*

@@ -32,13 +32,19 @@ LINE_WIDTH  = 1.5
 # ── Utilidades de texto ───────────────────────────────────────────
 
 def _strip_icons(text: str) -> str:
-    """Quita prefijos del sistema (▶ y emojis de tipo) sin afectar datos del usuario."""
+    """Quita prefijos del sistema (▶ y emojis de tipo) sin afectar datos del usuario.
+    Necesario para copiar/exportar datos limpios sin marcadores visuales.
+    """
     return SISTEMA_PREFIJOS.sub("", text)
 
 
 # ── Dibujado de conectores jerárquicos ────────────────────────────
 
 def draw_tree_connectors(tree, painter, rect, index, line_color=LINE_COLOR):
+    """Dibuja conectores visuales entre nodos jerárquicos.
+    Por cada nivel dibuja una línea vertical si hay nodos debajo,
+    y una línea horizontal hacia el contenido del nodo actual.
+    """
     info = []
     idx  = index
     while True:
@@ -185,9 +191,28 @@ class TreeTableWidget(QTreeWidget):
         self.expandAll()
 
     def show_nivel(self, depth: int):
+        """Expande items hasta profundidad N (recorrido manual del árbol).
+        depth=0 → solo raíces colapsadas (igual que Primer nivel)
+        depth=1 → raíces expandidas (hijos visibles)
+        depth=2 → + nietos visibles
+        etc.
+        """
         self._show_all()
         self.collapseAll()
-        self.expandToDepth(depth)
+        for i in range(self.topLevelItemCount()):
+            self._expand_depth(self.topLevelItem(i), depth, 0)
+
+    @staticmethod
+    def _expand_depth(item, max_depth, current):
+        """Expande item y sus hijos recursivamente hasta max_depth.
+        Reemplaza a expandToDepth() de Qt que da resultados inconsistentes
+        entre versiones cuando hay items raíz múltiples (nivel 0 + nivel 1).
+        """
+        if current >= max_depth:
+            return
+        item.setExpanded(True)
+        for i in range(item.childCount()):
+            TreeTableWidget._expand_depth(item.child(i), max_depth, current + 1)
 
     @staticmethod
     def _hide_leaves(item):
@@ -260,6 +285,8 @@ class TreeTableWidget(QTreeWidget):
         Copy selected rows as TSV (tab-separated values) to clipboard.
         Returns True if something was copied.
         Called by Ctrl+C and toolbar 'Copiar' button.
+        Only copies visible columns — hidden columns (like Desc. Corta, Creado, etc.)
+        are excluded from the output.
         """
         items = self.selectedItems()
         if not items:
@@ -267,11 +294,11 @@ class TreeTableWidget(QTreeWidget):
 
         items.sort(key=self._item_sort_key)
 
-        cols = self.columnCount()
-        header = [_strip_icons(self.headerItem().text(c)) for c in range(cols)]
+        cols = [c for c in range(self.columnCount()) if not self.isColumnHidden(c)]
+        header = [_strip_icons(self.headerItem().text(c)) for c in cols]
         lines = ["\t".join(header)]
         for item in items:
-            lines.append("\t".join(_strip_icons(item.text(c)) for c in range(cols)))
+            lines.append("\t".join(_strip_icons(item.text(c)) for c in cols))
 
         QApplication.clipboard().setText("\n".join(lines))
         return True

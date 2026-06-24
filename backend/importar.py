@@ -14,6 +14,18 @@ Reglas:
   3. Los importes (PRE_VOL × PRE_PRE) se materializan al insertar.
   4. Los subtotales de capítulos se calculan bottom-up al final.
   5. Toda referencia a catálogos también filtra _deleted=False.
+  6. PRE_IDPAD del *1.DBF NO se usa para resolver padres (pertenece a otra
+     tabla de OPUS y sus valores coinciden con PRE_ID solo por azar).
+
+Archivos DBF que lee:
+  *P.DBF   — Catálogo de insumos (materiales, MO, equipo, etc.)
+  *F.DBF   — Fórmulas/APU: componentes de cada concepto o insumo compuesto
+  *N.DBF   — Resúmenes de APU por concepto (totales por tipo de costo)
+  *X.DBF   — EGX: relación de insumos compuestos (obsoleto en v3, usamos es_compuesto)
+  *Z.DBF   — Configuración del proyecto (horas/día, tasas)
+  *I.DBF   — Renglones de sobrecostos (pie de precios)
+  *1.DBF   — Árbol jerárquico del presupuesto (formato numérico)
+  *A.DBF   — Nombres de unidades/agrupadores para el árbol
 
 Uso:
     from backend.importar import importar
@@ -123,6 +135,13 @@ def _padre_por_wbs(wbs: str, wbs_a_id: dict) -> int | None:
     """
     Trunca PRE_WBS de derecha a izquierda hasta encontrar un nodo activo.
     Fuente de verdad de la jerarquía — ver SCHEMA.md.
+
+    OPUS asigna WBS de forma jerárquica: 1, 11, 111, 11101…
+    Truncando el último carácter o grupo se obtiene el WBS del padre.
+    Ej: 11101 → 1110 (no existe) → 111 (existe, es el padre).
+
+    wbs_a_id se construye a medida que se procesan nodos (orden WBS ascendente),
+    por lo que el padre siempre está en el dict cuando se procesa un hijo.
     """
     if not wbs or len(wbs) <= 1:
         return None
@@ -162,7 +181,7 @@ def importar(carpeta: str, db_path: str, nombre: str | None = None) -> dict:
         nombre:   Nombre del proyecto (default: se infiere del prefijo)
 
     Returns:
-        Dict con estadísticas: nodos, insumos, apu_componentes, apu_resumen, etc.
+        Dict con estadísticas: estructura_presupuesto, insumos, apu_matrices, apu_resumen_totales, etc.
     """
     carpeta = Path(carpeta)
     if not carpeta.is_dir():
@@ -174,6 +193,7 @@ def importar(carpeta: str, db_path: str, nombre: str | None = None) -> dict:
     print(f"  Formato : {formato}")
 
     nombre_proyecto = nombre or f"Proyecto {prefijo}"
+    sesion = str(__import__('uuid').uuid4())  # agrupa cambios de esta importación
 
     # Abrir DB (aplica schema.sql automáticamente si es nueva)
     db  = Database.abrir(db_path)
@@ -237,32 +257,140 @@ def importar(carpeta: str, db_path: str, nombre: str | None = None) -> dict:
     con.commit()
     print(f"  → sobrecostos: {len(regs_i)}")
 
+    # ── Familias y subfamilias ────────────────────────────────────────────
+    # Se recopilan los valores únicos de FAMILIA y SUBFAMILIA del catálogo
+    # antes de insertar insumos, para poder resolver familia_id y subfamilia_id.
+    #
+    # FUERA DE ALCANCE (documentado):
+    #   - INDICE (INEGI): clasificación para escalatorias de gobierno
+    #   - INDICE_1 al INDICE_6: variables para fórmulas de costo personalizadas
+    #   - FORMULA_MN / FORMULA_ME: fórmulas de costo en moneda nacional/extranjera
+    #   - Subtotales por tipo (MATERIALES, MANO_DEO, etc.): se recalculan desde APU
+
+    familia_id_por_nombre:    dict[str, int] = {}
+    subfamilia_id_por_nombre: dict[tuple, int] = {}  # (familia, subfamilia) → id
+
+    # Nombres alternativos del campo FAMILIA en distintas versiones de OPUS
+    _FAM_KEYS  = ["ELE_FAM",  "FAMILIA",  "FAM",  "FAMILIAS", "GRP"]
+    _SFAM_KEYS = ["ELE_SFAM", "SUBFAMILIA", "SFAM", "SUBGRUP", "SUBGRUPO"]
+
+    for r in regs_p:
+        fam = next((_s(r.get(k)) for k in _FAM_KEYS if _s(r.get(k))), "")
+        sub = next((_s(r.get(k)) for k in _SFAM_KEYS if _s(r.get(k))), "")
+        if fam and fam not in familia_id_por_nombre:
+            cur.execute("""
+                INSERT OR IGNORE INTO familias (nombre) VALUES (?)
+            """, (fam,))
+            cur.execute("SELECT id FROM familias WHERE nombre = ?", (fam,))
+            row = cur.fetchone()
+            if row:
+                familia_id_por_nombre[fam] = row["id"]
+        if fam and sub and (fam, sub) not in subfamilia_id_por_nombre:
+            fam_id = familia_id_por_nombre.get(fam)
+            if fam_id:
+                cur.execute("""
+                    INSERT OR IGNORE INTO subfamilias (familia_id, nombre) VALUES (?, ?)
+                """, (fam_id, sub))
+                cur.execute("""
+                    SELECT id FROM subfamilias WHERE familia_id = ? AND nombre = ?
+                """, (fam_id, sub))
+                row = cur.fetchone()
+                if row:
+                    subfamilia_id_por_nombre[(fam, sub)] = row["id"]
+
+    con.commit()
+    n_familias    = len(familia_id_por_nombre)
+    n_subfamilias = len(subfamilia_id_por_nombre)
+    if n_familias:
+        print(f"  → familias: {n_familias}  |  subfamilias: {n_subfamilias}")
+
     # ── Insumos ───────────────────────────────────────────────────────────
+    # Campos importados: clave, tipo, descripcion, unidad, precio, basico,
+    #                    fecha, es_compuesto, fsr (salario_real para MO),
+    #                    clave_usuario, peso_kg, familia_id, subfamilia_id
+    #                    comentarios → tabla notas
     insumo_id_por_clave: dict[str, int] = {}
+    notas_insumos: list[tuple] = []  # (insumo_id, texto) — se insertan al final
+    n_compuestos = 0
+
+    # Items que aparecen como padres en *F.DBF tienen APU → es_compuesto=1
+    padres_con_apu = {_s(r.get("NOMBRE")) for r in regs_f if _s(r.get("NOMBRE"))}
 
     for r in regs_p:
         clave = _s(r.get("NOMBRE"))
         if not clave:
             continue
+
+        fam = _s(r.get("ELE_FAM") or r.get("FAMILIA") or r.get("FAM"))
+        sub = _s(r.get("ELE_SFAM") or r.get("SUBFAMILIA") or r.get("SFAM"))
+        familia_id    = familia_id_por_nombre.get(fam) if fam else None
+        subfamilia_id = subfamilia_id_por_nombre.get((fam, sub)) if (fam and sub) else None
+
+        # es_compuesto: bit 32 en PREFIJO o presente como padre en *F.DBF
+        # (cuadrillas con PREFIJO=2 pero con APU propio entran por esta segunda)
+        prefijo      = int(r.get("PREFIJO") or 0)
+        es_compuesto = 1 if ((prefijo & 32) or clave in padres_con_apu) else 0
+        if es_compuesto:
+            n_compuestos += 1
+
+        # FSR (Factor Salario Real) — solo aplica a mano de obra (tipo_id=2)
+        fsr           = _f(r.get("FSR") or r.get("FASAR"))
+        salario_real  = _f(r.get("PRECIO")) * fsr if fsr else None
+
+        comentario = _s(r.get("COMENTARIO") or r.get("COMEN") or r.get("MEMO"))
+
         cur.execute("""
             INSERT OR IGNORE INTO insumos
                 (proyecto_id, clave, tipo_id, descripcion, descripcion_corta,
-                 unidad, costo_mn, costo_final, es_basico, fecha_precio, creado_por)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
-        """, (proyecto_id, clave, _tipo_id(r.get("PREFIJO", 1)),
-              _s(r.get("DESCRIPCIO") or r.get("DESCRIPCION")),
-              _s(r.get("DESCCORTA")), _s(r.get("UNIDAD")),
-              _f(r.get("PRECIO")), _f(r.get("PRECIO")),
-              1 if _s(r.get("BASICO")).upper() == "S" else 0,
-              _s(r.get("FECHA"))))
-        cur.execute("SELECT id FROM insumos WHERE proyecto_id = ? AND clave = ?",
-                     (proyecto_id, clave))
+                 unidad, costo_mn, costo_final, es_basico, es_compuesto,
+                 fecha_precio, clave_usuario, peso_kg,
+                 familia_id, subfamilia_id,
+                 salario_real, creado_por)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+        """, (
+            proyecto_id,
+            clave,
+            _tipo_id(prefijo),
+            _s(r.get("DESCRIPCIO") or r.get("DESCRIPCION")),
+            _s(r.get("DESCCORTA")),
+            _s(r.get("UNIDAD")),
+            _f(r.get("PRECIO")),
+            _f(r.get("PRECIO")),
+            1 if _s(r.get("BASICO")).upper() == "S" else 0,
+            es_compuesto,
+            _s(r.get("FECHA")),
+            _s(r.get("CLAVE_USU") or r.get("CLVUSUARIO") or r.get("CLV_USU")),
+            _f(r.get("PESO")) or None,
+            familia_id,
+            subfamilia_id,
+            salario_real,
+        ))
+
+        cur.execute("""
+            SELECT id FROM insumos WHERE proyecto_id = ? AND clave = ?
+        """, (proyecto_id, clave))
         row = cur.fetchone()
         if row:
-            insumo_id_por_clave[clave] = row["id"]
+            insumo_id = row["id"]
+            insumo_id_por_clave[clave] = insumo_id
+            if comentario:
+                notas_insumos.append((insumo_id, comentario))
 
     con.commit()
     print(f"  → insumos: {len(insumo_id_por_clave)}")
+
+    # Comentarios de insumos → tabla notas (ligados al primer concepto que los use)
+    # NOTA: Las notas de insumos se guardan como texto plano con la clave del insumo.
+    # En una versión futura se puede ligar a un concepto específico.
+    if notas_insumos:
+        for insumo_id, texto in notas_insumos:
+            cur.execute("""
+                INSERT INTO historial
+                    (sesion, tabla, registro_id, campo, valor_anterior, valor_nuevo, usuario_id)
+                VALUES (?, 'insumos', ?, 'comentario', NULL, ?, 1)
+            """, (sesion, insumo_id, texto))
+        con.commit()
+        print(f"  → comentarios de insumos: {len(notas_insumos)}")
 
     # ── Árbol ─────────────────────────────────────────────────────────────
     if formato == "numerico":
@@ -273,82 +401,67 @@ def importar(carpeta: str, db_path: str, nombre: str | None = None) -> dict:
             con, cur, proyecto_id, regs_f, regs_p)
 
     con.commit()
-    print(f"  → nodos: {len(nodo_id_sqlite)}")
+    print(f"  → estructura_presupuesto: {len(nodo_id_sqlite)}")
 
     # ── APU NODOS (sintéticos para insumos compuestos fuera del árbol) ─────
     insumo_por_clave = {_s(r.get("NOMBRE")): r for r in regs_p if _s(r.get("NOMBRE"))}
-    padres_con_apu = {_s(r.get("NOMBRE")) for r in regs_f if _s(r.get("NOMBRE"))}
 
     cur.execute("SELECT clave FROM estructura_presupuesto WHERE proyecto_id = ? AND clave IS NOT NULL",
                 (proyecto_id,))
     claves_existentes = {r["clave"] for r in cur.fetchall()}
 
-    n_apu_auxiliares = 0
-    for clave in padres_con_apu:
-        if clave in claves_existentes:
-            continue
-        rec = insumo_por_clave.get(clave)
-        if not rec:
-            continue
-        cur.execute("""
-            INSERT OR IGNORE INTO apu_auxiliares
-                (proyecto_id, clave, descripcion, descripcion_corta, unidad)
-            VALUES (?, ?, ?, ?, ?)
-        """, (proyecto_id, clave,
-              _s(rec.get("DESCRIPCIO") or rec.get("DESCCORTA")),
-              _s(rec.get("DESCCORTA")),
-              _s(rec.get("UNIDAD"))))
-        n_apu_auxiliares += 1
+    # apu_auxiliares eliminado — insumos compuestos ya están en insumos (es_compuesto=1)
 
-    if n_apu_auxiliares:
-        con.commit()
-        print(f"  → apu_auxiliares: {n_apu_auxiliares}")
-
-    # ── APU detalle ───────────────────────────────────────────────────────
+    # ── APU matrices (componentes del APU) ──────────────────────────────
+    # Lookup de conceptos del árbol por clave
     cur.execute("""
         SELECT clave, id FROM estructura_presupuesto
         WHERE proyecto_id = ? AND clave IS NOT NULL
     """, (proyecto_id,))
-    clave_a_nodos: dict[str, list[int]] = {}
+    clave_a_conceptos: dict[str, list[int]] = {}
     for r in cur.fetchall():
-        clave_a_nodos.setdefault(r["clave"], []).append(r["id"])
+        clave_a_conceptos.setdefault(r["clave"], []).append(r["id"])
 
+    # Lookup de insumos compuestos por clave (es_compuesto=1)
+    # Reemplaza el lookup de apu_auxiliares que fue eliminado
     cur.execute("""
-        SELECT clave, id FROM apu_auxiliares
-        WHERE proyecto_id = ?
+        SELECT clave, id FROM insumos
+        WHERE proyecto_id = ? AND es_compuesto = 1
     """, (proyecto_id,))
-    clave_a_apu_auxiliares: dict[str, list[int]] = {}
+    clave_a_insumos_compuestos: dict[str, list[int]] = {}
     for r in cur.fetchall():
-        clave_a_apu_auxiliares.setdefault(r["clave"], []).append(r["id"])
+        clave_a_insumos_compuestos.setdefault(r["clave"], []).append(r["id"])
 
-    n_comp = 0
+    n_comp       = 0
     n_skip_padre = 0
-    n_skip_insumo = 0
+    n_skip_ins   = 0
+
     for r in regs_f:
         concepto_clave = _s(r.get("NOMBRE"))
-        insumo_clave = _s(r.get("COMPONENTE"))
-        insumo_id = insumo_id_por_clave.get(insumo_clave)
+        insumo_clave   = _s(r.get("COMPONENTE"))
+        insumo_id      = insumo_id_por_clave.get(insumo_clave)
         if not insumo_id:
-            n_skip_insumo += 1
+            n_skip_ins += 1
             continue
 
-        padres = clave_a_nodos.get(concepto_clave, [])
-        es_apu_nodo = False
+        # Buscar el padre primero en el árbol, luego en insumos compuestos
+        padres = clave_a_conceptos.get(concepto_clave, [])
+        es_comp = False
         if not padres:
-            padres = clave_a_apu_auxiliares.get(concepto_clave, [])
-            es_apu_nodo = True
+            padres = clave_a_insumos_compuestos.get(concepto_clave, [])
+            es_comp = True
         if not padres:
             n_skip_padre += 1
             continue
 
-        col = "apu_auxiliar_id" if es_apu_nodo else "nodo_id"
         for pid in padres:
-            cur.execute(f"""
-                INSERT INTO apu_componentes
-                    ({col}, insumo_id, rendimiento, cantidad,
+            mid = -pid if es_comp else pid
+            cur.execute("""
+                INSERT INTO apu_matrices
+                    (matriz_id, insumo_id, rendimiento, cantidad,
                      precio, formula, orden, creado_por)
                 VALUES (?, ?, ?, ?, ?, ?, ?, 1)
-            """, (pid, insumo_id,
+            """, (mid, insumo_id,
                   _f(r.get("RENDTO")), _f(r.get("CANTIDAD")),
                   _f(r.get("COSTO")),
                   _s(r.get("EXPRESION") or r.get("MEMOCAD")),
@@ -356,59 +469,42 @@ def importar(carpeta: str, db_path: str, nombre: str | None = None) -> dict:
             n_comp += 1
 
     con.commit()
-    msg = f"  → apu_componentes: {n_comp}"
-    if n_skip_padre:
-        msg += f"  |  {n_skip_padre} saltados (padre no encontrado)"
-    if n_skip_insumo:
-        msg += f"  |  {n_skip_insumo} saltados (insumo no encontrado)"
+    msg = f"  → apu_matrices: {n_comp}"
+    if n_skip_padre: msg += f"  |  {n_skip_padre} sin padre"
+    if n_skip_ins:   msg += f"  |  {n_skip_ins} sin insumo"
     print(msg)
 
-    # ── APU totales (solo para conceptos del árbol) ───────────────────────
-    n_tot = 0
-    n_skip_totales = 0
+        # ── APU resumen totales ──────────────────────────────────────────────
+    n_tot        = 0
+    n_skip_tot   = 0
     for r in regs_n:
-        nodos_ids = clave_a_nodos.get(_s(r.get("NOMBRE")), [])
-        if not nodos_ids:
-            n_skip_totales += 1
+        conceptos_ids = clave_a_conceptos.get(_s(r.get("NOMBRE")), [])
+        if not conceptos_ids:
+            n_skip_tot += 1
             continue
         cd = sum(_f(r.get(k)) for k in ["MM","OO","HH","EE","AA","SUBCONT"])
-        for nodo_id in nodos_ids:
+        for cid in conceptos_ids:
             cur.execute("""
-                INSERT OR REPLACE INTO apu_resumen
-                    (nodo_id, materiales, mano_obra, herramienta, equipo,
+                INSERT OR REPLACE INTO apu_resumen_totales
+                    (matriz_id, materiales, mano_obra, herramienta, equipo,
                      auxiliares, subcontratos, costo_directo,
                      indirectos_pct, financiamiento_pct, utilidad_pct, precio_venta)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (nodo_id, _f(r.get("MM")), _f(r.get("OO")),
+            """, (cid, _f(r.get("MM")), _f(r.get("OO")),
                   _f(r.get("HH")), _f(r.get("EE")), _f(r.get("AA")),
                   _f(r.get("SUBCONT")), cd, _f(r.get("INDIRECTOS")),
                   _f(r.get("FINANCIA")), _f(r.get("UTILIDAD")), _f(r.get("PP"))))
             n_tot += 1
 
     con.commit()
-    msg = f"  → apu_resumen: {n_tot}"
-    if n_skip_totales:
-        msg += f"  |  {n_skip_totales} saltados (concepto no encontrado)"
+    msg = f"  → apu_resumen_totales: {n_tot}"
+    if n_skip_tot: msg += f"  |  {n_skip_tot} sin concepto"
     print(msg)
 
-    # ── Auxiliares ────────────────────────────────────────────────────────
-    n_aux = 0
-    for r in regs_x:
-        insumo_id = insumo_id_por_clave.get(_s(r.get("NOMBRE")))
-        if not insumo_id:
-            continue
-        cur.execute("""
-            INSERT INTO auxiliares
-                (proyecto_id, insumo_id, componente_id, cantidad, precio)
-            VALUES (?, ?, ?, ?, ?)
-        """, (proyecto_id, insumo_id, insumo_id,
-              _f(r.get("CANTIDAD")), _f(r.get("PRECIO"))))
-        n_aux += 1
+        # NOTA: tabla auxiliares (*EGX.DBF) eliminada del schema v2.
+    # Los insumos compuestos usan es_compuesto=1 en insumos + apu_matrices.
 
-    con.commit()
-    print(f"  → auxiliares: {n_aux}")
-
-    # ── Subtotales bottom-up ──────────────────────────────────────────────
+        # ── Subtotales bottom-up ──────────────────────────────────────────────
     print("  → Recalculando subtotales...")
     _recalcular_subtotales(con, proyecto_id)
 
@@ -422,9 +518,10 @@ def importar(carpeta: str, db_path: str, nombre: str | None = None) -> dict:
 
     # ── Verificación post-import ────────────────────────────────────────
     cur.execute("""
-        SELECT COUNT(*) FROM estructura_presupuesto
-        WHERE proyecto_id = ? AND tipo = 'concepto' AND activo = 1
-          AND id NOT IN (SELECT DISTINCT nodo_id FROM apu_componentes)
+        SELECT COUNT(*) FROM estructura_presupuesto ep
+        LEFT JOIN apu_matrices ac ON ac.matriz_id = ep.id
+        WHERE ep.proyecto_id = ? AND ep.tipo = 'concepto' AND ep.activo = 1
+          AND ac.id IS NULL
     """, (proyecto_id,))
     sin_apu = cur.fetchone()[0]
     if sin_apu:
@@ -434,10 +531,10 @@ def importar(carpeta: str, db_path: str, nombre: str | None = None) -> dict:
         "proyecto_id": proyecto_id,
         "nodos":       len(nodo_id_sqlite),
         "insumos":     len(insumo_id_por_clave),
-        "apu_componentes": n_comp,
-        "apu_resumen": n_tot,
-        "auxiliares":  n_aux,
-        "sobrecostos": len(regs_i),
+        "apu_matrices":          n_comp,
+        "apu_resumen_totales":   n_tot,
+        "insumos_compuestos":    n_compuestos,
+        "sobrecostos":           len(regs_i),
     }
     print("\n--- Resumen ---")
     for k, v in stats.items():
@@ -461,7 +558,7 @@ def _arbol_numerico(con, cur, proyecto_id, regs_1, regs_a, regs_p) -> dict:
 
     nodo_id_sqlite: dict[int, int] = {}
     wbs_a_sqlite:   dict[str, int] = {}
-    stats = {"directo": 0, "wbs": 0, "sin_resolver": 0}
+    stats = {"wbs": 0, "sin_resolver": 0}
 
     for r in nodos_ord:
         pre_id    = int(r.get("PRE_ID")  or 0)
@@ -471,19 +568,17 @@ def _arbol_numerico(con, cur, proyecto_id, regs_1, regs_a, regs_p) -> dict:
         pre_com   = _s(r.get("PRE_COM"))
         pre_iduni = int(r.get("PRE_IDUNI") or -1)
 
-        # Resolver padre
+        # Resolver padre — WBS truncation is the only reliable method.
+        # PRE_IDPAD values come from a different OPUS table and are NOT
+        # valid PRE_ID references (they only happen to overlap sometimes).
         if pre_idpad == -1:
             padre_id = None
-            stats["directo"] += 1
-        elif pre_idpad in activos_id:
-            padre_id = nodo_id_sqlite.get(pre_idpad)
-            stats["directo"] += 1
         else:
             padre_id = _padre_por_wbs(wbs, wbs_a_sqlite)
-            if padre_id is not None:
-                stats["wbs"] += 1
-            else:
-                stats["sin_resolver"] += 1
+        if padre_id is None:
+            stats["sin_resolver"] += 1
+        else:
+            stats["wbs"] += 1
 
         # Descripción según tipo
         es_concepto = bool(pre_com)
@@ -517,8 +612,7 @@ def _arbol_numerico(con, cur, proyecto_id, regs_1, regs_a, regs_p) -> dict:
         if wbs:
             wbs_a_sqlite[wbs] = sid
 
-    print(f"    Directo: {stats['directo']}  |  "
-          f"WBS: {stats['wbs']}  |  "
+    print(f"    WBS: {stats['wbs']}  |  "
           f"Sin resolver: {stats['sin_resolver']}")
     con.commit()
     return nodo_id_sqlite

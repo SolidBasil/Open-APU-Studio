@@ -73,23 +73,24 @@ BASE = Path(platformdirs.user_data_dir("Open APU Studio", "OpenAPU"))
 **Estado:** ⏳ Pendiente
 
 **Contexto:**
-Al diseñar el esquema `001_inicial.sql` quedó un 20% de campos sin definir,
+Al diseñar el esquema quedó un 20% de campos sin definir,
 principalmente relacionados con programa de obra y frentes.
 
 **Decisión:**
 Pendiente. Cuando se definan, se implementan como migraciones numeradas
-(`002_`, `003_`...) siguiendo el sistema ya establecido en `db.py`.
+siguiendo el sistema ya establecido en `db.py`.
 
 **Consecuencias:**
 - No bloquea el desarrollo actual
-- Agregar campos es una migración de 2-3 líneas SQL
+- El esquema v3 está completo y funcional para importación y visualización
+- Las tablas `estructura_presupuesto` y `insumos` ya incluyen todos los campos OPUS esenciales
 
 ---
 
 ## IMPORTACIÓN
 
 ### IMP-01 — Reimportación de un proyecto existente
-**Estado:** ⏳ Pendiente
+**Estado:** ✓ Implementado (borrar DB + reimportar)
 
 **Contexto:**
 Si el usuario intenta importar una carpeta OPUS cuyo proyecto ya existe
@@ -139,9 +140,10 @@ El frontend permanece en modo solo lectura hasta que la lectura y
 visualización de datos esté 100% pulida y verificada contra proyectos reales.
 
 **Consecuencias:**
-- Simplifica el desarrollo actual — no hay que manejar estados de edición
-- Los widgets (`arbol.py`, `insumos.py`) ya tienen `editable=False` por defecto
-- Cuando se habilite la edición, el primer paso es implementar el Historial
+- El árbol (`arbol.py`) permite edición de celdas (clave, descripción, unidad, cant, precio)
+- La edición dispara recálculo de subtotales bottom-up
+- `insumos.py` y `apu` detail permanecen solo lectura
+- Cuando se habilite la edición total, el primer paso es implementar el Historial
 
 ---
 

@@ -357,29 +357,11 @@ CREATE INDEX IF NOT EXISTS idx_insumos_activo     ON insumos(activo);
 -- apu_resumen: subtotales por tipo (actualizado por Python)
 -- =============================================================================
 
--- Auxiliares con APU propio fuera del árbol del presupuesto
-CREATE TABLE IF NOT EXISTS apu_auxiliares (
+-- Componentes del APU — matriz_id referencia al item padre (concepto del árbol
+-- o insumo compuesto). El contexto de la llamada sabe cuál es.
+CREATE TABLE IF NOT EXISTS apu_matrices (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    proyecto_id         INTEGER NOT NULL REFERENCES proyectos(id),
-    clave               TEXT    NOT NULL,
-    descripcion         TEXT    NOT NULL DEFAULT '',
-    descripcion_corta   TEXT,
-    unidad              TEXT,
-    creado_por          INTEGER NOT NULL DEFAULT 1 REFERENCES usuarios(id),
-    creado_en           TEXT    NOT NULL DEFAULT (datetime('now')),
-    UNIQUE(proyecto_id, clave)
-);
-
-CREATE INDEX IF NOT EXISTS idx_apu_aux_clave ON apu_auxiliares(proyecto_id, clave);
-
--- Componentes del APU — relaciona por id entero, no por clave texto
--- nodo_id: liga a estructura_presupuesto
--- apu_auxiliar_id: liga a apu_auxiliares
--- Solo uno de los dos puede tener valor por fila
-CREATE TABLE IF NOT EXISTS apu_componentes (
-    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    nodo_id             INTEGER REFERENCES estructura_presupuesto(id) ON DELETE CASCADE,
-    apu_auxiliar_id     INTEGER REFERENCES apu_auxiliares(id) ON DELETE CASCADE,
+    matriz_id           INTEGER NOT NULL,
     insumo_id           INTEGER NOT NULL REFERENCES insumos(id),
 
     rendimiento         REAL    NOT NULL DEFAULT 0.0,
@@ -397,15 +379,13 @@ CREATE TABLE IF NOT EXISTS apu_componentes (
     modificado_en       TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX IF NOT EXISTS idx_apu_comp_nodo    ON apu_componentes(nodo_id);
-CREATE INDEX IF NOT EXISTS idx_apu_comp_aux     ON apu_componentes(apu_auxiliar_id);
-CREATE INDEX IF NOT EXISTS idx_apu_comp_insumo  ON apu_componentes(insumo_id);
+CREATE INDEX IF NOT EXISTS idx_apu_mat_matriz    ON apu_matrices(matriz_id);
+CREATE INDEX IF NOT EXISTS idx_apu_mat_insumo    ON apu_matrices(insumo_id);
 
 -- Resumen APU por tipo de costo
-CREATE TABLE IF NOT EXISTS apu_resumen (
+CREATE TABLE IF NOT EXISTS apu_resumen_totales (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    nodo_id             INTEGER REFERENCES estructura_presupuesto(id) ON DELETE CASCADE,
-    apu_auxiliar_id     INTEGER REFERENCES apu_auxiliares(id) ON DELETE CASCADE,
+    matriz_id           INTEGER NOT NULL UNIQUE,
     materiales          REAL    NOT NULL DEFAULT 0.0,
     mano_obra           REAL    NOT NULL DEFAULT 0.0,
     herramienta         REAL    NOT NULL DEFAULT 0.0,
@@ -423,18 +403,9 @@ CREATE TABLE IF NOT EXISTS apu_resumen (
     modificado_en       TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
--- Auxiliares de insumos (tabla *EGX en OPUS)
-CREATE TABLE IF NOT EXISTS auxiliares (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    proyecto_id     INTEGER NOT NULL REFERENCES proyectos(id) ON DELETE CASCADE,
-    insumo_id       INTEGER NOT NULL REFERENCES insumos(id) ON DELETE CASCADE,
-    componente_id   INTEGER NOT NULL REFERENCES insumos(id),
-    cantidad        REAL    NOT NULL DEFAULT 0.0,
-    precio          REAL    NOT NULL DEFAULT 0.0,
-    importe         REAL GENERATED ALWAYS AS (ROUND(cantidad * precio, 6)) STORED
-);
-
-CREATE INDEX IF NOT EXISTS idx_auxiliares_insumo ON auxiliares(insumo_id);
+-- NOTA: la tabla auxiliares (*EGX.DBF en OPUS) fue eliminada.
+-- Los insumos compuestos simples se identifican con es_compuesto=1 en la tabla insumos.
+-- Sus componentes internos se almacenan en apu_matrices con insumo_compuesto_id.
 
 
 -- =============================================================================
@@ -445,7 +416,7 @@ CREATE INDEX IF NOT EXISTS idx_auxiliares_insumo ON auxiliares(insumo_id);
 
 CREATE TABLE IF NOT EXISTS notas (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    nodo_id         INTEGER NOT NULL REFERENCES estructura_presupuesto(id) ON DELETE CASCADE,
+    concepto_id     INTEGER NOT NULL REFERENCES estructura_presupuesto(id) ON DELETE CASCADE,
     usuario_id      INTEGER NOT NULL DEFAULT 1 REFERENCES usuarios(id),
     texto           TEXT    NOT NULL,
     resuelta        INTEGER NOT NULL DEFAULT 0,
@@ -453,7 +424,7 @@ CREATE TABLE IF NOT EXISTS notas (
     modificado_en   TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX IF NOT EXISTS idx_notas_nodo ON notas(nodo_id);
+CREATE INDEX IF NOT EXISTS idx_notas_concepto ON notas(concepto_id);
 
 -- Historial de cambios — auditoría genérica y base del Ctrl+Z colaborativo
 -- sesion: UUID generado en Python para agrupar cambios de una misma operación
@@ -485,5 +456,7 @@ CREATE TABLE IF NOT EXISTS schema_version (
     descripcion TEXT
 );
 
+INSERT OR IGNORE INTO schema_version (version, descripcion) VALUES
+    (3, 'v3: matriz_id unico en apu_matrices/resumen_totales, es_compuesto por presencia en F.DBF');
 INSERT OR IGNORE INTO schema_version (version, descripcion) VALUES
     (2, 'v2: renombres, eliminar roles/tipos extra/estados_nodo, subfamilias, fletes/trabajos, estado como entero');

@@ -1,6 +1,6 @@
 # Esquema de base de datos — Open APU Studio
 
-Versión del esquema: **1** (`001_inicial.sql`)
+Versión del esquema: **3** (`schema.sql` — v2+v3 migradas automáticamente en `db.py`)
 
 Este documento explica el diseño de la base de datos SQLite, las decisiones
 de arquitectura y qué falta implementar en versiones futuras.
@@ -40,20 +40,22 @@ BLOQUE 3 — Catálogos del proyecto (editables)
   proveedores         Proveedores de materiales y recursos
 
 BLOQUE 4 — Proyecto
-  proyectos           Metadatos completos: concursante, cliente, licitación, financiero
-  proyecto_config     Parámetros técnicos de cálculo (horas/día, decimales, etc.)
-  pie_precios         Renglones de sobrecostos/indirectos por proyecto
+  proyectos               Metadatos completos: concursante, cliente, licitación, financiero
+  configuracion_proyecto  Parámetros técnicos de cálculo (horas/día, decimales, etc.)
+  sobrecostos             Renglones de sobrecostos/indirectos por proyecto
 
 BLOQUE 5 — Árbol del presupuesto
-  nodos               Capítulos y conceptos con jerarquía por PRE_WBS
+  estructura_presupuesto  Capítulos y conceptos con jerarquía por WBS
 
 BLOQUE 6 — Insumos
-  insumos             Catálogo maestro: materiales, MO, herramienta, equipo, auxiliares
+  insumos                 Catálogo maestro: materiales, MO, herramienta, equipo, auxiliares
+                          (campo es_compuesto=1 identifica insumos con APU propio)
 
 BLOQUE 7 — APU
-  apu_detalle         Desglose de insumos por concepto (ligado por nodo_id, no por clave)
-  apu_totales         Subtotales APU por tipo (actualizados por Python)
-  auxiliares          Insumos compuestos intermedios
+  apu_matrices            Desglose de insumos por matriz (concepto o insumo compuesto),
+                          con matriz_id único
+  apu_resumen_totales     Subtotales APU por tipo (actualizados por Python)
+                          (antiguos auxiliares se almacenan en insumos con es_compuesto=1)
 
 BLOQUE 8 — Colaboración
   notas               Comentarios por nodo, con autor y estado (abierta/resuelta)
@@ -67,83 +69,81 @@ BLOQUE 9 — Control de esquema
 
 ## Decisiones de diseño importantes
 
-### 1. `nodos` — jerarquía por `wbs`, no por `padre_id` solo
+### 1. `estructura_presupuesto` — jerarquía por `wbs`, no por `padre_id` ni `PRE_IDPAD`
 
 El campo `padre_id` existe para queries directas (hijos de un nodo), pero la
 **fuente de verdad jerárquica es `wbs`**. Durante la importación desde OPUS,
 el árbol se reconstruye truncando `PRE_WBS` de derecha a izquierda hasta
 encontrar un nodo activo con ese código exacto.
 
-Razón: el 79% de los nodos en la base OPUS están marcados como borrados
-lógicamente, lo que rompe las cadenas de `PRE_IDPAD`. Ver `GUIA_ONBOARDING.md`
-sección 6 para el detalle completo del bug y la solución.
+Los valores `PRE_IDPAD` del archivo `*1.DBF` pertenecen a un sistema de
+numeración diferente y **no** son referencias válidas a `PRE_ID`. Usarlos
+directamente produce padres incorrectos cuando coinciden por azar con un
+`PRE_ID` existente. Por esta razón la importación ignora `PRE_IDPAD` y siempre
+resuelve padres por truncamiento de WBS.
 
 ```sql
 -- Hijos directos de un nodo
-SELECT * FROM nodos WHERE padre_id = ? AND activo = 1 ORDER BY orden;
+SELECT * FROM estructura_presupuesto WHERE padre_id = ? AND activo = 1 ORDER BY orden;
 
 -- Todos los descendientes (CTE recursiva)
 WITH RECURSIVE sub AS (
-    SELECT * FROM nodos WHERE id = ?
+    SELECT * FROM estructura_presupuesto WHERE id = ?
     UNION ALL
-    SELECT n.* FROM nodos n JOIN sub s ON n.padre_id = s.id WHERE n.activo = 1
+    SELECT n.* FROM estructura_presupuesto n JOIN sub s ON n.padre_id = s.id WHERE n.activo = 1
 )
 SELECT * FROM sub;
 
 -- Ruta completa (breadcrumb) de un nodo
 WITH RECURSIVE ruta AS (
-    SELECT * FROM nodos WHERE id = ?
+    SELECT * FROM estructura_presupuesto WHERE id = ?
     UNION ALL
-    SELECT n.* FROM nodos n JOIN ruta r ON n.id = r.padre_id
+    SELECT n.* FROM estructura_presupuesto n JOIN ruta r ON n.id = r.padre_id
 )
 SELECT * FROM ruta ORDER BY nivel;
 ```
 
 ### 2. `importe` como columna computada `GENERATED ALWAYS`
 
-En `nodos` y `apu_detalle`, el importe (`cantidad × precio`) es una columna
+En `estructura_presupuesto` y `apu_matrices`, el importe (`cantidad × precio`) es una columna
 computada — SQLite la actualiza automáticamente al cambiar `cantidad` o
 `precio_unitario`. No se puede olvidar actualizarla.
 
-`subtotal` en `nodos` **no** es computada porque requiere sumar hijos, lo que
+`subtotal` en `estructura_presupuesto` **no** es computada porque requiere sumar hijos, lo que
 SQLite no permite en columnas generadas. Python lo recalcula así:
 
 ```python
 def recalcular_subtotales(con, nodo_id):
-    """Recalcula subtotal bottom-up desde nodo_id hasta la raíz."""
     cur = con.cursor()
-    # Subir por el árbol actualizando cada padre
     while nodo_id is not None:
         cur.execute("""
-            UPDATE nodos SET
+            UPDATE estructura_presupuesto SET
                 subtotal = (
                     SELECT COALESCE(SUM(COALESCE(importe, subtotal, 0)), 0)
-                    FROM nodos WHERE padre_id = ? AND activo = 1
+                    FROM estructura_presupuesto WHERE padre_id = ? AND activo = 1
                 ),
                 modificado_en = datetime('now')
             WHERE id = ?
         """, (nodo_id, nodo_id))
-        row = cur.execute("SELECT padre_id FROM nodos WHERE id = ?", (nodo_id,)).fetchone()
+        row = cur.execute("SELECT padre_id FROM estructura_presupuesto WHERE id = ?", (nodo_id,)).fetchone()
         nodo_id = row[0] if row else None
     con.commit()
 ```
 
-### 3. `apu_detalle` ligado por `nodo_id`, no por clave texto
+### 3. `apu_matrices` ligado por `matriz_id`, no por clave texto
 
 En OPUS la relación APU↔concepto se hacía por `NOMBRE` (texto). Aquí es por
-`nodo_id` (entero con FK). Ventajas: joins más rápidos, integridad garantizada
-por la FK, `ON DELETE CASCADE` elimina el APU si se borra el concepto.
+`matriz_id` (entero). Un mismo id puede referenciar un nodo del árbol
+(estructura_presupuesto) o un insumo compuesto (insumos con es_compuesto=1).
+El contexto de la llamada sabe cuál es — no se necesita columna discriminadora.
+
+Ventajas: joins más rápidos, sin duplicación de columnas (concepto_id /
+insumo_compuesto_id como en v1), consultas unificadas.
 
 ### 4. `historial` genérico
 
-Una sola tabla para auditar cualquier cambio en cualquier tabla. Python genera
-un UUID de sesión por operación para agrupar cambios relacionados:
-
-```python
-import uuid
-sesion = str(uuid.uuid4())
-# Todos los INSERT en historial de una misma operación usan este sesion
-```
+Una sola tabla para auditar cualquier cambio en cualquier tabla.
+`sesion` (UUID) agrupa cambios de una misma operación.
 
 ### 5. Borrado lógico (`activo = 1`)
 
@@ -157,14 +157,9 @@ debe filtrar `WHERE activo = 1`**, excepto las de auditoría/historial.
 
 | Tabla | Registros |
 |---|---|
-| `roles` | admin, editor, revisor, lector |
-| `usuarios` | 1 usuario local (admin) |
-| `tipos_insumo` | material, mano_obra, herramienta, equipo, auxiliar, concepto |
-| `tipos_herramienta` | estándar, herramienta_mano, equipo_seguridad |
-| `tipos_equipo` | costo_horario, renta_horaria, compuesto |
-| `tipos_material` | consumo, instalación permanente |
-| `estados_nodo` | sin_revisar (#808080), en_revision (#F5A623), verificado (#4CAF7D), cuestionado (#E05252) |
-| `schema_version` | versión 1 |
+| `usuarios` | 1 usuario local |
+| `tipos_insumo` | material, mano_obra, herramienta, equipo, auxiliar, concepto, flete, trabajo |
+| `schema_version` | versión 3 |
 
 ---
 
@@ -174,35 +169,31 @@ debe filtrar `WHERE activo = 1`**, excepto las de auditoría/historial.
 
 | Feature | Tablas involucradas | Prioridad |
 |---|---|---|
-| Login / selección de usuario | `usuarios`, `roles` | Media |
-| Mostrar semáforo en árbol PyQt | `estados_nodo`, `nodos.estado_id` | Alta |
+| Login / selección de usuario | `usuarios` | Media |
 | Panel de notas por nodo | `notas` | Media |
 | Ctrl+Z (deshacer) | `historial` | Media |
 | Gestión de proveedores | `proveedores` | Baja |
-| Familias/subfamilias de insumos | `familias` | Baja |
-| Pie de precios editable | `pie_precios` | Alta |
+| Familias/subfamilias de insumos | `familias`, `subfamilias` | Baja |
+| Sobrecostos editable | `sobrecostos` | Alta |
 | Multi-moneda | `proyectos.costo_mn/me` | Baja |
-| Roles y permisos en UI | `roles`, `usuarios.rol_id` | Futura |
 | Trabajo en red / sync | Requiere diseño adicional | Futura |
 
 ---
 
-## Migraciones futuras
+## Migraciones aplicadas
 
-Agregar un archivo `002_nombre.sql` en `backend/db/migraciones/`.
-`DatabaseManager` lo detecta y aplica automáticamente al abrir la DB.
+Las migraciones se gestionan en `backend/db.py` (no hay carpeta de migraciones separada).
+El schema completo vive en `backend/schema.sql`. Las migraciones v2→v3 se aplican
+automáticamente vía `ALTER TABLE` en `Database._aplicar_schema()`.
 
-Ejemplo de migración para agregar una columna:
+| Versión | Cambios clave |
+|---|---|
+| 1 | Esquema inicial con `nodos`, `apu_detalle`, `estados_nodo`, roles |
+| 2 | Renombres (`nodos`→`estructura_presupuesto`, etc.), eliminar tablas no usadas (roles, estados_nodo, tipos_* extra), agregar subfamilias, tipo trabajo/flete, estado como entero |
+| 3 | `concepto_id` + `insumo_compuesto_id` → `matriz_id` único, `es_compuesto` por presencia en `*F.DBF` |
 
-```sql
--- 002_agregar_campo_x.sql
-ALTER TABLE nodos ADD COLUMN campo_nuevo TEXT;
-INSERT INTO schema_version (version, descripcion)
-VALUES (2, 'Agrega campo_nuevo a nodos');
-```
-
-**Regla:** nunca modificar `001_inicial.sql` después de que esté en producción.
-Todos los cambios van en migraciones numeradas.
+**Regla:** nunca modificar `schema.sql` en formas que rompan migraciones existentes.
+Todos los cambios futuros van como migraciones en `db.py`.
 
 ---
 
@@ -214,32 +205,36 @@ SELECT
     n.id, n.wbs, n.nivel, n.tipo, n.clave,
     n.descripcion, n.unidad, n.cantidad,
     n.precio_unitario, n.importe, n.subtotal,
-    e.nombre AS estado, e.color AS estado_color
-FROM nodos n
-JOIN estados_nodo e ON e.id = n.estado_id
+    CASE n.estado
+        WHEN 0 THEN 'Sin revisar'
+        WHEN 1 THEN 'En revisión'
+        WHEN 2 THEN 'Verificado'
+        WHEN 3 THEN 'Cuestionado'
+    END AS estado_nombre
+FROM estructura_presupuesto n
 WHERE n.proyecto_id = ? AND n.activo = 1
 ORDER BY n.wbs;
 
--- APU completo de un concepto
+-- APU completo de un concepto o insumo compuesto
 SELECT
-    ad.orden, i.clave, i.descripcion, i.unidad,
+    am.orden, i.clave, i.descripcion, i.unidad,
     ti.nombre AS tipo,
-    ad.rendimiento, ad.cantidad, ad.precio, ad.importe
-FROM apu_detalle ad
-JOIN insumos i  ON i.id = ad.insumo_id
+    am.rendimiento, am.cantidad, am.precio, am.importe
+FROM apu_matrices am
+JOIN insumos i  ON i.id = am.insumo_id
 JOIN tipos_insumo ti ON ti.id = i.tipo_id
-WHERE ad.nodo_id = ?
-ORDER BY ad.orden;
+WHERE am.matriz_id = ?
+ORDER BY am.orden;
 
 -- Insumos por tipo con total de uso en el proyecto
 SELECT
     ti.nombre AS tipo,
     i.clave, i.descripcion, i.unidad, i.costo_final,
-    COUNT(ad.id) AS usos_en_apu,
-    SUM(ad.importe) AS importe_total
+    COUNT(am.id) AS usos_en_apu,
+    SUM(am.importe) AS importe_total
 FROM insumos i
 JOIN tipos_insumo ti ON ti.id = i.tipo_id
-LEFT JOIN apu_detalle ad ON ad.insumo_id = i.id
+LEFT JOIN apu_matrices am ON am.insumo_id = i.id
 WHERE i.proyecto_id = ? AND i.activo = 1
 GROUP BY i.id
 ORDER BY ti.orden, i.clave;
@@ -250,17 +245,16 @@ SELECT
     h.campo, h.valor_anterior, h.valor_nuevo
 FROM historial h
 JOIN usuarios u ON u.id = h.usuario_id
-WHERE h.tabla = 'nodos' AND h.registro_id = ?
+WHERE h.tabla = 'estructura_presupuesto' AND h.registro_id = ?
 ORDER BY h.cambiado_en DESC;
 
--- Nodos cuestionados o sin revisar (para revisión de calidad)
-SELECT n.wbs, n.descripcion, e.nombre AS estado, e.color,
+-- Nodos cuestionados o sin revisar
+SELECT n.wbs, n.descripcion, n.estado,
        u.nombre AS modificado_por, n.modificado_en
-FROM nodos n
-JOIN estados_nodo e ON e.id = n.estado_id
+FROM estructura_presupuesto n
 LEFT JOIN usuarios u ON u.id = n.modificado_por
 WHERE n.proyecto_id = ?
-  AND n.estado_id IN (SELECT id FROM estados_nodo WHERE clave IN ('sin_revisar','cuestionado'))
+  AND n.estado IN (0, 3)
   AND n.activo = 1
 ORDER BY n.wbs;
 ```

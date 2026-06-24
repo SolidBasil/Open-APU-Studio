@@ -139,7 +139,7 @@ def get_proyecto(db_path: str, proyecto_id: int = 1) -> dict | None:
 
 
 # ── obtener APU completo de un concepto ──
-def get_apu(db_path: str, nodo_id: int) -> dict:
+def get_apu(db_path: str, concepto_id: int) -> dict:
     """
     Devuelve el APU completo de un concepto.
 
@@ -171,17 +171,17 @@ def get_apu(db_path: str, nodo_id: int) -> dict:
                 t.clave             AS tipo_clave,
                 t.nombre            AS tipo_nombre,
                 t.id                AS tipo_id
-            FROM apu_componentes ad
+            FROM apu_matrices ad
             JOIN insumos i      ON i.id  = ad.insumo_id
             JOIN tipos_insumo t ON t.id  = i.tipo_id
-            WHERE (ad.nodo_id = ? OR ad.apu_auxiliar_id = ?)
+            WHERE ad.matriz_id = ?
             ORDER BY ad.orden
-        """, (nodo_id, nodo_id))
+        """, (concepto_id,))
         detalle = [dict(r) for r in cur.fetchall()]
 
         cur.execute("""
-            SELECT * FROM apu_resumen WHERE (nodo_id = ? OR apu_auxiliar_id = ?)
-        """, (nodo_id, nodo_id))
+            SELECT * FROM apu_resumen_totales WHERE matriz_id = ?
+        """, (concepto_id,))
         row = cur.fetchone()
         totales = dict(row) if row else None
 
@@ -274,9 +274,9 @@ def validar(db_path: str, proyecto_id: int = 1) -> dict:
         # Conceptos sin APU
         cur.execute("""
             SELECT COUNT(*) FROM estructura_presupuesto n
-            LEFT JOIN apu_componentes ac ON ac.nodo_id = n.id
+            LEFT JOIN apu_matrices ac ON ac.matriz_id = n.id
             WHERE n.proyecto_id = ? AND n.tipo = 'concepto'
-              AND n.activo = 1 AND ad.id IS NULL
+              AND n.activo = 1 AND ac.id IS NULL
         """, (proyecto_id,))
         sin_apu = cur.fetchone()[0]
         if sin_apu:

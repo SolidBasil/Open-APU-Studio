@@ -58,6 +58,11 @@ def _num(v, decimals=2):
 # ── Tabla jerárquica del presupuesto ──────────────────────────────
 
 class TablaArbol(TreeTableWidget):
+    """Árbol jerárquico del presupuesto.
+    Capítulos se muestran con color según nivel y texto en negritas.
+    Conceptos son hojas editables (cantidad, precio, clave, descripción).
+    El estado del header (anchos, visibilidad) persiste entre sesiones.
+    """
     _HEADER_KEY = "arbol_header_state"
 
     def __init__(self, parent=None):
@@ -67,6 +72,7 @@ class TablaArbol(TreeTableWidget):
             for c, w in enumerate([50, 80, 250, 45, 60, 80, 90,
                                    90, 120, 60, 70, 100, 130, 130])
         })
+        self.header().setMaximumSectionSize(400)
         self.header().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         for c in range(len(COLUMNAS)):
             if c not in _VISIBLE:

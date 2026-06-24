@@ -539,6 +539,9 @@ class VentanaPrincipal(QMainWindow):
     # Pestaña inicial. Si no hay BD abierta, muestra el placeholder clickeable.
 
     def _build_presupuesto(self):
+        """Construye el árbol jerárquico del presupuesto.
+        Lee toda la estructura del SQLite y la muestra como árbol expandible.
+        """
         from frontend.widgets.arbol import TablaArbol
         from backend.core import build_budget_tree
 
@@ -598,19 +601,18 @@ class VentanaPrincipal(QMainWindow):
         for child in w.findChildren(QWidget):
             child.setCursor(Qt.CursorShape.PointingHandCursor)
             child.installEventFilter(self)
-        layout.addWidget(icono)
-        layout.addSpacing(16)
-        layout.addWidget(titulo)
-        layout.addSpacing(8)
-        layout.addWidget(instruccion)
-        layout.addStretch()
         return w
 
     # ── APU (Análisis de Precio Unitario) ────────────────────────────────
     # Pestaña que muestra el desglose de insumos de un concepto.
     # Se abre al hacer doble clic en una celda de P.U. o Precio.
 
-    def _build_apu_tab(self, clave: str, nodo_id: int):
+    def _build_apu_tab(self, clave: str, matriz_id: int):
+        """Pestaña de desglose APU: componentes de un concepto o insumo compuesto.
+        Muestra tipo, clave, descripción, cant, PU e importe de cada insumo.
+        Los insumos con APU propio (▶) se pueden abrir con doble clic en P.U.
+        matriz_id positivo = nodo del árbol, negativo = insumo compuesto.
+        """
         from frontend.widgets.base import TreeTableWidget
         from backend.core import get_apu
 
@@ -622,6 +624,7 @@ class VentanaPrincipal(QMainWindow):
             c: (QHeaderView.ResizeMode.Interactive, w)
             for c, w in enumerate([110, 90, 250, 50, 80, 100, 110])
         })
+        detail.header().setMaximumSectionSize(400)
 
         tipo_emoji = {
             1: "🧱", 2: "👷", 4: "🔧", 8: "🚜", 16: "⚙️", 32: "📄",
@@ -630,12 +633,12 @@ class VentanaPrincipal(QMainWindow):
         if self._db:
             cur = self._db.conn.cursor()
             cur.execute(
-                "SELECT clave FROM apu_auxiliares WHERE proyecto_id=?",
+                "SELECT clave FROM insumos WHERE es_compuesto=1 AND proyecto_id=?",
                 (1,),
             )
             claves_con_apu = {r[0] for r in cur.fetchall()}
 
-            data = get_apu(self._db.db_path, nodo_id)
+            data = get_apu(self._db.db_path, matriz_id)
             for r in data.get("detalle", []):
                 tid = r.get("tipo_id", 0)
                 tn  = r.get("tipo_nombre", "")
@@ -656,7 +659,9 @@ class VentanaPrincipal(QMainWindow):
         return detail
 
     def _on_apu_detail_dblclick(self, item, column):
-        """Doble clic en APU → abre el APU de ese insumo si es compuesto."""
+        """Doble clic en celda de P.U. en APU → abre APU del insumo compuesto.
+        La columna 1 contiene la clave del insumo.
+        """
         if self._es_pu(item, column):
             self._abrir_apu(item.text(1).strip())
 
@@ -675,22 +680,26 @@ class VentanaPrincipal(QMainWindow):
         return "PU" in h or "PRECIO" in h
 
     def _abrir_apu(self, clave: str):
-        """Busca un concepto por clave y abre su APU en una nueva pestaña."""
+        """Busca un concepto/insumo por clave y abre su APU en una nueva pestaña.
+        matriz_id es positivo si el item es un nodo del árbol, negativo si es
+        un insumo compuesto (para evitar colisión de IDs entre ambas tablas).
+        """
         if not clave or not self._db:
             return
 
-        from backend.repos import NodoRepo, ApuComponentesRepo, ApuAuxiliarRepo
+        from backend.repos import NodoRepo, ApuMatricesRepo, InsumoRepo
         nodo = NodoRepo(self._db.conn).buscar_por_clave(clave, proyecto_id=1)
         if nodo:
-            nodo_id = nodo["id"]
+            matriz_id = nodo["id"]
         else:
-            apu_nodo = ApuAuxiliarRepo(self._db.conn).buscar_por_clave(clave, proyecto_id=1)
-            if not apu_nodo:
+            insumo = InsumoRepo(self._db.conn).buscar_por_clave(clave, proyecto_id=1)
+            if not insumo or not insumo.get("es_compuesto"):
                 self._sb.showMessage(f"'{clave}' no encontrado", 4000)
                 return
-            nodo_id = apu_nodo["id"]
+            matriz_id = -insumo["id"]
 
-        if not ApuComponentesRepo(self._db.conn).por_nodo(nodo_id):
+        rows = ApuMatricesRepo(self._db.conn).por_matriz(matriz_id)
+        if not rows:
             self._sb.showMessage(f"'{clave}' no tiene APU", 4000)
             return
 
@@ -699,7 +708,7 @@ class VentanaPrincipal(QMainWindow):
             if self._tabs.tabText(i) == title:
                 self._tabs.setCurrentIndex(i)
                 return
-        idx = self._tabs.addTab(self._build_apu_tab(clave, nodo_id), title)
+        idx = self._tabs.addTab(self._build_apu_tab(clave, matriz_id), title)
         self._tabs.setCurrentIndex(idx)
 
     # ── Insumos ───────────────────────────────────────────────────────────
@@ -707,6 +716,10 @@ class VentanaPrincipal(QMainWindow):
     # Muestra ▶ en insumos que tienen APU (compuestos o matrices).
 
     def _build_insumos(self, title: str):
+        """Catálogo de insumos filtrable por tipo (material, MO, equipo, etc.).
+        Muestra ▶ en insumos que tienen APU (compuestos o conceptos del árbol).
+        "🧮 Matrices" filtra solo los que aparecen en apu_matrices.
+        """
         from frontend.widgets.insumos import TablaInsumos
         from backend.repos import InsumoRepo
 
@@ -727,11 +740,11 @@ class VentanaPrincipal(QMainWindow):
             insumos = (repo.por_tipo(1, tipo) if tipo
                        else repo.todos(1))
             cur = self._db.conn.cursor()
-            cur.execute("SELECT clave FROM apu_auxiliares WHERE proyecto_id=1")
+            cur.execute("SELECT clave FROM insumos WHERE es_compuesto=1 AND proyecto_id=1")
             claves = {r["clave"] for r in cur.fetchall()}
             cur.execute("""
                 SELECT DISTINCT n.clave FROM estructura_presupuesto n
-                JOIN apu_componentes ad ON ad.nodo_id = n.id
+                JOIN apu_matrices ad ON ad.matriz_id = n.id
                 WHERE n.proyecto_id=1 AND n.clave IS NOT NULL
             """)
             claves |= {r["clave"] for r in cur.fetchall()}
@@ -757,6 +770,7 @@ class VentanaPrincipal(QMainWindow):
             c: (QHeaderView.ResizeMode.Interactive, w)
             for c, w in enumerate([80, 250, 50, 80, 100, 110])
         })
+        t.header().setMaximumSectionSize(400)
         if self._db:
             repo = ConceptoRepo(self._db.conn)
             for c in repo.todos(1):
@@ -782,7 +796,10 @@ class VentanaPrincipal(QMainWindow):
         return super().eventFilter(obj, event)
 
     def _on_abrir_proyecto(self):
-        """Muestra ProjectDialog para seleccionar y abrir un proyecto .db."""
+        """Selecciona y abre un proyecto .db existente.
+        Cierra el proyecto actual si hay uno abierto, recarga el presupuesto
+        y cambia a la pestaña PRINCIPAL con la toolbar completa.
+        """
         from PySide6.QtWidgets import QDialog, QMessageBox
         from backend.db import Database, Rutas
         from frontend.widgets.dialogs import ProjectDialog
@@ -965,6 +982,12 @@ class VentanaPrincipal(QMainWindow):
     # Convierte jerarquía, insumos, APU y auxiliares a SQLite.
 
     def _on_importar_opus(self):
+        """Flujo completo de importación OPUS:
+        1. Seleccionar carpeta con archivos .DBF
+        2. Si ya existe .db, pregunta: renombrar anterior o sobrescribir
+        3. Ejecuta importar() que lee DBF y escribe el SQLite
+        4. Abre el proyecto recién importado y recarga el presupuesto
+        """
         from PySide6.QtWidgets import QFileDialog, QMessageBox
         from backend.db import Config, Database, Rutas
         from backend.importar import importar
@@ -1008,11 +1031,10 @@ class VentanaPrincipal(QMainWindow):
                 Database.cerrar()
             self._db = Database.abrir(db_path)
             print(f"[import] {nombre}: nodos={result['nodos']}, insumos={result['insumos']}, "
-                  f"apu_componentes={result['apu_componentes']}, apu_resumen={result['apu_resumen']}, "
-                  f"auxiliares={result['auxiliares']}")
+                  f"apu_matrices={result['apu_matrices']}, apu_resumen_totales={result['apu_resumen_totales']}, "
+                  f"insumos_compuestos={result['insumos_compuestos']}")
             QMessageBox.information(self, "Importación exitosa",
                                     f"'{nombre}' importado correctamente.")
-            # Recargar el presupuesto
             self._reload_presupuesto()
             self._switch_tab("PRINCIPAL")
         except Exception as e:
@@ -1059,6 +1081,10 @@ class VentanaPrincipal(QMainWindow):
             widget.show_todo()
 
     def _on_desplegar_nivel(self):
+        """Menú contextual para elegir profundidad de expansión.
+        Nivel 1 = solo raíces (collapseAll), Nivel 2 = raíces expandidas, etc.
+        Convención 1-based para que sea intuitivo para el usuario.
+        """
         widget = self._tabs.currentWidget()
         if not widget or not hasattr(widget, "show_nivel"):
             return

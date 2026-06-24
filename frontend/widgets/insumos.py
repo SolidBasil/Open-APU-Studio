@@ -38,6 +38,10 @@ TIPO_NOMBRE = {
 # ── Tabla plana de insumos ────────────────────────────────────────
 
 class TablaInsumos(TreeTableWidget):
+    """Tabla plana del catálogo de insumos (sin jerarquía).
+    Guarda el estado del header en config.json para persistir anchos
+    y visibilidad de columnas entre sesiones.
+    """
     _HEADER_KEY = "insumos_header_state"
 
     def __init__(self, parent=None):
@@ -46,6 +50,7 @@ class TablaInsumos(TreeTableWidget):
             c: (QHeaderView.ResizeMode.Interactive, w)
             for c, w in enumerate([90, 250, 60, 100, 120, 120, 140, 85, 140, 95, 95])
         })
+        self.header().setMaximumSectionSize(400)
         # columnas de detalle ocultas por defecto
         for c in (7, 8, 9, 10):
             self.setColumnHidden(c, True)

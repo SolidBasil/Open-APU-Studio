@@ -5,9 +5,9 @@ Repositorios de acceso a datos — Open APU Studio v2.
 
 Nomenclatura de tablas v2:
     estructura_presupuesto  ← antes: nodos
-    apu_auxiliares          ← antes: apu_nodos
-    apu_componentes         ← antes: apu_detalle
-    apu_resumen             ← antes: apu_totales
+    apu_matrices.matriz_id  ← columna unica (antes: concepto_id + insumo_compuesto_id)
+    apu_matrices            ← antes: apu_componentes
+    apu_resumen_totales     ← antes: apu_resumen
     sobrecostos             ← antes: pie_precios
     configuracion_proyecto  ← antes: proyecto_config
     subfamilias             ← nueva
@@ -15,8 +15,8 @@ Nomenclatura de tablas v2:
 Uso:
     from backend.repos import (
         NodoRepo, InsumoRepo, ConceptoRepo,
-        ApuComponentesRepo, ApuResumenRepo, ApuAuxiliarRepo,
-        AuxiliarRepo, ProyectoRepo, SobrecostosRepo,
+        ApuMatricesRepo, ApuResumenTotalesRepo,
+        ProyectoRepo, SobrecostosRepo,
         NotaRepo, FamiliaRepo, SubfamiliaRepo
     )
 """
@@ -143,6 +143,9 @@ ESTADO_NOMBRE = {
 
 
 class NodoRepo(RepoBase):
+    """Acceso a estructura_presupuesto: capítulos y conceptos del presupuesto.
+    El árbol viene con padre_id correctamente resuelto desde la importación.
+    """
 
     def todos(self, proyecto_id):
         return self._lista("""
@@ -165,11 +168,11 @@ class NodoRepo(RepoBase):
             ORDER BY wbs
         """, [proyecto_id])
 
-    def buscar(self, nodo_id):
+    def buscar(self, concepto_id):
         return self._uno("""
             SELECT * FROM estructura_presupuesto
             WHERE id = ? AND activo = 1
-        """, [nodo_id])
+        """, [concepto_id])
 
     def buscar_por_clave(self, clave, proyecto_id):
         return self._uno("""
@@ -177,7 +180,7 @@ class NodoRepo(RepoBase):
             WHERE clave = ? AND proyecto_id = ? AND activo = 1
         """, [clave, proyecto_id])
 
-    def descendientes(self, nodo_id):
+    def descendientes(self, concepto_id):
         return self._lista("""
             WITH RECURSIVE sub AS (
                 SELECT * FROM estructura_presupuesto WHERE id = ? AND activo = 1
@@ -187,9 +190,9 @@ class NodoRepo(RepoBase):
                 WHERE n.activo = 1
             )
             SELECT * FROM sub ORDER BY wbs
-        """, [nodo_id])
+        """, [concepto_id])
 
-    def ruta(self, nodo_id):
+    def ruta(self, concepto_id):
         return self._lista("""
             WITH RECURSIVE ruta AS (
                 SELECT * FROM estructura_presupuesto WHERE id = ?
@@ -198,7 +201,7 @@ class NodoRepo(RepoBase):
                 JOIN ruta r ON n.id = r.padre_id
             )
             SELECT * FROM ruta ORDER BY nivel
-        """, [nodo_id])
+        """, [concepto_id])
 
     def por_estado(self, proyecto_id, estado: int):
         return self._lista("""
@@ -210,40 +213,43 @@ class NodoRepo(RepoBase):
     def conceptos_sin_apu(self, proyecto_id):
         return self._lista("""
             SELECT ep.* FROM estructura_presupuesto ep
-            LEFT JOIN apu_componentes ac ON ac.nodo_id = ep.id
+            LEFT JOIN apu_matrices ac ON ac.matriz_id = ep.id
             WHERE ep.proyecto_id = ? AND ep.tipo = 'concepto'
               AND ep.activo = 1 AND ac.id IS NULL
             ORDER BY ep.wbs
         """, [proyecto_id])
 
-    def actualizar_cantidad(self, nodo_id, cantidad, usuario_id=1):
+    def actualizar_cantidad(self, concepto_id, cantidad, usuario_id=1):
         self._ejecutar("""
             UPDATE estructura_presupuesto SET
                 cantidad = ?, modificado_por = ?, modificado_en = datetime('now')
             WHERE id = ?
-        """, [cantidad, usuario_id, nodo_id])
-        self.actualizar_subtotal(nodo_id)
+        """, [cantidad, usuario_id, concepto_id])
+        self.actualizar_subtotal(concepto_id)
 
-    def actualizar_precio(self, nodo_id, precio, usuario_id=1):
+    def actualizar_precio(self, concepto_id, precio, usuario_id=1):
         self._ejecutar("""
             UPDATE estructura_presupuesto SET
                 precio_unitario = ?, modificado_por = ?, modificado_en = datetime('now')
             WHERE id = ?
-        """, [precio, usuario_id, nodo_id])
-        self.actualizar_subtotal(nodo_id)
+        """, [precio, usuario_id, concepto_id])
+        self.actualizar_subtotal(concepto_id)
 
-    def actualizar_estado(self, nodo_id, estado: int, usuario_id=1):
+    def actualizar_estado(self, concepto_id, estado: int, usuario_id=1):
         if estado not in ESTADO_COLOR:
             return
         self._ejecutar("""
             UPDATE estructura_presupuesto SET
                 estado = ?, modificado_por = ?, modificado_en = datetime('now')
             WHERE id = ?
-        """, [estado, usuario_id, nodo_id])
+        """, [estado, usuario_id, concepto_id])
 
-    def actualizar_subtotal(self, nodo_id):
+    def actualizar_subtotal(self, concepto_id):
+        """Recalcula subtotal desde concepto_id hacia arriba hasta la raíz.
+        importe es GENERATED (cant×pu), subtotal se actualiza en cada capítulo padre.
+        """
         cur    = self._cursor
-        actual = nodo_id
+        actual = concepto_id
         while actual is not None:
             cur.execute("""
                 UPDATE estructura_presupuesto SET
@@ -266,8 +272,8 @@ class NodoRepo(RepoBase):
             actual = row["padre_id"] if row else None
         self._conn.commit()
 
-    def eliminar(self, nodo_id, usuario_id=1):
-        desc = self.descendientes(nodo_id)
+    def eliminar(self, concepto_id, usuario_id=1):
+        desc = self.descendientes(concepto_id)
         ids  = [d["id"] for d in desc]
         if ids:
             ph = ",".join("?" for _ in ids)
@@ -276,7 +282,7 @@ class NodoRepo(RepoBase):
                     modificado_por = ?, modificado_en = datetime('now')
                 WHERE id IN ({ph})
             """, [usuario_id] + ids)
-        nodo = self.buscar(nodo_id)
+        nodo = self.buscar(concepto_id)
         if nodo and nodo.get("padre_id"):
             self.actualizar_subtotal(nodo["padre_id"])
 
@@ -286,6 +292,7 @@ class NodoRepo(RepoBase):
 # =============================================================================
 
 class ConceptoRepo(RepoBase):
+    """Conveniencia sobre NodoRepo: solo nodos tipo 'concepto'."""
 
     def por_padre(self, padre_id):
         return self._lista("""
@@ -314,6 +321,9 @@ class ConceptoRepo(RepoBase):
 # =============================================================================
 
 class InsumoRepo(RepoBase):
+    """Catálogo de insumos del proyecto: materiales, MO, equipo, etc.
+    Siempre JOIN con tipos_insumo para incluir tipo_clave y tipo_nombre.
+    """
 
     def todos(self, proyecto_id):
         return self._lista("""
@@ -374,7 +384,7 @@ class InsumoRepo(RepoBase):
     def uso_en_proyecto(self, insumo_id):
         return self._uno("""
             SELECT COUNT(ac.id) AS apariciones, SUM(ac.importe) AS importe_total
-            FROM apu_componentes ac
+            FROM apu_matrices ac
             WHERE ac.insumo_id = ?
         """, [insumo_id])
 
@@ -394,9 +404,12 @@ class InsumoRepo(RepoBase):
 # APU COMPONENTES (antes: apu_detalle)
 # =============================================================================
 
-class ApuComponentesRepo(RepoBase):
+class ApuMatricesRepo(RepoBase):
+    """Componentes del APU: desglose de insumos por concepto o insumo compuesto.
+    matriz_id unificado: positivo para nodos del árbol, negativo para insumos compuestos.
+    """
 
-    def por_nodo(self, nodo_id):
+    def por_matriz(self, matriz_id):
         return self._lista("""
             SELECT ac.*,
                    i.clave             AS insumo_clave,
@@ -406,39 +419,21 @@ class ApuComponentesRepo(RepoBase):
                    t.clave             AS tipo_clave,
                    t.nombre            AS tipo_nombre,
                    t.id                AS tipo_id
-            FROM apu_componentes ac
+            FROM apu_matrices ac
             JOIN insumos i      ON i.id = ac.insumo_id
             JOIN tipos_insumo t ON t.id = i.tipo_id
-            WHERE ac.nodo_id = ?
+            WHERE ac.matriz_id = ?
             ORDER BY ac.orden
-        """, [nodo_id])
-
-    def por_auxiliar(self, apu_auxiliar_id):
-        return self._lista("""
-            SELECT ac.*,
-                   i.clave             AS insumo_clave,
-                   i.descripcion       AS insumo_descripcion,
-                   i.descripcion_corta AS insumo_desc_corta,
-                   i.unidad            AS insumo_unidad,
-                   t.clave             AS tipo_clave,
-                   t.nombre            AS tipo_nombre,
-                   t.id                AS tipo_id
-            FROM apu_componentes ac
-            JOIN insumos i      ON i.id = ac.insumo_id
-            JOIN tipos_insumo t ON t.id = i.tipo_id
-            WHERE ac.apu_auxiliar_id = ?
-            ORDER BY ac.orden
-        """, [apu_auxiliar_id])
+        """, [matriz_id])
 
     def insertar(self, datos):
         return self._ejecutar("""
-            INSERT INTO apu_componentes
-                (nodo_id, apu_auxiliar_id, insumo_id, rendimiento,
+            INSERT INTO apu_matrices
+                (matriz_id, insumo_id, rendimiento,
                  cantidad, precio, formula, orden, creado_por)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, [
-            datos.get("nodo_id"),
-            datos.get("apu_auxiliar_id"),
+            datos.get("matriz_id"),
             datos.get("insumo_id"),
             datos.get("rendimiento", 0),
             datos.get("cantidad", 0),
@@ -449,45 +444,34 @@ class ApuComponentesRepo(RepoBase):
         ])
 
     def eliminar(self, comp_id):
-        self._ejecutar("DELETE FROM apu_componentes WHERE id = ?", [comp_id])
+        self._ejecutar("DELETE FROM apu_matrices WHERE id = ?", [comp_id])
 
-    def limpiar_nodo(self, nodo_id):
-        self._ejecutar("DELETE FROM apu_componentes WHERE nodo_id = ?", [nodo_id])
+    def limpiar(self, matriz_id):
+        self._ejecutar("DELETE FROM apu_matrices WHERE matriz_id = ?", [matriz_id])
 
 
 # =============================================================================
 # APU RESUMEN (antes: apu_totales)
 # =============================================================================
 
-class ApuResumenRepo(RepoBase):
+class ApuResumenTotalesRepo(RepoBase):
+    """Resumen de costos por tipo de insumo para cada APU.
+    Se recalcula desde apu_matrices cuando cambian precios o cantidades.
+    """
 
-    def por_nodo(self, nodo_id):
+    def por_matriz(self, matriz_id):
         return self._uno("""
-            SELECT * FROM apu_resumen WHERE nodo_id = ?
-        """, [nodo_id])
+            SELECT * FROM apu_resumen_totales WHERE matriz_id = ?
+        """, [matriz_id])
 
-    def por_auxiliar(self, apu_auxiliar_id):
-        return self._uno("""
-            SELECT * FROM apu_resumen WHERE apu_auxiliar_id = ?
-        """, [apu_auxiliar_id])
-
-    def recalcular(self, nodo_id=None, apu_auxiliar_id=None):
-        if nodo_id:
-            col_where = "ac.nodo_id = ?"
-            col_ins   = "nodo_id"
-            val       = nodo_id
-        else:
-            col_where = "ac.apu_auxiliar_id = ?"
-            col_ins   = "apu_auxiliar_id"
-            val       = apu_auxiliar_id
-
-        self._ejecutar(f"""
-            INSERT OR REPLACE INTO apu_resumen
-                ({col_ins}, materiales, mano_obra, herramienta, equipo,
+    def recalcular(self, matriz_id):
+        self._ejecutar("""
+            INSERT OR REPLACE INTO apu_resumen_totales
+                (matriz_id, materiales, mano_obra, herramienta, equipo,
                  auxiliares, subcontratos, fletes, trabajos, costo_directo,
                  modificado_en)
             SELECT
-                ac.{col_ins},
+                ac.matriz_id,
                 COALESCE(SUM(CASE WHEN t.clave='material'    THEN ac.importe ELSE 0 END),0),
                 COALESCE(SUM(CASE WHEN t.clave='mano_obra'   THEN ac.importe ELSE 0 END),0),
                 COALESCE(SUM(CASE WHEN t.clave='herramienta' THEN ac.importe ELSE 0 END),0),
@@ -498,96 +482,37 @@ class ApuResumenRepo(RepoBase):
                 COALESCE(SUM(CASE WHEN t.clave='trabajo'     THEN ac.importe ELSE 0 END),0),
                 COALESCE(SUM(ac.importe), 0),
                 datetime('now')
-            FROM apu_componentes ac
+            FROM apu_matrices ac
             JOIN insumos i      ON i.id  = ac.insumo_id
             JOIN tipos_insumo t ON t.id  = i.tipo_id
-            WHERE {col_where}
-            GROUP BY ac.{col_ins}
-        """, [val])
+            WHERE ac.matriz_id = ?
+            GROUP BY ac.matriz_id
+        """, [matriz_id, matriz_id])
 
-    def actualizar_sobrecostos(self, nodo_id=None, apu_auxiliar_id=None,
+    def actualizar_sobrecostos(self, matriz_id,
                                 indirectos_pct=0, financiamiento_pct=0,
                                 utilidad_pct=0, cargo_adicional_pct=0):
-        res = (self.por_nodo(nodo_id) if nodo_id
-               else self.por_auxiliar(apu_auxiliar_id))
+        res = self.por_matriz(matriz_id)
         if not res:
             return
         cd = res["costo_directo"]
         pv = cd * (1 + (indirectos_pct + financiamiento_pct +
                         utilidad_pct + cargo_adicional_pct) / 100)
-        where = "nodo_id = ?" if nodo_id else "apu_auxiliar_id = ?"
-        val   = nodo_id or apu_auxiliar_id
-        self._ejecutar(f"""
-            UPDATE apu_resumen SET
+        self._ejecutar("""
+            UPDATE apu_resumen_totales SET
                 indirectos_pct = ?, financiamiento_pct = ?,
                 utilidad_pct = ?, cargo_adicional_pct = ?,
                 precio_venta = ?, modificado_en = datetime('now')
-            WHERE {where}
+            WHERE matriz_id = ?
         """, [indirectos_pct, financiamiento_pct, utilidad_pct,
-              cargo_adicional_pct, round(pv, 6), val])
+              cargo_adicional_pct, round(pv, 6), matriz_id])
 
 
 # =============================================================================
 # APU AUXILIARES (antes: apu_nodos)
 # =============================================================================
 
-class ApuAuxiliarRepo(RepoBase):
-
-    def buscar_por_clave(self, clave, proyecto_id):
-        return self._uno("""
-            SELECT * FROM apu_auxiliares
-            WHERE clave = ? AND proyecto_id = ?
-        """, [clave, proyecto_id])
-
-    def buscar(self, apu_auxiliar_id):
-        return self._uno("""
-            SELECT * FROM apu_auxiliares WHERE id = ?
-        """, [apu_auxiliar_id])
-
-    def todos(self, proyecto_id):
-        return self._lista("""
-            SELECT * FROM apu_auxiliares
-            WHERE proyecto_id = ? ORDER BY clave
-        """, [proyecto_id])
-
-    def insertar(self, datos):
-        return self._ejecutar("""
-            INSERT OR IGNORE INTO apu_auxiliares
-                (proyecto_id, clave, descripcion, descripcion_corta, unidad, creado_por)
-            VALUES (?, ?, ?, ?, ?, 1)
-        """, [
-            datos.get("proyecto_id"),
-            datos.get("clave"),
-            datos.get("descripcion", ""),
-            datos.get("descripcion_corta"),
-            datos.get("unidad"),
-        ])
-
-
-# =============================================================================
-# AUXILIARES (tabla *EGX de OPUS)
-# =============================================================================
-
-class AuxiliarRepo(RepoBase):
-
-    def por_insumo(self, insumo_id):
-        return self._lista("""
-            SELECT a.*, i.clave AS comp_clave, i.descripcion AS comp_desc
-            FROM auxiliares a
-            JOIN insumos i ON i.id = a.componente_id
-            WHERE a.insumo_id = ?
-        """, [insumo_id])
-
-    def todos(self, proyecto_id):
-        return self._lista("""
-            SELECT a.*,
-                   i.clave AS insumo_clave,
-                   c.clave AS comp_clave, c.descripcion AS comp_desc
-            FROM auxiliares a
-            JOIN insumos i ON i.id = a.insumo_id
-            JOIN insumos c ON c.id = a.componente_id
-            WHERE a.proyecto_id = ?
-        """, [proyecto_id])
+# Migrado a v3: apu_matrices usa matriz_id unico en vez de dos columnas.
 
 
 # =============================================================================
@@ -631,19 +556,19 @@ class SubfamiliaRepo(RepoBase):
 
 class NotaRepo(RepoBase):
 
-    def por_nodo(self, nodo_id):
+    def por_nodo(self, concepto_id):
         return self._lista("""
             SELECT n.*, u.nombre AS autor
             FROM notas n
             JOIN usuarios u ON u.id = n.usuario_id
-            WHERE n.nodo_id = ?
+            WHERE n.concepto_id = ?
             ORDER BY n.creado_en DESC
-        """, [nodo_id])
+        """, [concepto_id])
 
-    def insertar(self, nodo_id, texto, usuario_id=1):
+    def insertar(self, concepto_id, texto, usuario_id=1):
         return self._ejecutar("""
-            INSERT INTO notas (nodo_id, usuario_id, texto) VALUES (?, ?, ?)
-        """, [nodo_id, usuario_id, texto])
+            INSERT INTO notas (concepto_id, usuario_id, texto) VALUES (?, ?, ?)
+        """, [concepto_id, usuario_id, texto])
 
     def resolver(self, nota_id):
         self._ejecutar("""
@@ -657,7 +582,7 @@ class NotaRepo(RepoBase):
                    ep.wbs, ep.descripcion_corta
             FROM notas n
             JOIN usuarios u              ON u.id  = n.usuario_id
-            JOIN estructura_presupuesto ep ON ep.id = n.nodo_id
+            JOIN estructura_presupuesto ep ON ep.id = n.concepto_id
             WHERE ep.proyecto_id = ? AND n.resuelta = 0
             ORDER BY n.creado_en DESC
         """, [proyecto_id])
