@@ -245,7 +245,33 @@ historial = HistorialMemoria()
 
 ---
 
-### FE-03 — Notas por nodo: panel inline en la fila
+### FE-03 — Búsqueda multi-columna con menú contextual en la barra de búsqueda
+**Estado:** ✓ Implementado
+
+**Contexto:**
+La barra de búsqueda solo filtraba por la columna "Descripción".
+El usuario necesitaba buscar también por clave, familia, tipo, etc.
+
+**Decisión:**
+Se implementó búsqueda multi-columna client-side (sin re-consultar DB)
+con un menú contextual en la barra de búsqueda para seleccionar columnas.
+
+**Detalles técnicos:**
+- `_search_cols: set[int] | None` — `None` = todas las columnas, `set()` = ninguna
+- Menú usa `triggered` (no `toggled`) para evitar re-filtros durante construcción
+- Solo aparecen columnas visibles en la tabla
+- Cada widget define sus columnas por defecto (`_search_cols`) y las disponibles
+  (`get_searchable_columns()`)
+- `TablaArbol` por defecto: Nivel, Clave, Descripción, Tipo
+- `TablaInsumos` por defecto: Clave, Descripción, Familia
+
+**Archivos:**
+- `frontend/widgets/base.py`: `filter_rows()` multi-columna, API de columnas
+- `frontend/ventana.py`: `_on_search_context_menu()`, `_on_search_col_toggle()`
+
+---
+
+### FE-04 — Notas por nodo: panel inline en la fila
 **Estado:** ✓ Decidido
 
 **Contexto:**

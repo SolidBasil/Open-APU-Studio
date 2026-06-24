@@ -110,7 +110,18 @@ computada — SQLite la actualiza automáticamente al cambiar `cantidad` o
 `precio_unitario`. No se puede olvidar actualizarla.
 
 `subtotal` en `estructura_presupuesto` **no** es computada porque requiere sumar hijos, lo que
-SQLite no permite en columnas generadas. Python lo recalcula así:
+SQLite no permite en columnas generadas. Python lo recalcula bottom-up.
+
+En la UI, la columna "Total" del árbol de presupuesto unifica ambos:
+**conceptos** muestran `importe`, **capítulos** muestran `subtotal`.
+La columna "Subtotal" se eliminó de la interfaz (no del esquema).
+
+```sql
+-- La columna Total en arbol.py usa esta lógica:
+-- _fmt(n.get("importe") if n.get("tipo") == "concepto" else n.get("subtotal"))
+```
+
+Python lo recalcula así:
 
 ```python
 def recalcular_subtotales(con, nodo_id):
@@ -145,7 +156,26 @@ insumo_compuesto_id como en v1), consultas unificadas.
 Una sola tabla para auditar cualquier cambio en cualquier tabla.
 `sesion` (UUID) agrupa cambios de una misma operación.
 
-### 5. Borrado lógico (`activo = 1`)
+### 5. Familias y subfamilias — lookup en queries de insumos
+
+Las familias se importan desde el campo `ELE_GRUPO` o `ELE_FAM` del archivo `*P.DBF`.
+Subfamilias desde `ELE_SFAM` (ausente en muchos proyectos).
+
+```sql
+-- Insumos con familia y subfamilia
+SELECT i.*, f.nombre AS familia_nombre, sf.nombre AS subfamilia_nombre
+FROM insumos i
+LEFT JOIN familias f    ON f.id  = i.familia_id
+LEFT JOIN subfamilias sf ON sf.id = i.subfamilia_id
+WHERE i.proyecto_id = ? AND i.activo = 1;
+```
+
+`InsumoRepo` incluye estos JOINs en todos sus métodos (`todos`, `por_tipo`,
+`buscar`, `buscar_por_clave`, `buscar_texto`).
+
+---
+
+### 6. Borrado lógico (`activo = 1`)
 
 Ninguna tabla borra físicamente registros — usan `activo = 0`. Esto permite
 deshacer eliminaciones y mantener el historial íntegro. **Toda query de negocio
@@ -173,7 +203,6 @@ debe filtrar `WHERE activo = 1`**, excepto las de auditoría/historial.
 | Panel de notas por nodo | `notas` | Media |
 | Ctrl+Z (deshacer) | `historial` | Media |
 | Gestión de proveedores | `proveedores` | Baja |
-| Familias/subfamilias de insumos | `familias`, `subfamilias` | Baja |
 | Sobrecostos editable | `sobrecostos` | Alta |
 | Multi-moneda | `proyectos.costo_mn/me` | Baja |
 | Trabajo en red / sync | Requiere diseño adicional | Futura |

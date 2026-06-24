@@ -109,9 +109,10 @@ class TreeTableWidget(QTreeWidget):
     def __init__(self, columns, editable_cols=frozenset(), flat=False,
                  line_color=None, parent=None):
         super().__init__(parent)
-        self._flat         = flat
-        self._line_color   = line_color or LINE_COLOR
+        self._flat          = flat
+        self._line_color    = line_color or LINE_COLOR
         self._editable_cols = editable_cols
+        self._search_cols: set[int] | None = None  # None = buscar en todas
 
         self.setColumnCount(len(columns))
         self.setHeaderLabels(columns)
@@ -222,20 +223,19 @@ class TreeTableWidget(QTreeWidget):
             for i in range(item.childCount()):
                 TreeTableWidget._hide_leaves(item.child(i))
 
-    # ── Filtrado de filas ─────────────────────────────────────────
+    # ── Filtrado de filas (multi-columna) ────────────────────────
+    # Busca en todas las columnas de _search_cols (None = todas).
+    # Cada widget define sus columnas por defecto y el usuario
+    # las ajusta desde el menú contextual de la barra de búsqueda.
 
     def filter_rows(self, text):
-        desc_col = 2
-        for c in range(self.columnCount()):
-            if "descrip" in self.headerItem().text(c).lower():
-                desc_col = c
-                break
         if not text:
             self._show_all()
             return
         text = text.lower()
+        cols = self._search_cols if self._search_cols is not None else set(range(self.columnCount()))
         for i in range(self.topLevelItemCount()):
-            self._filter_item(self.topLevelItem(i), text, desc_col)
+            self._filter_item_multi(self.topLevelItem(i), text, cols)
 
     # ── Mostrar todo / filtrar internos ───────────────────────────
 
@@ -248,15 +248,36 @@ class TreeTableWidget(QTreeWidget):
             if item.childCount():
                 self._show_all(item)
 
-    def _filter_item(self, item, text, col):
-        match = text in item.text(col).lower()
+    # Recorre recursivamente el árbol; un item es visible si él o
+    # alguno de sus hijos coincide en CUALQUIERA de las columnas.
+    def _filter_item_multi(self, item, text, cols):
+        match = any(text in item.text(c).lower() for c in cols)
         any_child_visible = False
         for i in range(item.childCount()):
-            if self._filter_item(item.child(i), text, col):
+            if self._filter_item_multi(item.child(i), text, cols):
                 any_child_visible = True
         visible = match or any_child_visible
         item.setHidden(not visible)
         return visible
+
+    # ── Columnas de búsqueda ──────────────────────────────────────
+
+    def get_searchable_columns(self) -> list[tuple[int, str]]:
+        """Columnas que pueden incluirse en la búsqueda: (índice, etiqueta).
+        Se usa en el menú contextual de la barra de búsqueda.
+        Las subclases pueden sobreescribir para limitar las opciones.
+        """
+        return [(c, self.headerItem().text(c))
+                for c in range(self.columnCount())
+                if self.headerItem().text(c)]
+
+    def get_search_columns(self) -> set[int] | None:
+        """Columnas donde se filtra. None = buscar en todas."""
+        return self._search_cols
+
+    def set_search_columns(self, cols: set[int] | None):
+        """Cambia las columnas de búsqueda. None = buscar en todas."""
+        self._search_cols = cols
 
     # ── Manejo de teclado ─────────────────────────────────────────
 

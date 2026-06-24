@@ -270,8 +270,10 @@ def importar(carpeta: str, db_path: str, nombre: str | None = None) -> dict:
     familia_id_por_nombre:    dict[str, int] = {}
     subfamilia_id_por_nombre: dict[tuple, int] = {}  # (familia, subfamilia) → id
 
-    # Nombres alternativos del campo FAMILIA en distintas versiones de OPUS
-    _FAM_KEYS  = ["ELE_FAM",  "FAMILIA",  "FAM",  "FAMILIAS", "GRP"]
+    # Nombres alternativos del campo FAMILIA/GRUPO en distintas versiones de OPUS
+    # (ELE_GRUPO es el nombre real en *P.DBF para proyectos numericos;
+    #  ELE_FAM suele aparecer en formatos clásicos)
+    _FAM_KEYS  = ["ELE_FAM",  "FAMILIA",  "FAM",  "FAMILIAS", "GRP", "ELE_GRUPO"]
     _SFAM_KEYS = ["ELE_SFAM", "SUBFAMILIA", "SFAM", "SUBGRUP", "SUBGRUPO"]
 
     for r in regs_p:
@@ -321,8 +323,8 @@ def importar(carpeta: str, db_path: str, nombre: str | None = None) -> dict:
         if not clave:
             continue
 
-        fam = _s(r.get("ELE_FAM") or r.get("FAMILIA") or r.get("FAM"))
-        sub = _s(r.get("ELE_SFAM") or r.get("SUBFAMILIA") or r.get("SFAM"))
+        fam = next((_s(r.get(k)) for k in _FAM_KEYS if _s(r.get(k))), "")
+        sub = next((_s(r.get(k)) for k in _SFAM_KEYS if _s(r.get(k))), "")
         familia_id    = familia_id_por_nombre.get(fam) if fam else None
         subfamilia_id = subfamilia_id_por_nombre.get((fam, sub)) if (fam and sub) else None
 

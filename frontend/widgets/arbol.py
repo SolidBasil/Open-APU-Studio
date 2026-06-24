@@ -21,9 +21,11 @@ WBS_ROLE     = Qt.ItemDataRole.UserRole
 
 # ── Configuración de columnas ─────────────────────────────────────
 
+# Subtotal se fusionó en Total (col 6): conceptos → importe, capítulos → subtotal.
+# El índice que ocupaba Subtotal (7) se eliminó; columnas posteriores corrieron -1.
 COLUMNAS     = [
     "Nivel", "Clave", "Descripción", "Unid", "Cant", "P.U.", "Total",
-    "Subtotal", "Desc. Corta", "Tipo", "Estado", "Notas", "Creado", "Modificado",
+    "Desc. Corta", "Tipo", "Estado", "Notas", "Creado", "Modificado",
 ]
 _VISIBLE    = {0, 1, 2, 3, 4, 5, 6}
 EDITABLE    = frozenset({1, 2, 3, 4, 5})
@@ -70,14 +72,19 @@ class TablaArbol(TreeTableWidget):
         self.set_column_modes({
             c: (QHeaderView.ResizeMode.Interactive, w)
             for c, w in enumerate([50, 80, 250, 45, 60, 80, 90,
-                                   90, 120, 60, 70, 100, 130, 130])
+                                   120, 60, 70, 100, 130, 130])
         })
         self.header().setMaximumSectionSize(400)
         self.header().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         for c in range(len(COLUMNAS)):
             if c not in _VISIBLE:
                 self.setColumnHidden(c, True)
+        # búsqueda por defecto: Nivel, Clave, Descripción, Tipo
+        # (Tipo es columna 8 desde que se eliminó Subtotal)
+        self._search_cols = {0, 1, 2, 8}
         self._restore_header_state()
+
+
 
     def _header_context_menu(self, pos):
         super()._header_context_menu(pos)
@@ -121,14 +128,14 @@ class TablaArbol(TreeTableWidget):
             n.get("unidad", ""),                           # 3 Unid
             _num(n.get("cantidad")),                       # 4 Cant
             _fmt(n.get("precio_unitario")),                # 5 P.U.
-            _fmt(n.get("importe")),                        # 6 Total
-            _fmt(n.get("subtotal")),                       # 7 Subtotal
-            n.get("descripcion_corta", ""),                # 8 Desc. Corta
-            n.get("tipo", ""),                             # 9 Tipo
-            n.get("estado_nombre", ""),                    # 10 Estado
-            n.get("notas_rapidas", ""),                    # 11 Notas
-            str(n.get("creado_en", "") or ""),             # 12 Creado
-            str(n.get("modificado_en", "") or ""),         # 13 Modificado
+            # Total: conceptos muestran importe directo, capítulos muestran subtotal acumulado
+            _fmt(n.get("importe") if n.get("tipo") == "concepto" else n.get("subtotal")),  # 6 Total
+            n.get("descripcion_corta", ""),                # 7 Desc. Corta
+            n.get("tipo", ""),                             # 8 Tipo
+            n.get("estado_nombre", ""),                    # 9 Estado
+            n.get("notas_rapidas", ""),                    # 10 Notas
+            str(n.get("creado_en", "") or ""),             # 11 Creado
+            str(n.get("modificado_en", "") or ""),         # 12 Modificado
         ]
 
     # ── Inserción de agrupadores ──────────────────────────────────

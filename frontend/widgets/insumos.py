@@ -54,6 +54,9 @@ class TablaInsumos(TreeTableWidget):
         # columnas de detalle ocultas por defecto
         for c in (7, 8, 9, 10):
             self.setColumnHidden(c, True)
+        # búsqueda por defecto: Clave, Descripción, Familia
+        # (Desc. Corta disponible en el menú pero no tildada por defecto)
+        self._search_cols = {0, 1, 5}
         self._restore_header_state()
 
     def _header_context_menu(self, pos):
@@ -91,7 +94,11 @@ class TablaInsumos(TreeTableWidget):
                 ins.get("unidad", "") or "",
                 f"${precio:,.2f}",
                 tipo_txt,
-                ins.get("familia_nombre") or "",
+                # Familia › Subfamilia (se concatenan si existe subfamilia)
+                (lambda f, s: f"{f} › {s}" if s else f)(
+                    ins.get("familia_nombre") or "",
+                    ins.get("subfamilia_nombre") or "",
+                ),
                 ins.get("proveedor_nombre") or "",
                 ins.get("fecha_precio") or "",
                 ins.get("descripcion_corta") or "",

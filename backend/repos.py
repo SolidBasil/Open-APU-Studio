@@ -322,49 +322,65 @@ class ConceptoRepo(RepoBase):
 
 class InsumoRepo(RepoBase):
     """Catálogo de insumos del proyecto: materiales, MO, equipo, etc.
-    Siempre JOIN con tipos_insumo para incluir tipo_clave y tipo_nombre.
+    JOIN con tipos_insumo (tipo_clave, tipo_nombre), familias
+    (familia_nombre) y subfamilias (subfamilia_nombre).
     """
 
     def todos(self, proyecto_id):
         return self._lista("""
-            SELECT i.*, t.clave AS tipo_clave, t.nombre AS tipo_nombre
+            SELECT i.*, t.clave AS tipo_clave, t.nombre AS tipo_nombre,
+                   f.nombre AS familia_nombre, sf.nombre AS subfamilia_nombre
             FROM insumos i
             JOIN tipos_insumo t ON t.id = i.tipo_id
+            LEFT JOIN familias f ON f.id = i.familia_id
+            LEFT JOIN subfamilias sf ON sf.id = i.subfamilia_id
             WHERE i.proyecto_id = ? AND i.activo = 1
             ORDER BY t.orden, i.clave
         """, [proyecto_id])
 
     def por_tipo(self, proyecto_id, tipo_clave):
         return self._lista("""
-            SELECT i.*, t.clave AS tipo_clave, t.nombre AS tipo_nombre
+            SELECT i.*, t.clave AS tipo_clave, t.nombre AS tipo_nombre,
+                   f.nombre AS familia_nombre, sf.nombre AS subfamilia_nombre
             FROM insumos i
             JOIN tipos_insumo t ON t.id = i.tipo_id
+            LEFT JOIN familias f ON f.id = i.familia_id
+            LEFT JOIN subfamilias sf ON sf.id = i.subfamilia_id
             WHERE i.proyecto_id = ? AND t.clave = ? AND i.activo = 1
             ORDER BY i.clave
         """, [proyecto_id, tipo_clave])
 
     def buscar(self, insumo_id):
         return self._uno("""
-            SELECT i.*, t.clave AS tipo_clave, t.nombre AS tipo_nombre
+            SELECT i.*, t.clave AS tipo_clave, t.nombre AS tipo_nombre,
+                   f.nombre AS familia_nombre, sf.nombre AS subfamilia_nombre
             FROM insumos i
             JOIN tipos_insumo t ON t.id = i.tipo_id
+            LEFT JOIN familias f ON f.id = i.familia_id
+            LEFT JOIN subfamilias sf ON sf.id = i.subfamilia_id
             WHERE i.id = ? AND i.activo = 1
         """, [insumo_id])
 
     def buscar_por_clave(self, clave, proyecto_id):
         return self._uno("""
-            SELECT i.*, t.clave AS tipo_clave, t.nombre AS tipo_nombre
+            SELECT i.*, t.clave AS tipo_clave, t.nombre AS tipo_nombre,
+                   f.nombre AS familia_nombre, sf.nombre AS subfamilia_nombre
             FROM insumos i
             JOIN tipos_insumo t ON t.id = i.tipo_id
+            LEFT JOIN familias f ON f.id = i.familia_id
+            LEFT JOIN subfamilias sf ON sf.id = i.subfamilia_id
             WHERE i.clave = ? AND i.proyecto_id = ? AND i.activo = 1
         """, [clave, proyecto_id])
 
     def buscar_texto(self, proyecto_id, texto):
         q = f"%{texto}%"
         return self._lista("""
-            SELECT i.*, t.clave AS tipo_clave, t.nombre AS tipo_nombre
+            SELECT i.*, t.clave AS tipo_clave, t.nombre AS tipo_nombre,
+                   f.nombre AS familia_nombre, sf.nombre AS subfamilia_nombre
             FROM insumos i
             JOIN tipos_insumo t ON t.id = i.tipo_id
+            LEFT JOIN familias f ON f.id = i.familia_id
+            LEFT JOIN subfamilias sf ON sf.id = i.subfamilia_id
             WHERE i.proyecto_id = ? AND i.activo = 1
               AND (i.clave LIKE ? OR i.descripcion LIKE ? OR i.descripcion_corta LIKE ?)
             ORDER BY t.orden, i.clave

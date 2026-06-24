@@ -148,6 +148,69 @@ No hay `backend/opus/` separado — todo está en `backend/`.
 
 ---
 
+---
+
+## Paso 7 — Búsqueda multi-columna en frontend
+
+La barra de búsqueda en la parte superior de la ventana filtra filas del widget activo
+(tree de presupuesto o tabla de insumos). Por defecto busca en las columnas de texto
+más relevantes, pero el usuario puede ajustarlo.
+
+### Columnas de búsqueda por widget
+
+| Widget | Columnas por defecto | Columnas disponibles en menú |
+|---|---|---|
+| `TablaArbol` (presupuesto) | Nivel, Clave, Descripción, Tipo | Todas las visibles |
+| `TablaInsumos` (insumos) | Clave, Descripción, Familia | Todas las visibles |
+
+### Mecanismo
+
+- **Clic derecho** sobre la barra de búsqueda → menú con checkboxes por columna visible
+- `triggered` (no `toggled`) evita que `setChecked()` durante la construcción del menú dispare el filtro
+- `_search_cols: set[int] | None` donde `None` = buscar en todas, `set()` = buscar en ninguna
+- `_on_search_col_toggle` recibe el conjunto `all_cols` de columnas visibles para gestionar
+  la transición desde/hacia "buscar en todas"
+
+### Archivos involucrados
+
+- `frontend/widgets/base.py`: `filter_rows()` multi-columna con `_filter_item_multi()`,
+  API `get_searchable_columns()`, `get/set_search_columns()`
+- `frontend/widgets/arbol.py`: `_search_cols = {0, 1, 2, 8}`, `get_searchable_columns()`
+- `frontend/widgets/insumos.py`: `_search_cols = {0, 1, 5}`, `get_searchable_columns()`
+- `frontend/ventana.py`: `_on_search_context_menu()`, `_on_search_col_toggle()`
+
+---
+
+## Paso 8 — Familias y subfamilias en insumos
+
+Las familias se importan desde el campo `ELE_GRUPO` del archivo `*P.DBF`
+(además de `ELE_FAM`, `FAMILIA`, etc. para compatibilidad con formatos clásicos).
+
+### Visualización
+
+En la tabla de insumos, la columna "Familia" muestra `"Familia › Subfamilia"` si existe
+subfamilia, o solo el nombre de la familia. Ambas se incluyen en la búsqueda multi-columna.
+
+### Queries
+
+`InsumoRepo` incluye `LEFT JOIN familias f ON f.id = i.familia_id` y
+`LEFT JOIN subfamilias sf ON sf.id = i.subfamilia_id` en todos sus métodos,
+retornando `familia_nombre` y `subfamilia_nombre`.
+
+---
+
+## Paso 9 — Columna Total unificada (presupuesto)
+
+La antigua columna "Subtotal" se eliminó de la UI. La columna "Total" ahora muestra:
+
+- **Conceptos** → `importe` (cantidad × precio_unitario, columna GENERATED en SQLite)
+- **Capítulos** → `subtotal` (acumulado incluyendo hijos, recalculado por Python)
+
+No hay cambios en el esquema — ambas columnas siguen en la DB. Solo se fusionó
+la presentación en `arbol.py:_celdas()`.
+
+---
+
 ## Números de referencia para validar
 
 Si importas D60JALISCOT y el resultado es diferente a esto, hay un bug:

@@ -220,9 +220,54 @@ class VentanaPrincipal(QMainWindow):
         inp.setPlaceholderText("🔍  Buscar en el proyecto…")
         inp.setClearButtonEnabled(True)
         inp.textChanged.connect(self._on_search)
+        inp.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        inp.customContextMenuRequested.connect(self._on_search_context_menu)
         self._search_input = inp
         layout.addWidget(inp)
         parent_layout.addWidget(bar)
+
+    def _on_search_context_menu(self, pos):
+        """Menú contextual de la barra de búsqueda: checkboxes por columna.
+        Solo muestra columnas visibles. Usa triggered (no toggled) para
+        evitar que setChecked() durante la construcción dispare el filtro.
+        """
+        from frontend.widgets.base import TreeTableWidget
+        w = self._tabs.currentWidget()
+        if not isinstance(w, TreeTableWidget):
+            return
+        searchable = [(c, l) for c, l in w.get_searchable_columns() if not w.isColumnHidden(c)]
+        if not searchable:
+            return
+        all_cols = {c for c, _ in searchable}
+        menu = QMenu(self._search_input)
+        current = w.get_search_columns()
+        for idx, label in searchable:
+            act = menu.addAction(label)
+            act.setCheckable(True)
+            act.setChecked(current is None or idx in current)
+            act.triggered.connect(lambda checked, c=idx, a=all_cols:
+                                  self._on_search_col_toggle(c, checked, a))
+        menu.exec(self._search_input.mapToGlobal(pos))
+
+    def _on_search_col_toggle(self, col: int, checked: bool, all_cols: set[int]):
+        """Activa/desactiva una columna del filtro de búsqueda."""
+        from frontend.widgets.base import TreeTableWidget
+        w = self._tabs.currentWidget()
+        if not isinstance(w, TreeTableWidget):
+            return
+        current = w.get_search_columns()
+        if current is None:
+            cols = all_cols - {col} if not checked else all_cols
+        else:
+            cols = set(current)
+            if checked:
+                cols.add(col)
+            else:
+                cols.discard(col)
+            if cols == all_cols:
+                cols = None
+        w.set_search_columns(cols)
+        self._on_search(self._search_input.text())
 
     # ── Toolbar ───────────────────────────────────────────────────────────
     # QStackedWidget con una página por pestaña.
