@@ -602,3 +602,252 @@ class NotaRepo(RepoBase):
             WHERE ep.proyecto_id = ? AND n.resuelta = 0
             ORDER BY n.creado_en DESC
         """, [proyecto_id])
+
+
+# =============================================================================
+# EXPLOSIÓN DE INSUMOS
+# =============================================================================
+
+class ExplosionRepo(RepoBase):
+    """Calcula la explosión de insumos para un conjunto de conceptos.
+
+    Niveles:
+        'basico'       — recursivo: desciende en compuestos hasta insumos hoja
+        'compuesto'    — solo insumos compuestos del APU directo
+        'primer_nivel' — todos los insumos del APU directo (sin bajar)
+
+    Herramienta: usa am.importe (% × subtotal_MO del APU), no cantidad × costo_final.
+    """
+
+    TIPO_ID_HERRAMIENTA = 4
+    TIPO_ID_MO          = 2
+
+    # ── Helpers internos ─────────────────────────────────────────────────
+
+    def _get_componentes(self, matriz_id: int) -> list[dict]:
+        """Devuelve los componentes directos de un APU.
+        matriz_id positivo = APU de concepto; negativo = APU de insumo compuesto.
+        """
+        return self._lista("""
+            SELECT am.insumo_id, am.cantidad, am.importe,
+                   i.clave, i.descripcion, i.descripcion_corta,
+                   i.unidad, i.costo_final, i.es_compuesto, i.tipo_id,
+                   ti.nombre AS tipo_nombre, ti.orden AS tipo_orden
+            FROM apu_matrices am
+            JOIN insumos i       ON i.id  = am.insumo_id
+            JOIN tipos_insumo ti ON ti.id = i.tipo_id
+            WHERE am.matriz_id = ?
+            ORDER BY am.orden
+        """, [matriz_id])
+
+    def _expandir_basicos(
+        self,
+        matriz_id: int,
+        cant_padre: float,
+        acumulado: dict,
+        visitados: set,
+    ):
+        """Desciende recursivamente hasta insumos hoja (es_compuesto=0).
+        acumulado — dict {insumo_id: entry} que se va llenando.
+        cant_padre — cantidad acumulada de los niveles superiores.
+        Herramienta: usa am.importe proporcional a cant_padre (no cantidad × PU).
+        """
+        if matriz_id in visitados:
+            return
+        visitados.add(matriz_id)
+
+        for comp in self._get_componentes(matriz_id):
+            insumo_id  = comp["insumo_id"]
+            cant_local = (comp["cantidad"] or 0) * cant_padre
+            es_herr    = (comp["tipo_id"] == self.TIPO_ID_HERRAMIENTA)
+
+            if comp["es_compuesto"]:
+                self._expandir_basicos(-insumo_id, cant_local, acumulado, visitados)
+            else:
+                if insumo_id not in acumulado:
+                    acumulado[insumo_id] = {
+                        "tipo_id":        comp["tipo_id"],
+                        "tipo_nombre":    comp["tipo_nombre"],
+                        "tipo_orden":     comp["tipo_orden"],
+                        "clave":          comp["clave"],
+                        "descripcion":    comp["descripcion"] or comp["descripcion_corta"] or "",
+                        "unidad":         comp["unidad"] or "",
+                        "pu":             None if es_herr else comp["costo_final"],
+                        "cantidad_total": 0.0,
+                        "total":          0.0,
+                        "importe_herr":   0.0,
+                    }
+                entry = acumulado[insumo_id]
+                if es_herr:
+                    entry["importe_herr"] += (comp["importe"] or 0) * cant_padre
+                else:
+                    entry["cantidad_total"] += cant_local
+                    entry["total"]          += cant_local * (comp["costo_final"] or 0)
+
+    def _postprocesar(self, filas: list[dict], tipos_set: set) -> tuple[list[dict], float]:
+        """Filtra por tipos, calcula pct_mo para herramienta, % global y ordena."""
+        filas = [f for f in filas if f.get("tipo_id") in tipos_set]
+
+        total_global = sum(f.get("total") or 0 for f in filas)
+        total_mo     = sum(f["total"] for f in filas if f["tipo_id"] == self.TIPO_ID_MO)
+
+        for f in filas:
+            f["pct"] = (f["total"] / total_global * 100) if total_global else 0
+            if f["tipo_id"] == self.TIPO_ID_HERRAMIENTA:
+                f["pct_mo"] = f["total"] / total_mo if total_mo else None
+            else:
+                f.setdefault("pct_mo", None)
+
+        filas.sort(key=lambda f: (f.get("tipo_orden") or 99, -(f.get("total") or 0)))
+        return filas, total_global
+
+    # ── Nivel básico: recursivo en Python ────────────────────────────────
+
+    def _calcular_basico_recursivo(
+        self,
+        proyecto_id: int,
+        concepto_ids: list[int],
+        tipos_ids: list[int],
+        ph_conceptos: str,
+    ) -> tuple[list[dict], float]:
+        tipos_set = set(tipos_ids)
+
+        rows = self._lista(f"""
+            SELECT id, cantidad FROM estructura_presupuesto
+            WHERE id IN ({ph_conceptos}) AND tipo='concepto' AND activo=1
+        """, concepto_ids)
+        cant_concepto = {r["id"]: (r["cantidad"] or 1) for r in rows}
+
+        acumulado: dict[int, dict] = {}
+        for concepto_id, cant_ep in cant_concepto.items():
+            self._expandir_basicos(concepto_id, cant_ep, acumulado, set())
+
+        # Convertir acumulado a lista, usando importe_herr como total para herramienta
+        filas = []
+        for entry in acumulado.values():
+            es_herr = (entry["tipo_id"] == self.TIPO_ID_HERRAMIENTA)
+            filas.append({**entry, "total": entry["importe_herr"] if es_herr else entry["total"]})
+
+        return self._postprocesar(filas, tipos_set)
+
+    # ── Niveles primer_nivel / compuesto: vía SQL ─────────────────────────
+
+    def _calcular_sql(
+        self,
+        proyecto_id: int,
+        concepto_ids: list[int],
+        tipos_ids: list[int],
+        ph_conceptos: str,
+        filtro_nivel: str,
+    ) -> tuple[list[dict], float]:
+        tipos_set      = set(tipos_ids)
+        tipos_normales = [t for t in tipos_ids if t != self.TIPO_ID_HERRAMIENTA]
+        filas_normales = []
+
+        if tipos_normales:
+            ph_tipos = ",".join("?" * len(tipos_normales))
+            sql = f"""
+                SELECT
+                    i.tipo_id,
+                    ti.nombre           AS tipo_nombre,
+                    ti.orden            AS tipo_orden,
+                    i.clave,
+                    COALESCE(i.descripcion, i.descripcion_corta, '') AS descripcion,
+                    i.unidad,
+                    i.costo_final       AS pu,
+                    SUM(am.cantidad * ep.cantidad) AS cantidad_total,
+                    SUM(am.cantidad * ep.cantidad) * i.costo_final AS total
+                FROM estructura_presupuesto ep
+                JOIN apu_matrices am ON am.matriz_id = ep.id
+                JOIN insumos i       ON i.id = am.insumo_id
+                JOIN tipos_insumo ti ON ti.id = i.tipo_id
+                WHERE ep.id         IN ({ph_conceptos})
+                  AND ep.tipo        = 'concepto'
+                  AND ep.activo      = 1
+                  AND ep.proyecto_id = ?
+                  AND i.proyecto_id  = ?
+                  AND i.tipo_id      IN ({ph_tipos})
+                  AND i.activo       = 1
+                  {filtro_nivel}
+                GROUP BY i.id
+            """
+            filas_normales = self._lista(sql, concepto_ids + [proyecto_id, proyecto_id] + tipos_normales)
+
+        filas_herr = []
+        if self.TIPO_ID_HERRAMIENTA in tipos_ids:
+            sql_h = f"""
+                SELECT
+                    i.tipo_id,
+                    ti.nombre           AS tipo_nombre,
+                    ti.orden            AS tipo_orden,
+                    i.clave,
+                    COALESCE(i.descripcion, i.descripcion_corta, '') AS descripcion,
+                    i.unidad,
+                    SUM(am.importe * ep.cantidad) AS total,
+                    (
+                        SELECT SUM(am2.importe * ep2.cantidad)
+                        FROM apu_matrices am2
+                        JOIN insumos i2       ON i2.id  = am2.insumo_id
+                        JOIN tipos_insumo ti2 ON ti2.id = i2.tipo_id
+                        JOIN estructura_presupuesto ep2 ON ep2.id = am2.matriz_id
+                        WHERE am2.matriz_id IN (
+                                SELECT am3.matriz_id FROM apu_matrices am3
+                                WHERE am3.insumo_id = i.id
+                                  AND am3.matriz_id IN ({ph_conceptos})
+                              )
+                          AND ti2.id         = {self.TIPO_ID_MO}
+                          AND ep2.id         IN ({ph_conceptos})
+                          AND ep2.proyecto_id = ?
+                    ) AS mo_total_apu
+                FROM estructura_presupuesto ep
+                JOIN apu_matrices am ON am.matriz_id = ep.id
+                JOIN insumos i       ON i.id = am.insumo_id
+                JOIN tipos_insumo ti ON ti.id = i.tipo_id
+                WHERE ep.id         IN ({ph_conceptos})
+                  AND ep.tipo        = 'concepto'
+                  AND ep.activo      = 1
+                  AND ep.proyecto_id = ?
+                  AND i.proyecto_id  = ?
+                  AND i.tipo_id      = {self.TIPO_ID_HERRAMIENTA}
+                  AND i.activo       = 1
+                  {filtro_nivel}
+                GROUP BY i.id
+            """
+            params_h = (concepto_ids + concepto_ids + [proyecto_id]
+                        + concepto_ids + [proyecto_id, proyecto_id])
+            filas_herr = self._lista(sql_h, params_h)
+            for f in filas_herr:
+                mo = f.get("mo_total_apu") or 0
+                f["pct_mo"] = f["total"] / mo if mo else None
+
+        return self._postprocesar(filas_normales + filas_herr, tipos_set)
+
+    # ── API pública ───────────────────────────────────────────────────────
+
+    def calcular(
+        self,
+        proyecto_id: int,
+        concepto_ids: list[int],
+        nivel: str,
+        tipos_ids: list[int],
+    ) -> tuple[list[dict], float]:
+        """
+        Devuelve (filas, total_global).
+        filas — lista de dicts con tipo_id, tipo_nombre, tipo_orden, clave,
+                descripcion, unidad, pu, cantidad_total, total, pct, pct_mo.
+        Ordenada por tipo_orden asc, total desc dentro de cada tipo.
+
+        nivel  — 'basico' | 'compuesto' | 'primer_nivel'
+        """
+        if not concepto_ids or not tipos_ids:
+            return [], 0.0
+
+        ph = ",".join("?" * len(concepto_ids))
+
+        if nivel == "basico":
+            return self._calcular_basico_recursivo(proyecto_id, concepto_ids, tipos_ids, ph)
+        elif nivel == "compuesto":
+            return self._calcular_sql(proyecto_id, concepto_ids, tipos_ids, ph,
+                                      "AND i.es_compuesto = 1")
+        else:  # primer_nivel
+            return self._calcular_sql(proyecto_id, concepto_ids, tipos_ids, ph, "")

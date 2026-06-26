@@ -131,6 +131,7 @@ class VentanaPrincipal(QMainWindow):
         self._tab_activa = "PROYECTO"                    # toolbar tab activa
         self._tab_temp   = None                          # pestaña temporal (click simple)
         self._db         = None                          # instancia de Database o None
+        self._arbol_presupuesto = None                   # ref al TablaArbol activo
 
         self._init_db()
         self._build_central()
@@ -602,6 +603,7 @@ class VentanaPrincipal(QMainWindow):
 
         tree.setEditTriggers(QAbstractItemView.EditTrigger.EditKeyPressed)
         tree.itemDoubleClicked.connect(self._on_item_dblclick)
+        self._arbol_presupuesto = tree   # referencia para explosión de insumos
         return tree
 
     def _build_sin_proyecto(self) -> QWidget:
@@ -829,6 +831,93 @@ class VentanaPrincipal(QMainWindow):
                 ], editable=False)
         t.itemDoubleClicked.connect(self._on_item_dblclick)
         return t
+
+    # ── Explosión de insumos ─────────────────────────────────────────────
+    # Toma los conceptos seleccionados en el árbol del presupuesto,
+    # muestra el diálogo de opciones y abre una pestaña con los resultados.
+
+    def _build_explosion(self):
+        """Construye y muestra la pestaña de explosión de insumos.
+        Obtiene los conceptos seleccionados del árbol del presupuesto.
+        Si no hay selección, usa todos los conceptos del proyecto.
+        """
+        from frontend.widgets.explosion import (
+            DialogoExplosion, PestañaExplosion, TIPOS_INSUMO
+        )
+        from backend.repos import ExplosionRepo
+
+        if not self._db:
+            return self._build_placeholder("📦 Explosión de insumos")
+
+        # ── Recopilar conceptos seleccionados del árbol
+        from frontend.widgets.arbol import ID_ROLE
+        concepto_ids = []
+        arbol = self._arbol_presupuesto
+
+        if arbol is not None:
+            items_sel = arbol.selectedItems()
+            for item in items_sel:
+                # Solo hojas = conceptos (tienen ID_ROLE guardado en add_registro)
+                concepto_id = item.data(0, ID_ROLE)
+                if concepto_id is not None:
+                    concepto_ids.append(concepto_id)
+
+        # Si no hay selección, tomar todos los conceptos del proyecto
+        if not concepto_ids:
+            cur = self._db.conn.cursor()
+            rows = cur.execute("""
+                SELECT id FROM estructura_presupuesto
+                WHERE proyecto_id = 1 AND tipo = 'concepto' AND activo = 1
+            """).fetchall()
+            concepto_ids = [r[0] for r in rows]
+
+        if not concepto_ids:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.information(
+                self, "Sin conceptos",
+                "No hay conceptos en el presupuesto para explotar."
+            )
+            return None
+
+        # ── Diálogo de opciones
+        dlg = DialogoExplosion(self)
+        if dlg.exec() != DialogoExplosion.DialogCode.Accepted:
+            return None
+
+        nivel     = dlg.nivel
+        tipos_ids = dlg.tipos_ids
+
+        # ── Calcular explosión
+        repo           = ExplosionRepo(self._db.conn)
+        filas, total_g = repo.calcular(
+            proyecto_id  = 1,
+            concepto_ids = concepto_ids,
+            nivel        = nivel,
+            tipos_ids    = tipos_ids,
+        )
+
+        if not filas:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.information(
+                self, "Sin resultados",
+                "No se encontraron insumos con los filtros seleccionados."
+            )
+            return None
+
+        # ── Construir nombres de tipos para el encabezado
+        tipo_nombre_map = {t[0]: t[1] for t in TIPOS_INSUMO}
+        tipos_nombres   = ", ".join(
+            tipo_nombre_map.get(tid, str(tid)) for tid in tipos_ids
+        )
+
+        resumen = {
+            "nivel":        nivel,
+            "n_conceptos":  len(concepto_ids),
+            "tipos_nombres": tipos_nombres,
+        }
+
+        return PestañaExplosion(filas, total_g, resumen)
+
 
     # ── Gestión de proyectos (Abrir / Cerrar / Duplicar / Eliminar) ─────
 
@@ -1101,10 +1190,22 @@ class VentanaPrincipal(QMainWindow):
             widget.copy_selection()
 
     def _on_select_all_toolbar(self):
-        """Selecciona todas las filas del widget activo."""
-        widget = self._tabs.currentWidget()
-        if widget and hasattr(widget, "selectAll"):
-            widget.selectAll()
+        """Selecciona todas las filas visibles del widget activo.
+        Busca el TreeTableWidget dentro del widget de la pestaña actual,
+        ya que currentWidget() puede ser un contenedor (QWidget wrapper).
+        """
+        from frontend.widgets.base import TreeTableWidget
+        tab = self._tabs.currentWidget()
+        if tab is None:
+            return
+        # Si la pestaña ES directamente el TreeTableWidget
+        if isinstance(tab, TreeTableWidget):
+            tab.selectAll()
+            return
+        # Si la pestaña CONTIENE un TreeTableWidget (wrapper como PestañaExplosion)
+        tree = tab.findChild(TreeTableWidget)
+        if tree is not None:
+            tree.selectAll()
 
     # ── Desplegar (Primer nivel / Resumen / Todo / Nivel) ────────────────
     # Controla la expansión y colapso del árbol del presupuesto activo.
@@ -1227,6 +1328,10 @@ class VentanaPrincipal(QMainWindow):
             content = self._build_conceptos()
         elif title == "💰 Cálculo de indirectos":
             content = self._build_placeholder(title, "En desarrollo")
+        elif title == "📦 Explosión de insumos":
+            content = self._build_explosion()
+            if content is None:
+                return   # usuario canceló el diálogo
         elif title in insumos_titles:
             content = self._build_insumos(title)
         else:

@@ -138,12 +138,41 @@ class TreeTableWidget(QTreeWidget):
 
     # ── Modos de columna ──────────────────────────────────────────
 
-    def set_column_modes(self, modes):
+    def set_column_modes(self, modes: dict):
+        """Aplica anchos y modos de redimensión a las columnas.
+
+        Guarda la configuración y la aplica ahora y también en showEvent,
+        porque Qt ignora resizeSection antes de que el widget sea visible.
+        Las columnas con modo Stretch se convierten internamente a Interactive
+        con un ancho proporcional — así el usuario puede redimensionar todas.
+        """
+        self._pending_modes = modes   # guardado para re-aplicar en showEvent
+        self._apply_column_modes()
+
+    def _apply_column_modes(self):
+        modes = getattr(self, "_pending_modes", None)
+        if not modes:
+            return
         h = self.header()
+        # Primero todo Interactive para que resizeSection funcione
+        for c in range(self.columnCount()):
+            h.setSectionResizeMode(c, QHeaderView.ResizeMode.Interactive)
+        # Aplicar anchos
         for c, (mode, width) in modes.items():
-            h.setSectionResizeMode(c, mode)
             if width is not None:
                 h.resizeSection(c, width)
+        # Aplicar modos finales — Stretch se deja como Interactive
+        # para que el usuario pueda redimensionar cualquier columna
+        for c, (mode, width) in modes.items():
+            if mode == QHeaderView.ResizeMode.Stretch:
+                # Stretch no permite drag — usamos Interactive con ancho ya seteado
+                h.setSectionResizeMode(c, QHeaderView.ResizeMode.Interactive)
+            else:
+                h.setSectionResizeMode(c, mode)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._apply_column_modes()  # re-aplicar ahora que el widget tiene tamaño real
 
     # ── Menú contextual de cabecera ───────────────────────────────
 
@@ -280,6 +309,24 @@ class TreeTableWidget(QTreeWidget):
         self._search_cols = cols
 
     # ── Manejo de teclado ─────────────────────────────────────────
+
+    def selectAll(self):
+        """Selecciona solo los ítems visibles (respeta filtros activos).
+        Qt nativo selecciona también los ocultos, lo que produce resultados
+        inesperados al copiar o al contar filas seleccionadas.
+        """
+        self.clearSelection()
+        def _select_visible(parent_item):
+            count = (self.topLevelItemCount() if parent_item is None
+                     else parent_item.childCount())
+            for i in range(count):
+                item = (self.topLevelItem(i) if parent_item is None
+                        else parent_item.child(i))
+                if not item.isHidden():
+                    item.setSelected(True)
+                    if item.childCount():
+                        _select_visible(item)
+        _select_visible(None)
 
     def keyPressEvent(self, event):
         if event.matches(QKeySequence.StandardKey.Copy):

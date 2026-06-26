@@ -18,6 +18,7 @@ from backend.db import Config
 # ── Roles de datos ────────────────────────────────────────────────
 
 WBS_ROLE     = Qt.ItemDataRole.UserRole
+ID_ROLE      = Qt.ItemDataRole.UserRole + 1  # id de estructura_presupuesto
 
 # ── Configuración de columnas ─────────────────────────────────────
 
@@ -166,7 +167,9 @@ class TablaArbol(TreeTableWidget):
 
     def add_registro(self, n, parent=None):
         data = self._celdas(n, "")
-        return self.add_row(data, parent, editable=True)
+        item = self.add_row(data, parent, editable=True)
+        item.setData(0, ID_ROLE, n.get("id"))  # id de DB para explosión
+        return item
 
     # ── Poblado del árbol ─────────────────────────────────────────
 
