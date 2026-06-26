@@ -252,6 +252,48 @@ QGroupBox {
     padding-top: 4px;
 }
 
+/* ── Checkboxes & RadioButtons ── */
+QRadioButton, QCheckBox {
+    spacing: 8px;
+    font-size: 13px;
+    min-height: 26px;
+    color: #E8EDF2;
+}
+QRadioButton::indicator, QCheckBox::indicator {
+    width: 18px;
+    height: 18px;
+    border: 2px solid #2A4158;
+    background-color: #12161D;
+}
+QCheckBox::indicator {
+    border-radius: 4px;
+}
+QRadioButton::indicator {
+    border-radius: 10px;
+}
+QRadioButton::indicator:checked, QCheckBox::indicator:checked {
+    background-color: #37628F;
+    border-color: #5A82AB;
+}
+QRadioButton::indicator:hover, QCheckBox::indicator:hover {
+    border-color: #5A82AB;
+}
+
+/* ── DialogoExplosion ── */
+#dlgInfo {
+    color: #B7C0C8;
+    font-size: 12px;
+    padding: 10px 16px;
+    background-color: #1B2330;
+    border-radius: 6px;
+}
+#dlgCalc, #dlgTipos {
+    background-color: #1B2330;
+    border-radius: 6px;
+    padding: 12px;
+    margin-top: 4px;
+}
+
 /* ── StatusBar ── */
 QStatusBar {
     background-color: #1B2330;

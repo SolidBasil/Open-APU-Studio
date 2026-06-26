@@ -77,13 +77,14 @@ class TablaArbol(TreeTableWidget):
         })
         self.header().setMaximumSectionSize(400)
         self.header().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self._restore_header_state()
+        # enforce _VISIBLE después del restore (el estado guardado puede tener columnas visibles)
         for c in range(len(COLUMNAS)):
             if c not in _VISIBLE:
                 self.setColumnHidden(c, True)
         # búsqueda por defecto: Nivel, Clave, Descripción, Tipo
         # (Tipo es columna 8 desde que se eliminó Subtotal)
         self._search_cols = {0, 1, 2, 8}
-        self._restore_header_state()
 
 
 

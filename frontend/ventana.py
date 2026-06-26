@@ -659,7 +659,7 @@ class VentanaPrincipal(QMainWindow):
     # Pestaña que muestra el desglose de insumos de un concepto.
     # Se abre al hacer doble clic en una celda de P.U. o Precio.
 
-    def _build_apu_tab(self, clave: str, matriz_id: int):
+    def _build_apu_tab(self, clave: str, matriz_id: int, descripcion: str = ""):
         """Pestaña de desglose APU: componentes de un concepto o insumo compuesto.
         Muestra tipo, clave, descripción, cant, PU e importe de cada insumo.
         Los insumos con APU propio (▶) se pueden abrir con doble clic en P.U.
@@ -667,6 +667,21 @@ class VentanaPrincipal(QMainWindow):
         """
         from frontend.widgets.base import TreeTableWidget
         from backend.core import get_apu
+
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # Header con descripción
+        lbl = QLabel(
+            f"<b>{clave}</b> — {descripcion}"
+        )
+        lbl.setTextFormat(Qt.TextFormat.RichText)
+        lbl.setWordWrap(True)
+        lbl.setContentsMargins(8, 4, 8, 4)
+        layout.addWidget(lbl)
+        layout.addSpacing(2)
 
         detail = TreeTableWidget(
             ["Tipo", "Clave", "Descripción", "Unidad", "Cant", "P.U.", "Importe"],
@@ -713,7 +728,8 @@ class VentanaPrincipal(QMainWindow):
             lambda pos: self._on_rastrear_context_menu(detail, pos))
 
         detail.itemDoubleClicked.connect(self._on_apu_detail_dblclick)
-        return detail
+        layout.addWidget(detail)
+        return container
 
     def _on_apu_detail_dblclick(self, item, column):
         """Doble clic en celda de P.U. en APU → abre APU del insumo compuesto.
@@ -745,19 +761,22 @@ class VentanaPrincipal(QMainWindow):
             return
 
         from backend.repos import NodoRepo, ApuMatricesRepo, InsumoRepo
+        descripcion = clave
         nodo = NodoRepo(self._db.conn).buscar_por_clave(clave, proyecto_id=1)
         if nodo:
             matriz_id = nodo["id"]
+            descripcion = nodo.get("descripcion") or nodo.get("descripcion_corta") or clave
         else:
             insumo = InsumoRepo(self._db.conn).buscar_por_clave(clave, proyecto_id=1)
             if not insumo or not insumo.get("es_compuesto"):
-                self._sb.showMessage(f"'{clave}' no encontrado", 4000)
+                self._sb.showMessage(f"'{clave}' no tiene matriz relacionada", 4000)
                 return
             matriz_id = -insumo["id"]
+            descripcion = insumo.get("descripcion") or insumo.get("descripcion_corta") or clave
 
         rows = ApuMatricesRepo(self._db.conn).por_matriz(matriz_id)
         if not rows:
-            self._sb.showMessage(f"'{clave}' no tiene APU", 4000)
+            self._sb.showMessage(f"'{clave}' no tiene matriz relacionada", 4000)
             return
 
         title = f"APU: {clave}"
@@ -765,7 +784,7 @@ class VentanaPrincipal(QMainWindow):
             if self._tabs.tabText(i) == title:
                 self._tabs.setCurrentIndex(i)
                 return
-        idx = self._tabs.addTab(self._build_apu_tab(clave, matriz_id), title)
+        idx = self._tabs.addTab(self._build_apu_tab(clave, matriz_id, descripcion), title)
         self._tabs.setCurrentIndex(idx)
 
     # ── Rastrear insumo ──────────────────────────────────────────────────
@@ -998,9 +1017,11 @@ class VentanaPrincipal(QMainWindow):
             return None
 
         # ── Construir nombres de tipos para el encabezado
+        from frontend.widgets.explosion import TIPO_ICONO
         tipo_nombre_map = {t[0]: t[1] for t in TIPOS_INSUMO}
         tipos_nombres   = ", ".join(
-            tipo_nombre_map.get(tid, str(tid)) for tid in tipos_ids
+            f"{TIPO_ICONO.get(tid, '')} {tipo_nombre_map.get(tid, str(tid))}".strip()
+            for tid in tipos_ids
         )
 
         resumen = {
@@ -1009,7 +1030,11 @@ class VentanaPrincipal(QMainWindow):
             "tipos_nombres": tipos_nombres,
         }
 
-        return PestañaExplosion(filas, total_g, resumen)
+        return PestañaExplosion(
+            filas, total_g, resumen,
+            on_apu_click=self._abrir_apu,
+            on_rastrear=self._on_rastrear_insumo,
+        )
 
 
     def _on_configuracion(self):
