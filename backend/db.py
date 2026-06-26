@@ -110,6 +110,7 @@ class Config:
     # ── cargar configuración desde JSON ──
     @classmethod
     def _cargar(cls) -> dict:
+        """Carga config.json desde disco al caché de clase; retorna dict vacío si no existe o está corrupto."""
         if cls._cache is not None:
             return cls._cache
         ruta = Rutas.config_path()
@@ -125,11 +126,14 @@ class Config:
     # ── leer valor de configuración ──
     @classmethod
     def get(cls, clave: str, default=None):
+        """Lee valor de configuración por clave; devuelve default si no existe."""
         return cls._cargar().get(clave, default)
 
     # ── guardar valor de configuración ──
     @classmethod
     def set(cls, clave: str, valor):
+        """Persiste par clave/valor en config.json y actualiza el caché."""
+        datos = cls._cargar()
         datos = cls._cargar()
         datos[clave] = valor
         Rutas.config_path().write_text(
@@ -166,6 +170,7 @@ class Database:
     _instancia = None
 
     def __init__(self, db_path=None):
+        """Database vacía o que abre conexión si se pasa db_path."""
         self._conn    = None
         self._db_path = None
         if db_path:
@@ -175,6 +180,8 @@ class Database:
 
     # ── abrir conexión a SQLite ──
     def _abrir(self, db_path: str | Path):
+        """Abre (o reabre) conexión SQLite, aplica pragmas y schema, guarda como último proyecto."""
+        self._cerrar()
         self._cerrar()
         self._db_path = str(db_path)
         self._conn = sqlite3.connect(self._db_path)
@@ -187,6 +194,7 @@ class Database:
 
     # ── cerrar conexión SQLite ──
     def _cerrar(self):
+        """Cierra la conexión activa y limpia el estado."""
         if self._conn:
             self._conn.close()
             self._conn    = None
@@ -194,10 +202,12 @@ class Database:
 
     @property
     def conn(self) -> sqlite3.Connection:
+        """Conexión SQLite activa (solo lectura)."""
         return self._conn
 
     @property
     def db_path(self) -> str:
+        """Ruta del archivo .db abierto (solo lectura)."""
         return self._db_path
 
     # ── Schema ────────────────────────────────────────────────────────────
@@ -250,16 +260,19 @@ class Database:
 
     @classmethod
     def instancia(cls) -> "Database":
+        """Singleton: devuelve la instancia única de Database, creándola si no existe."""
         if cls._instancia is None:
             cls._instancia = cls()
         return cls._instancia
 
     @classmethod
     def abrir(cls, db_path: str | Path) -> "Database":
+        """Método de clase: obtiene singleton y abre conexión al .db."""
         inst = cls.instancia()
         inst._abrir(db_path)
         return inst
 
     @classmethod
     def cerrar(cls):
+        """Método de clase: cierra la conexión activa desde el singleton."""
         cls.instancia()._cerrar()

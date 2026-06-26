@@ -91,10 +91,12 @@ def draw_tree_connectors(tree, painter, rect, index, line_color=LINE_COLOR):
 
 class _Delegate(QStyledItemDelegate):
     def __init__(self, parent, editable_cols):
+        """Delegado que solo permite edición en columnas indicadas."""
         super().__init__(parent)
         self._editable_cols = editable_cols
 
     def createEditor(self, parent, option, index):
+        """Crea editor solo si la columna es editable; si no, retorna None."""
         if index.column() in self._editable_cols:
             return super().createEditor(parent, option, index)
         return None
@@ -108,6 +110,7 @@ class TreeTableWidget(QTreeWidget):
 
     def __init__(self, columns, editable_cols=frozenset(), flat=False,
                  line_color=None, parent=None):
+        """Inicializa QTreeWidget con columnas, editabilidad, modo plano/jerárquico y cabecera."""
         super().__init__(parent)
         self._flat          = flat
         self._line_color    = line_color or LINE_COLOR
@@ -150,6 +153,7 @@ class TreeTableWidget(QTreeWidget):
         self._apply_column_modes()
 
     def _apply_column_modes(self):
+        """Aplica anchos y modos de redimension pendientes a cada columna."""
         modes = getattr(self, "_pending_modes", None)
         if not modes:
             return
@@ -171,12 +175,14 @@ class TreeTableWidget(QTreeWidget):
                 h.setSectionResizeMode(c, mode)
 
     def showEvent(self, event):
+        """Re-aplica modos de columna al mostrar (Qt ignora resizeSection antes de ser visible)."""
         super().showEvent(event)
-        self._apply_column_modes()  # re-aplicar ahora que el widget tiene tamaño real
+        self._apply_column_modes()
 
     # ── Menú contextual de cabecera ───────────────────────────────
 
     def _header_context_menu(self, pos):
+        """Menú contextual sobre cabecera para mostrar/ocultar columnas."""
         menu = QMenu(self)
         for c in range(self.columnCount()):
             name = self.headerItem().text(c)
@@ -191,6 +197,7 @@ class TreeTableWidget(QTreeWidget):
     # ── Inserción de filas ────────────────────────────────────────
 
     def add_row(self, data, parent=None, editable=True):
+        """Agrega fila al árbol con valores de data; editable=False la bloquea."""
         parent = parent or self
         item   = QTreeWidgetItem(parent, data)
         if not editable:
@@ -200,6 +207,7 @@ class TreeTableWidget(QTreeWidget):
     # ── Dibujado de ramas ─────────────────────────────────────────
 
     def drawBranches(self, painter, rect, index):
+        """Dibuja conectores jerárquicos entre nodos si el modo no es plano."""
         super().drawBranches(painter, rect, index)
         if not self._flat:
             draw_tree_connectors(self, painter, rect, index, self._line_color)
@@ -207,16 +215,19 @@ class TreeTableWidget(QTreeWidget):
     # ── Control de expansión / visibilidad ────────────────────────
 
     def show_primer_nivel(self):
+        """Colapsa todo mostrando solo el primer nivel (raíces)."""
         self._show_all()
         self.collapseAll()
 
     def show_solo_agrupadores(self):
+        """Muestra solo nodos con hijos (agrupadores), oculta hojas."""
         self._show_all()
         self.expandAll()
         for i in range(self.topLevelItemCount()):
             self._hide_leaves(self.topLevelItem(i))
 
     def show_todo(self):
+        """Muestra todos los nodos expandidos completamente."""
         self._show_all()
         self.expandAll()
 
@@ -246,6 +257,7 @@ class TreeTableWidget(QTreeWidget):
 
     @staticmethod
     def _hide_leaves(item):
+        """Recursivamente oculta nodos hoja (sin hijos)."""
         if item.childCount() == 0:
             item.setHidden(True)
         else:
@@ -258,6 +270,7 @@ class TreeTableWidget(QTreeWidget):
     # las ajusta desde el menú contextual de la barra de búsqueda.
 
     def filter_rows(self, text):
+        """Filtra filas visibles buscando text en las columnas configuradas (_search_cols)."""
         if not text:
             self._show_all()
             return
@@ -269,6 +282,7 @@ class TreeTableWidget(QTreeWidget):
     # ── Mostrar todo / filtrar internos ───────────────────────────
 
     def _show_all(self, parent=None):
+        """Muestra todos los items (quita cualquier ocultación) recursivamente."""
         items = ([self.topLevelItem(i) for i in range(self.topLevelItemCount())]
                  if parent is None
                  else [parent.child(i) for i in range(parent.childCount())])
@@ -280,6 +294,7 @@ class TreeTableWidget(QTreeWidget):
     # Recorre recursivamente el árbol; un item es visible si él o
     # alguno de sus hijos coincide en CUALQUIERA de las columnas.
     def _filter_item_multi(self, item, text, cols):
+        """Evalúa si item o algún hijo coincide; actualiza visibilidad. Retorna True si es visible."""
         match = any(text in item.text(c).lower() for c in cols)
         any_child_visible = False
         for i in range(item.childCount()):
@@ -329,6 +344,7 @@ class TreeTableWidget(QTreeWidget):
         _select_visible(None)
 
     def keyPressEvent(self, event):
+        """Captura Ctrl+C (copiar) y Ctrl+V (pegar); delega lo demás al comportamiento nativo."""
         if event.matches(QKeySequence.StandardKey.Copy):
             self._copy()
         elif event.matches(QKeySequence.StandardKey.Paste):
@@ -338,6 +354,7 @@ class TreeTableWidget(QTreeWidget):
 
     @staticmethod
     def _item_sort_key(item):
+        """Genera clave de orden según posición en el árbol (índices desde raíz)."""
         path = []
         while item:
             parent = item.parent()
@@ -372,6 +389,7 @@ class TreeTableWidget(QTreeWidget):
         return True
 
     def _copy(self):
+        """Copia selección al portapapeles como TSV; si no hay selección copia celda actual."""
         if self.copy_selection():
             return
         item = self.currentItem()
@@ -381,6 +399,7 @@ class TreeTableWidget(QTreeWidget):
         QApplication.clipboard().setText(_strip_icons(item.text(col)))
 
     def _paste(self):
+        """Pega texto del portapapeles en la celda actual si la columna es editable."""
         text = QApplication.clipboard().text()
         if not text:
             return

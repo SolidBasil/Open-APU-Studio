@@ -46,6 +46,7 @@ class TablaInsumos(TreeTableWidget):
     rastrear_insumo = Signal(str)  # clave
 
     def __init__(self, parent=None):
+        """Inicializa tabla plana de insumos con columnas, modos, búsqueda y restauración del header."""
         super().__init__(COLUMNAS, EDITABLE, flat=True, parent=parent)
         self.set_column_modes({
             c: (QHeaderView.ResizeMode.Interactive, w)
@@ -61,6 +62,7 @@ class TablaInsumos(TreeTableWidget):
         self._restore_header_state()
 
     def contextMenuEvent(self, event):
+        """Menú contextual sobre insumo seleccionado: opción 'Rastrear uso' si hay una sola selección."""
         items = self.selectedItems()
         if len(items) != 1:
             super().contextMenuEvent(event)
@@ -72,19 +74,23 @@ class TablaInsumos(TreeTableWidget):
         menu.exec(event.globalPos())
 
     def _emit_rastrear(self, item):
+        """Emite señal rastrear_insumo con la clave del item seleccionado."""
         clave = item.text(0)
         if clave:
             self.rastrear_insumo.emit(clave)
 
     def _header_context_menu(self, pos):
+        """Extiende menú contextual de cabecera y persiste estado tras cambios."""
         super()._header_context_menu(pos)
         self._save_header_state()
 
     def _save_header_state(self):
+        """Guarda estado del header (anchos, visibilidad) en config.json como base64."""
         raw = self.header().saveState()
         Config.set(self._HEADER_KEY, raw.toBase64().data().decode("ascii"))
 
     def _restore_header_state(self):
+        """Restaura estado guardado del header desde config.json si existe."""
         saved = Config.get(self._HEADER_KEY)
         if saved:
             self.header().restoreState(QByteArray.fromBase64(saved.encode("ascii")))

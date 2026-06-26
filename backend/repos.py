@@ -27,22 +27,27 @@ Uso:
 
 class RepoBase:
     def __init__(self, conn):
+        """Inicializa el repositorio con una conexión SQLite."""
         self._conn   = conn
         self._cursor = conn.cursor()
 
     def _uno(self, sql, params=None):
+        """Ejecuta una consulta y devuelve la primera fila como dict, o None."""
         row = self._cursor.execute(sql, params or []).fetchone()
         return dict(row) if row else None
 
     def _lista(self, sql, params=None):
+        """Ejecuta una consulta y devuelve todas las filas como lista de dicts."""
         return [dict(r) for r in self._cursor.execute(sql, params or []).fetchall()]
 
     def _ejecutar(self, sql, params=None):
+        """Ejecuta una sentencia INSERT/UPDATE/DELETE y hace commit."""
         self._cursor.execute(sql, params or [])
         self._conn.commit()
         return self._cursor.lastrowid
 
     def _muchos(self, sql, seq):
+        """Ejecuta una inserción masiva con executemany y hace commit."""
         self._cursor.executemany(sql, seq)
         self._conn.commit()
 
@@ -54,21 +59,25 @@ class RepoBase:
 class ProyectoRepo(RepoBase):
 
     def todos(self):
+        """Devuelve todos los proyectos activos ordenados por fecha descendente."""
         return self._lista("""
             SELECT * FROM proyectos WHERE activo = 1 ORDER BY creado_en DESC
         """)
 
     def buscar(self, proyecto_id):
+        """Busca un proyecto por su ID."""
         return self._uno("""
             SELECT * FROM proyectos WHERE id = ? AND activo = 1
         """, [proyecto_id])
 
     def config(self, proyecto_id):
+        """Devuelve la configuración de un proyecto."""
         return self._uno("""
             SELECT * FROM configuracion_proyecto WHERE proyecto_id = ?
         """, [proyecto_id])
 
     def actualizar_total(self, proyecto_id):
+        """Recalcula y actualiza el total_obra del proyecto desde sus raíces."""
         self._ejecutar("""
             UPDATE proyectos SET
                 total_obra = (
@@ -88,6 +97,7 @@ class ProyectoRepo(RepoBase):
 class SobrecostosRepo(RepoBase):
 
     def por_proyecto(self, proyecto_id):
+        """Devuelve los sobrecostos de un proyecto ordenados por orden."""
         return self._lista("""
             SELECT * FROM sobrecostos
             WHERE proyecto_id = ?
@@ -95,6 +105,7 @@ class SobrecostosRepo(RepoBase):
         """, [proyecto_id])
 
     def insertar(self, datos):
+        """Inserta un nuevo sobrecosto en el proyecto."""
         return self._ejecutar("""
             INSERT INTO sobrecostos
                 (proyecto_id, orden, variable, descripcion, formula,
@@ -117,6 +128,7 @@ class SobrecostosRepo(RepoBase):
         ])
 
     def limpiar(self, proyecto_id):
+        """Elimina todos los sobrecostos de un proyecto."""
         self._ejecutar("""
             DELETE FROM sobrecostos WHERE proyecto_id = ?
         """, [proyecto_id])
@@ -148,6 +160,7 @@ class NodoRepo(RepoBase):
     """
 
     def todos(self, proyecto_id):
+        """Devuelve todos los nodos activos del presupuesto ordenados por wbs."""
         return self._lista("""
             SELECT * FROM estructura_presupuesto
             WHERE proyecto_id = ? AND activo = 1
@@ -155,6 +168,7 @@ class NodoRepo(RepoBase):
         """, [proyecto_id])
 
     def hijos(self, padre_id):
+        """Devuelve los hijos directos de un nodo."""
         return self._lista("""
             SELECT * FROM estructura_presupuesto
             WHERE padre_id = ? AND activo = 1
@@ -162,6 +176,7 @@ class NodoRepo(RepoBase):
         """, [padre_id])
 
     def raices(self, proyecto_id):
+        """Devuelve los nodos raíz (capítulos) de un proyecto."""
         return self._lista("""
             SELECT * FROM estructura_presupuesto
             WHERE proyecto_id = ? AND padre_id IS NULL AND activo = 1
@@ -169,18 +184,21 @@ class NodoRepo(RepoBase):
         """, [proyecto_id])
 
     def buscar(self, concepto_id):
+        """Busca un nodo por su ID."""
         return self._uno("""
             SELECT * FROM estructura_presupuesto
             WHERE id = ? AND activo = 1
         """, [concepto_id])
 
     def buscar_por_clave(self, clave, proyecto_id):
+        """Busca un nodo por su clave dentro de un proyecto."""
         return self._uno("""
             SELECT * FROM estructura_presupuesto
             WHERE clave = ? AND proyecto_id = ? AND activo = 1
         """, [clave, proyecto_id])
 
     def descendientes(self, concepto_id):
+        """Devuelve todos los descendientes de un nodo mediante CTE recursiva."""
         return self._lista("""
             WITH RECURSIVE sub AS (
                 SELECT * FROM estructura_presupuesto WHERE id = ? AND activo = 1
@@ -193,6 +211,7 @@ class NodoRepo(RepoBase):
         """, [concepto_id])
 
     def ruta(self, concepto_id):
+        """Devuelve la ruta desde un nodo hasta la raíz mediante CTE recursiva."""
         return self._lista("""
             WITH RECURSIVE ruta AS (
                 SELECT * FROM estructura_presupuesto WHERE id = ?
@@ -204,6 +223,7 @@ class NodoRepo(RepoBase):
         """, [concepto_id])
 
     def por_estado(self, proyecto_id, estado: int):
+        """Devuelve los nodos con un estado específico (semáforo)."""
         return self._lista("""
             SELECT * FROM estructura_presupuesto
             WHERE proyecto_id = ? AND estado = ? AND activo = 1
@@ -211,6 +231,7 @@ class NodoRepo(RepoBase):
         """, [proyecto_id, estado])
 
     def conceptos_sin_apu(self, proyecto_id):
+        """Devuelve los conceptos que no tienen APU asociado."""
         return self._lista("""
             SELECT ep.* FROM estructura_presupuesto ep
             LEFT JOIN apu_matrices ac ON ac.matriz_id = ep.id
@@ -220,6 +241,7 @@ class NodoRepo(RepoBase):
         """, [proyecto_id])
 
     def actualizar_cantidad(self, concepto_id, cantidad, usuario_id=1):
+        """Actualiza la cantidad de un concepto y recalcula subtotales."""
         self._ejecutar("""
             UPDATE estructura_presupuesto SET
                 cantidad = ?, modificado_por = ?, modificado_en = datetime('now')
@@ -228,6 +250,7 @@ class NodoRepo(RepoBase):
         self.actualizar_subtotal(concepto_id)
 
     def actualizar_precio(self, concepto_id, precio, usuario_id=1):
+        """Actualiza el precio unitario de un concepto y recalcula subtotales."""
         self._ejecutar("""
             UPDATE estructura_presupuesto SET
                 precio_unitario = ?, modificado_por = ?, modificado_en = datetime('now')
@@ -236,6 +259,7 @@ class NodoRepo(RepoBase):
         self.actualizar_subtotal(concepto_id)
 
     def actualizar_estado(self, concepto_id, estado: int, usuario_id=1):
+        """Actualiza el estado (semáforo) de un nodo."""
         if estado not in ESTADO_COLOR:
             return
         self._ejecutar("""
@@ -273,6 +297,7 @@ class NodoRepo(RepoBase):
         self._conn.commit()
 
     def eliminar(self, concepto_id, usuario_id=1):
+        """Marca un nodo y sus descendientes como inactivos (borrado lógico)."""
         desc = self.descendientes(concepto_id)
         ids  = [d["id"] for d in desc]
         if ids:
@@ -295,6 +320,7 @@ class ConceptoRepo(RepoBase):
     """Conveniencia sobre NodoRepo: solo nodos tipo 'concepto'."""
 
     def por_padre(self, padre_id):
+        """Devuelve los conceptos hijos directos de un capítulo."""
         return self._lista("""
             SELECT * FROM estructura_presupuesto
             WHERE padre_id = ? AND tipo = 'concepto' AND activo = 1
@@ -302,6 +328,7 @@ class ConceptoRepo(RepoBase):
         """, [padre_id])
 
     def buscar_por_clave(self, clave, proyecto_id):
+        """Busca un concepto por su clave dentro de un proyecto."""
         return self._uno("""
             SELECT * FROM estructura_presupuesto
             WHERE clave = ? AND proyecto_id = ?
@@ -309,6 +336,7 @@ class ConceptoRepo(RepoBase):
         """, [clave, proyecto_id])
 
     def todos(self, proyecto_id):
+        """Devuelve todos los conceptos de un proyecto."""
         return self._lista("""
             SELECT * FROM estructura_presupuesto
             WHERE proyecto_id = ? AND tipo = 'concepto' AND activo = 1
@@ -327,6 +355,7 @@ class InsumoRepo(RepoBase):
     """
 
     def todos(self, proyecto_id):
+        """Devuelve todos los insumos activos de un proyecto con sus joins."""
         return self._lista("""
             SELECT i.*, t.clave AS tipo_clave, t.nombre AS tipo_nombre,
                    f.nombre AS familia_nombre, sf.nombre AS subfamilia_nombre
@@ -339,6 +368,7 @@ class InsumoRepo(RepoBase):
         """, [proyecto_id])
 
     def por_tipo(self, proyecto_id, tipo_clave):
+        """Devuelve los insumos de un tipo específico (clave textual)."""
         return self._lista("""
             SELECT i.*, t.clave AS tipo_clave, t.nombre AS tipo_nombre,
                    f.nombre AS familia_nombre, sf.nombre AS subfamilia_nombre
@@ -351,6 +381,7 @@ class InsumoRepo(RepoBase):
         """, [proyecto_id, tipo_clave])
 
     def buscar(self, insumo_id):
+        """Busca un insumo por su ID."""
         return self._uno("""
             SELECT i.*, t.clave AS tipo_clave, t.nombre AS tipo_nombre,
                    f.nombre AS familia_nombre, sf.nombre AS subfamilia_nombre
@@ -362,6 +393,7 @@ class InsumoRepo(RepoBase):
         """, [insumo_id])
 
     def buscar_por_clave(self, clave, proyecto_id):
+        """Busca un insumo por su clave dentro de un proyecto."""
         return self._uno("""
             SELECT i.*, t.clave AS tipo_clave, t.nombre AS tipo_nombre,
                    f.nombre AS familia_nombre, sf.nombre AS subfamilia_nombre
@@ -373,6 +405,7 @@ class InsumoRepo(RepoBase):
         """, [clave, proyecto_id])
 
     def buscar_texto(self, proyecto_id, texto):
+        """Busca insumos por texto en clave, descripción o descripción corta."""
         q = f"%{texto}%"
         return self._lista("""
             SELECT i.*, t.clave AS tipo_clave, t.nombre AS tipo_nombre,
@@ -387,6 +420,7 @@ class InsumoRepo(RepoBase):
         """, [proyecto_id, q, q, q])
 
     def resumen_por_tipo(self, proyecto_id):
+        """Devuelve un resumen de cantidad y costo total agrupado por tipo de insumo."""
         return self._lista("""
             SELECT t.id, t.clave, t.nombre,
                    COUNT(i.id) AS total, SUM(i.costo_final) AS costo_total
@@ -398,6 +432,7 @@ class InsumoRepo(RepoBase):
         """, [proyecto_id])
 
     def uso_en_proyecto(self, insumo_id):
+        """Devuelve el número de apariciones y el importe total de un insumo en APUs."""
         return self._uno("""
             SELECT COUNT(ac.id) AS apariciones, SUM(ac.importe) AS importe_total
             FROM apu_matrices ac
@@ -405,6 +440,7 @@ class InsumoRepo(RepoBase):
         """, [insumo_id])
 
     def donde_se_usa(self, insumo_id):
+        """Devuelve los APU (concepto/compuesto) donde aparece un insumo."""
         return self._lista("""
             SELECT
                 am.matriz_id,
@@ -427,6 +463,7 @@ class InsumoRepo(RepoBase):
         """, [insumo_id])
 
     def actualizar_precio(self, insumo_id, precio, usuario_id=1):
+        """Actualiza el costo_mn y costo_final de un insumo."""
         self._ejecutar("""
             UPDATE insumos SET
                 costo_mn = ?, costo_final = ?,
@@ -435,6 +472,7 @@ class InsumoRepo(RepoBase):
         """, [precio, precio, usuario_id, insumo_id])
 
     def tipos_disponibles(self):
+        """Devuelve todos los tipos de insumo ordenados."""
         return self._lista("SELECT * FROM tipos_insumo ORDER BY orden")
 
 
@@ -448,6 +486,7 @@ class ApuMatricesRepo(RepoBase):
     """
 
     def por_matriz(self, matriz_id):
+        """Devuelve los componentes del APU de una matriz (concepto o compuesto)."""
         return self._lista("""
             SELECT ac.*,
                    i.clave             AS insumo_clave,
@@ -465,6 +504,7 @@ class ApuMatricesRepo(RepoBase):
         """, [matriz_id])
 
     def insertar(self, datos):
+        """Inserta un componente en la matriz APU."""
         return self._ejecutar("""
             INSERT INTO apu_matrices
                 (matriz_id, insumo_id, rendimiento,
@@ -482,9 +522,11 @@ class ApuMatricesRepo(RepoBase):
         ])
 
     def eliminar(self, comp_id):
+        """Elimina un componente de la matriz por su ID."""
         self._ejecutar("DELETE FROM apu_matrices WHERE id = ?", [comp_id])
 
     def limpiar(self, matriz_id):
+        """Elimina todos los componentes de una matriz."""
         self._ejecutar("DELETE FROM apu_matrices WHERE matriz_id = ?", [matriz_id])
 
 
@@ -498,11 +540,13 @@ class ApuResumenTotalesRepo(RepoBase):
     """
 
     def por_matriz(self, matriz_id):
+        """Devuelve el resumen de costos de una matriz APU."""
         return self._uno("""
             SELECT * FROM apu_resumen_totales WHERE matriz_id = ?
         """, [matriz_id])
 
     def recalcular(self, matriz_id):
+        """Recalcula el resumen de costos de un APU desde apu_matrices."""
         self._ejecutar("""
             INSERT OR REPLACE INTO apu_resumen_totales
                 (matriz_id, materiales, mano_obra, herramienta, equipo,
@@ -530,6 +574,7 @@ class ApuResumenTotalesRepo(RepoBase):
     def actualizar_sobrecostos(self, matriz_id,
                                 indirectos_pct=0, financiamiento_pct=0,
                                 utilidad_pct=0, cargo_adicional_pct=0):
+        """Actualiza los porcentajes de sobrecostos y el precio de venta de un APU."""
         res = self.por_matriz(matriz_id)
         if not res:
             return
@@ -560,12 +605,15 @@ class ApuResumenTotalesRepo(RepoBase):
 class FamiliaRepo(RepoBase):
 
     def todas(self):
+        """Devuelve todas las familias activas ordenadas por nombre."""
         return self._lista("SELECT * FROM familias WHERE activo = 1 ORDER BY nombre")
 
     def buscar(self, familia_id):
+        """Busca una familia por su ID."""
         return self._uno("SELECT * FROM familias WHERE id = ?", [familia_id])
 
     def insertar(self, nombre):
+        """Inserta una nueva familia."""
         return self._ejecutar(
             "INSERT INTO familias (nombre) VALUES (?)", [nombre])
 
@@ -573,6 +621,7 @@ class FamiliaRepo(RepoBase):
 class SubfamiliaRepo(RepoBase):
 
     def por_familia(self, familia_id):
+        """Devuelve las subfamilias activas de una familia."""
         return self._lista("""
             SELECT * FROM subfamilias
             WHERE familia_id = ? AND activo = 1
@@ -580,9 +629,11 @@ class SubfamiliaRepo(RepoBase):
         """, [familia_id])
 
     def buscar(self, subfamilia_id):
+        """Busca una subfamilia por su ID."""
         return self._uno("SELECT * FROM subfamilias WHERE id = ?", [subfamilia_id])
 
     def insertar(self, familia_id, nombre):
+        """Inserta una nueva subfamilia dentro de una familia."""
         return self._ejecutar(
             "INSERT INTO subfamilias (familia_id, nombre) VALUES (?, ?)",
             [familia_id, nombre])
@@ -595,6 +646,7 @@ class SubfamiliaRepo(RepoBase):
 class NotaRepo(RepoBase):
 
     def por_nodo(self, concepto_id):
+        """Devuelve las notas de un nodo ordenadas por fecha descendente."""
         return self._lista("""
             SELECT n.*, u.nombre AS autor
             FROM notas n
@@ -604,17 +656,20 @@ class NotaRepo(RepoBase):
         """, [concepto_id])
 
     def insertar(self, concepto_id, texto, usuario_id=1):
+        """Inserta una nota en un nodo."""
         return self._ejecutar("""
             INSERT INTO notas (concepto_id, usuario_id, texto) VALUES (?, ?, ?)
         """, [concepto_id, usuario_id, texto])
 
     def resolver(self, nota_id):
+        """Marca una nota como resuelta."""
         self._ejecutar("""
             UPDATE notas SET resuelta = 1, modificado_en = datetime('now')
             WHERE id = ?
         """, [nota_id])
 
     def abiertas(self, proyecto_id):
+        """Devuelve las notas no resueltas de un proyecto."""
         return self._lista("""
             SELECT n.*, u.nombre AS autor,
                    ep.wbs, ep.descripcion_corta
@@ -737,6 +792,7 @@ class ExplosionRepo(RepoBase):
         ph_conceptos: str,
         decimales: int | None = None,
     ) -> tuple[list[dict], float]:
+        """Nivel 'basico': desciende recursivamente hasta insumos hoja."""
         tipos_set = set(tipos_ids)
 
         rows = self._lista(f"""
@@ -767,6 +823,7 @@ class ExplosionRepo(RepoBase):
         ph_conceptos: str,
         filtro_nivel: str,
     ) -> tuple[list[dict], float]:
+        """Niveles 'primer_nivel' o 'compuesto': resuelve por SQL agregado."""
         tipos_set      = set(tipos_ids)
         tipos_normales = [t for t in tipos_ids if t != self.TIPO_ID_HERRAMIENTA]
         filas_normales = []

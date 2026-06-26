@@ -99,6 +99,7 @@ class _TarjetaRadio(QFrame):
 
     def __init__(self, icono: str, nombre: str, descripcion: str, valor: str,
                  on_click, parent=None):
+        """Inicializa tarjeta: icono + nombre + descripción, callback on_click(valor) al hacer clic."""
         super().__init__(parent)
         self._valor    = valor
         self._activo   = False
@@ -134,20 +135,25 @@ class _TarjetaRadio(QFrame):
         self._refresh_style()
 
     def mousePressEvent(self, event):
+        """Ejecuta callback on_click con el valor de la tarjeta y consume el evento."""
         self._on_click(self._valor)
-        event.accept()            # consumir aquí, no propagar al diálogo
+        event.accept()
 
     def valor(self) -> str:
+        """Devuelve el valor asociado a esta tarjeta (nivel de cálculo)."""
         return self._valor
 
     def set_checked(self, checked: bool):
+        """Marca/desmarca la tarjeta y refresca el estilo visual."""
         self._activo = checked
         self._refresh_style()
 
     def is_checked(self) -> bool:
+        """True si la tarjeta está seleccionada."""
         return self._activo
 
     def _refresh_style(self):
+        """Aplica colores highlight o default según estado activo/inactivo.
         pal = self.palette()
         if self._activo:
             bg  = pal.color(QPalette.ColorRole.Highlight).name()
@@ -188,6 +194,7 @@ class _TarjetaCheck(QWidget):
     """Fila simple: QCheckBox + icono + nombre, sin bordes extra."""
 
     def __init__(self, icono: str, nombre: str, tipo_id: int, parent=None):
+        """Fila con QCheckBox + icono + nombre para filtrar por tipo de insumo."""
         super().__init__(parent)
         self._tipo_id = tipo_id
 
@@ -202,20 +209,25 @@ class _TarjetaCheck(QWidget):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
     def tipo_id(self) -> int:
+        """ID del tipo de insumo (1=Materiales, 2=MO, 4=Herramienta, …)."""
         return self._tipo_id
 
     def is_checked(self) -> bool:
+        """True si el checkbox está marcado."""
         return self._cb.isChecked()
 
     def set_checked(self, checked: bool):
+        """Marca/desmarca el checkbox."""
         self._cb.setChecked(checked)
 
     def mousePressEvent(self, event):
+        """Alterna el checkbox al hacer clic en el widget completo."""
         self._cb.setChecked(not self._cb.isChecked())
         super().mousePressEvent(event)
 
 
 def _separador_v() -> QFrame:
+    """Línea vertical separadora para layouts de dos columnas."""
     sep = QFrame()
     sep.setFrameShape(QFrame.Shape.VLine)
     sep.setStyleSheet("color: palette(mid);")
@@ -223,6 +235,7 @@ def _separador_v() -> QFrame:
 
 
 def _label_seccion(texto: str) -> QLabel:
+    """Etiqueta de título de sección (mayúsculas, bold, letter-spacing)."""
     lbl = QLabel(texto.upper())
     lbl.setStyleSheet(
         "font-size: 8pt; font-weight: bold;"
@@ -245,6 +258,7 @@ class DialogoExplosion(QDialog):
     """
 
     def __init__(self, parent=None):
+        """Diálogo modal para elegir nivel de desglose y tipos de insumo a explotar."""
         super().__init__(parent)
         self.setWindowTitle("Explosión de Insumos")
         self.setModal(True)
@@ -258,6 +272,7 @@ class DialogoExplosion(QDialog):
     # ── Construcción de UI ────────────────────────────────────────
 
     def _build_ui(self):
+        """Ensambla layout vertical: banner + dos columnas + pie."""
         root = QVBoxLayout(self)
         root.setSpacing(12)
         root.setContentsMargins(16, 14, 16, 14)
@@ -277,6 +292,7 @@ class DialogoExplosion(QDialog):
         root.addWidget(self._build_footer())
 
     def _build_banner(self) -> QWidget:
+        """Banner informativo con icono y advertencia de tiempo de proceso."""
         frame = QFrame()
         frame.setStyleSheet(
             "QFrame { background: palette(alternateBase);"
@@ -299,6 +315,7 @@ class DialogoExplosion(QDialog):
         return frame
 
     def _build_col_calculo(self) -> QVBoxLayout:
+        """Columna izquierda: tarjetas de selección del método de cálculo."""
         col = QVBoxLayout()
         col.setContentsMargins(0, 4, 12, 4)
         col.setSpacing(8)
@@ -315,10 +332,12 @@ class DialogoExplosion(QDialog):
         return col
 
     def _on_nivel_click(self, valor):
+        """Maneja clic en tarjeta de nivel: desmarca las demás, marca la seleccionada."""
         for t in self._tarjetas_nivel:
             t.set_checked(t._valor == valor)
 
     def _build_col_tipos(self) -> QVBoxLayout:
+        """Columna derecha: cuadrícula de checkboxes de tipos + botón toggle."""
         col = QVBoxLayout()
         col.setContentsMargins(12, 4, 0, 4)
         col.setSpacing(6)
@@ -350,6 +369,7 @@ class DialogoExplosion(QDialog):
         return col
 
     def _build_footer(self) -> QWidget:
+        """Pie del diálogo: botones Cancelar + Calcular."""
         w = QWidget()
         hbox = QHBoxLayout(w)
         hbox.setContentsMargins(0, 4, 0, 0)
@@ -373,6 +393,7 @@ class DialogoExplosion(QDialog):
     # ── Lógica ────────────────────────────────────────────────────
 
     def _toggle_seleccion(self):
+        """Alterna entre seleccionar/deseleccionar todos los tipos y actualiza texto del botón."""
         alguna_marcada = any(t.is_checked() for t in self._tarjetas_tipo)
         nuevo = not alguna_marcada
         for t in self._tarjetas_tipo:
@@ -382,6 +403,7 @@ class DialogoExplosion(QDialog):
         )
 
     def _on_accept(self):
+        """Valida selección (mínimo 1 tipo), captura nivel y tipos_ids, y acepta el diálogo."""
         # Nivel seleccionado
         self.nivel = NIVEL_BASICO
         for t in self._tarjetas_nivel:
@@ -416,6 +438,7 @@ class TablaExplosion(TreeTableWidget):
     TIPO_ID_HERRAMIENTA = 4
 
     def __init__(self, parent=None):
+        """Tabla plana de resultados: Tipo, Clave, Descripción, Unidad, Cantidad, P.U., Total, %."""
         super().__init__(COLUMNAS_EXP, EDITABLE_EXP, flat=True, parent=parent)
         self.set_column_modes({
             0: (QHeaderView.ResizeMode.Interactive, 140),
@@ -430,6 +453,7 @@ class TablaExplosion(TreeTableWidget):
         self._search_cols = {0, 1, 2}
 
     def poblar(self, filas: list[dict], total_global: float):
+        """Llena la tabla agrupando filas por tipo de insumo, con subtotales y total general."""
         self.clear()
         if not filas:
             return
@@ -502,6 +526,7 @@ class TablaExplosion(TreeTableWidget):
         self._add_total_general(total_global)
 
     def _add_total_general(self, total_global: float):
+        """Fila final con TOTAL GENERAL y 100 %."""
         item = self.add_row([
             "", "TOTAL GENERAL", "", "", "", "",
             f"${total_global:,.2f}",
@@ -522,6 +547,7 @@ class PestañaExplosion(QWidget):
 
     def __init__(self, filas: list[dict], total_global: float, resumen: dict,
                  parent=None, on_apu_click=None, on_rastrear=None):
+        """Pestaña completa: encabezado + tabla + conexiones a APU y rastreo."""
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 4, 0, 0)
@@ -543,12 +569,14 @@ class PestañaExplosion(QWidget):
                 lambda pos: self._on_context_menu(pos, on_rastrear))
 
     def _on_apu_click(self, item, on_apu_click):
+        """Doble clic en fila → abre APU del insumo, ignorando subtotales y total."""
         clave = item.text(1).strip()
         if not clave or clave.startswith("Subtotal") or clave == "TOTAL GENERAL":
             return
         on_apu_click(clave)
 
     def _on_context_menu(self, pos, on_rastrear):
+        """Menú contextual → Rastrear uso para el insumo bajo el cursor."""
         item = self._tabla.itemAt(pos)
         if not item:
             return
@@ -561,6 +589,7 @@ class PestañaExplosion(QWidget):
         menu.exec(self._tabla.mapToGlobal(pos))
 
     def _build_header(self, resumen: dict) -> QWidget:
+        """Encabezado con nivel, cantidad de conceptos y tipos seleccionados."""
         w    = QWidget()
         hbox = QHBoxLayout(w)
         hbox.setContentsMargins(8, 2, 8, 2)
@@ -584,4 +613,5 @@ class PestañaExplosion(QWidget):
         return w
 
     def copy_selection(self):
+        """Delega copia al portapapeles a la tabla interna."""
         return self._tabla.copy_selection()

@@ -47,12 +47,14 @@ COLORES_NIVEL = [
 # ── Formateo de valores ───────────────────────────────────────────
 
 def _fmt(v, decimals=2):
+    """Formatea número como moneda ($1,234.56) o devuelve string vacío si es None."""
     if v is None:
         return ""
     return f"${v:,.{decimals}f}" if isinstance(v, (int, float)) else str(v)
 
 
 def _num(v, decimals=2):
+    """Formatea número con separadores de miles y decimales, o string vacío si es falsy."""
     if not v:
         return ""
     return f"{v:,.{decimals}f}" if isinstance(v, (int, float)) else str(v)
@@ -69,6 +71,7 @@ class TablaArbol(TreeTableWidget):
     _HEADER_KEY = "arbol_header_state"
 
     def __init__(self, parent=None):
+        """Inicializa el árbol de presupuesto con columnas fijas, modo de columnas, búsqueda y restauración del header."""
         super().__init__(COLUMNAS, EDITABLE, parent=parent)
         self.set_column_modes({
             c: (QHeaderView.ResizeMode.Interactive, w)
@@ -89,14 +92,17 @@ class TablaArbol(TreeTableWidget):
 
 
     def _header_context_menu(self, pos):
+        """Extiende menú contextual de cabecera del padre y persiste estado tras cambios."""
         super()._header_context_menu(pos)
         self._save_header_state()
 
     def _save_header_state(self):
+        """Guarda estado del header (anchos, visibilidad) en config.json como base64."""
         raw = self.header().saveState()
         Config.set(self._HEADER_KEY, raw.toBase64().data().decode("ascii"))
 
     def _restore_header_state(self):
+        """Restaura estado guardado del header desde config.json si existe."""
         saved = Config.get(self._HEADER_KEY)
         if saved:
             self.header().restoreState(QByteArray.fromBase64(saved.encode("ascii")))
@@ -105,6 +111,7 @@ class TablaArbol(TreeTableWidget):
 
     @staticmethod
     def _calc_wbs(wbs: str, parent):
+        """Calcula representación visual del WBS concatenando WBS del padre con sufijo del nodo."""
         if not wbs:
             return ""
         pwbs = ""
@@ -143,6 +150,7 @@ class TablaArbol(TreeTableWidget):
     # ── Inserción de agrupadores ──────────────────────────────────
 
     def add_agrupador(self, n, parent=None, expanded=True):
+        """Agrega nodo agrupador (capítulo) con color por nivel, negritas y expandido opcional."""
         parent = parent or self
         nivel = 0
         p = parent
@@ -167,18 +175,21 @@ class TablaArbol(TreeTableWidget):
     # ── Inserción de registros hoja ───────────────────────────────
 
     def add_registro(self, n, parent=None):
+        """Agrega nodo hoja (concepto) editable, almacenando su ID de DB en un rol personalizado."""
         data = self._celdas(n, "")
         item = self.add_row(data, parent, editable=True)
-        item.setData(0, ID_ROLE, n.get("id"))  # id de DB para explosión
+        item.setData(0, ID_ROLE, n.get("id"))
         return item
 
     # ── Poblado del árbol ─────────────────────────────────────────
 
     def poblar(self, nodos_raiz: list[dict]):
+        """Puebla el árbol completo desde lista de nodos raíz devuelta por core.build_budget_tree()."""
         self.clear()
         self._poblar_nodos(nodos_raiz, None)
 
     def _poblar_nodos(self, nodos, parent):
+        """Recorre recursivamente los nodos insertando agrupadores y registros en el widget."""
         for n in nodos:
             if n["tipo"] == "capitulo":
                 if not n.get("wbs"):

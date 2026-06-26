@@ -41,6 +41,7 @@ class Temas:
 
     @staticmethod
     def aplicar(app: QApplication, clave: str):
+        """Carga y aplica el archivo .qss del tema. No hace nada si el archivo no existe."""
         ruta = Path(__file__).parent / "temas" / Temas.OPCIONES.get(clave, "dark.qss")
         if ruta.exists():
             app.setStyleSheet(ruta.read_text(encoding="utf-8"))
@@ -49,16 +50,19 @@ class Temas:
 
     @staticmethod
     def guardar_preferencia(clave: str):
+        """Persiste la clave del tema seleccionado en config.json."""
         Config.set("tema", clave)
 
     # ── Recuperar preferencia guardada ────────────────────────────
 
     @staticmethod
     def cargar_preferencia() -> str:
+        """Devuelve la clave del tema guardado en config.json; 'dark' por defecto."""
         return Config.get("tema", "dark")
 
     # ── Obtener nombre legible de un tema ─────────────────────────
 
     @staticmethod
     def nombre(clave: str) -> str:
+        """Devuelve el nombre legible (para UI) de una clave de tema."""
         return Temas.NOMBRES.get(clave, clave)

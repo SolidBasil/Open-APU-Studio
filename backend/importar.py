@@ -56,6 +56,7 @@ except ImportError:
 
 # ── convertir a float con valor por defecto ──
 def _f(val, default=0.0):
+    """Convierte valor a float; devuelve default si es None o no convertible."""
     if val is None:
         return default
     try:
@@ -66,6 +67,7 @@ def _f(val, default=0.0):
 
 # ── convertir a string limpio con valor por defecto ──
 def _s(val, default=""):
+    """Convierte valor a string con strip; devuelve default si es None."""
     if val is None:
         return default
     return str(val).strip()
@@ -118,6 +120,7 @@ def _detectar(carpeta: Path) -> tuple[str, str]:
 
 # ── resolver ruta de archivo DBF por sufijo ──
 def _ruta_dbf(carpeta: Path, prefijo: str, formato: str, clave: str) -> Path | None:
+    """Resuelve la ruta completa a un archivo DBF dado su sufijo (P, F, N, etc.), probando mayúsculas y minúsculas."""
     sufijo = _SUFIJOS[formato].get(clave, "")
     for nombre in [f"{prefijo}{sufijo}.DBF", f"{prefijo}{sufijo}.dbf"]:
         r = carpeta / nombre
@@ -204,6 +207,7 @@ def importar(carpeta: str, db_path: str, nombre: str | None = None) -> dict:
     print("\nLeyendo archivos DBF...")
 
     def dbf(clave):
+        """Lee archivo DBF por sufijo (P, F, N, etc.) desde la carpeta del proyecto."""
         r = _ruta_dbf(carpeta, prefijo, formato, clave)
         return _leer_dbf(r) if r else []
 
@@ -552,6 +556,7 @@ def importar(carpeta: str, db_path: str, nombre: str | None = None) -> dict:
 
 # ── construir árbol desde formato numérico ──
 def _arbol_numerico(con, cur, proyecto_id, regs_1, regs_a, regs_p) -> dict:
+    """Construye el árbol del presupuesto desde el formato numérico OPUS (*1.DBF + *A.DBF + *P.DBF)."""
     nombres = {int(r["IDUNI"]): r for r in regs_a if r.get("IDUNI") is not None}
     egp     = {_s(r.get("NOMBRE")): r for r in regs_p if _s(r.get("NOMBRE"))}
 
@@ -626,6 +631,7 @@ def _arbol_numerico(con, cur, proyecto_id, regs_1, regs_a, regs_p) -> dict:
 
 # ── construir árbol desde formato clásico ──
 def _arbol_clasico(con, cur, proyecto_id, regs_f, regs_p) -> dict:
+    """Construye el árbol del presupuesto desde el formato clásico OPUS (*EGF + *EGP)."""
     from collections import defaultdict
 
     egp       = {_s(r.get("NOMBRE")): r for r in regs_p if _s(r.get("NOMBRE"))}
@@ -678,6 +684,7 @@ def _arbol_clasico(con, cur, proyecto_id, regs_f, regs_p) -> dict:
 
 # ── recalcular subtotales de capítulos desde hojas hacia raíz ──
 def _recalcular_subtotales(con, proyecto_id: int):
+    """Recalcula subtotales de capítulos bottom-up desde el nivel más profundo hacia la raíz."""
     cur = con.cursor()
     cur.execute("""
         SELECT MAX(nivel) FROM estructura_presupuesto WHERE proyecto_id = ? AND activo = 1

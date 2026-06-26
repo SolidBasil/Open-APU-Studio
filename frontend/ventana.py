@@ -154,6 +154,7 @@ class VentanaPrincipal(QMainWindow):
     # ───────────────────────────────────────────────────────────────────────
 
     def _build_central(self):
+        """Ensambla el layout vertical: tab bar + toolbar + splitter (sidebar | content + search)."""
         wrapper = QWidget()
         layout  = QVBoxLayout(wrapper)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -187,6 +188,7 @@ class VentanaPrincipal(QMainWindow):
     # Cada botón alterna la página mostrada en el QStackedWidget de abajo.
 
     def _build_tab_bar(self, parent_layout):
+        """Crea fila de botones de pestañas (PROYECTO, INICIO, …, HERRAMIENTAS) conmutables."""
         bar    = QWidget()
         bar.setObjectName("tabBar")
         layout = QHBoxLayout(bar)
@@ -210,6 +212,7 @@ class VentanaPrincipal(QMainWindow):
     # Conectado a TreeTableWidget.filter_rows().
 
     def _build_search_bar(self, parent_layout):
+        """Crea barra de búsqueda con QLineEdit y menú contextual de columnas."""
         bar = QWidget()
         bar.setObjectName("searchBar")
         bar.setFixedHeight(32)
@@ -534,6 +537,7 @@ class VentanaPrincipal(QMainWindow):
     # doble click → pestaña permanente.
 
     def _build_sidebar(self):
+        """Construye el explorador lateral (Propuesta / Insumos / Ejecución) conéctado a _on_sidebar_click/double_click."""
         tree = QTreeWidget()
         tree.setHeaderLabel("Explorador")
         tree.setMinimumWidth(150)
@@ -576,6 +580,7 @@ class VentanaPrincipal(QMainWindow):
     # Se cierran con la X. Ctrl+Tab / Ctrl+Shift+Tab navega entre ellas.
 
     def _build_content(self):
+        """Crea el QTabWidget central con Ctrl+Tab, Ctrl+Shift+Tab y pestaña inicial de presupuesto."""
         self._tabs = QTabWidget()
         self._tabs.setTabsClosable(True)
         self._tabs.tabCloseRequested.connect(self._on_tab_close)
@@ -792,6 +797,7 @@ class VentanaPrincipal(QMainWindow):
     # un insumo. Doble clic en cualquier columna abre el APU de la matriz.
 
     def _on_rastrear_insumo(self, clave: str):
+        """Busca insumo por clave y abre pestaña con todas las matrices donde se usa."""
         if not clave or not self._db:
             return
         from backend.repos import InsumoRepo
@@ -810,6 +816,7 @@ class VentanaPrincipal(QMainWindow):
         self._tabs.setCurrentIndex(idx)
 
     def _build_rastrear_tab(self, clave: str, insumo_id: int):
+        """Construye tabla plana con las matrices que consumen un insumo, menú contextual y doble clic."""
         from frontend.widgets.base import TreeTableWidget
         from PySide6.QtWidgets import QHeaderView, QMenu
         from backend.repos import InsumoRepo
@@ -855,6 +862,7 @@ class VentanaPrincipal(QMainWindow):
         return tabla
 
     def _on_rastrear_context_menu(self, tabla, pos):
+        """Menú contextual sobre tabla de rastreo: ofrece 'Rastrear uso' para el insumo de la fila."""
         item = tabla.itemAt(pos)
         if not item:
             return
@@ -915,6 +923,7 @@ class VentanaPrincipal(QMainWindow):
     # Permite navegación rápida y apertura de APU por doble clic en P.U.
 
     def _build_conceptos(self):
+        """Construye tabla plana de todos los conceptos del presupuesto con doble clic para APU."""
         from frontend.widgets.base import TreeTableWidget
         from backend.repos import ConceptoRepo
 
@@ -1038,6 +1047,7 @@ class VentanaPrincipal(QMainWindow):
 
 
     def _on_configuracion(self):
+        """Abre el diálogo de ajustes de la aplicación."""
         from frontend.widgets.ajustes import DialogoAjustes
         DialogoAjustes(self).exec()
 
@@ -1347,16 +1357,19 @@ class VentanaPrincipal(QMainWindow):
     # Primer nivel: solo raíces. Resumen: solo agrupadores. Todo: expande completo. Nivel: hasta N.
 
     def _on_desplegar_primer_nivel(self):
+        """Colapsa el árbol del widget activo mostrando solo las raíces."""
         widget = self._tabs.currentWidget()
         if widget and hasattr(widget, "show_primer_nivel"):
             widget.show_primer_nivel()
 
     def _on_desplegar_resumen(self):
+        """Colapsa el árbol mostrando solo los agrupadores (partidas), ocultando hojas."""
         widget = self._tabs.currentWidget()
         if widget and hasattr(widget, "show_solo_agrupadores"):
             widget.show_solo_agrupadores()
 
     def _on_desplegar_todo(self):
+        """Expande completamente el árbol del widget activo."""
         widget = self._tabs.currentWidget()
         if widget and hasattr(widget, "show_todo"):
             widget.show_todo()
@@ -1391,6 +1404,7 @@ class VentanaPrincipal(QMainWindow):
     # Muestra icono, título y mensaje "no implementado" de forma visual.
 
     def _build_placeholder(self, title, msg="Esta sección aún no ha sido implementada."):
+        """Widget placeholder con icono 🚧 + título + mensaje para secciones no implementadas."""
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1419,6 +1433,7 @@ class VentanaPrincipal(QMainWindow):
     # doble click (permanente). También atajos de teclado Ctrl+Tab.
 
     def _on_sidebar_click(self, item, column):
+        """Click simple en sidebar: abre pestaña temporal o enfoca si ya existe."""
         if item.childCount() > 0:
             return
         if not self._db:
@@ -1431,6 +1446,7 @@ class VentanaPrincipal(QMainWindow):
         self._open_sidebar_tab(title, temporary=True)
 
     def _on_sidebar_double_click(self, item, column):
+        """Doble click en sidebar: abre pestaña permanente y elimina el estado temporal si existía."""
         if item.childCount() > 0:
             return
         if not self._db:
@@ -1446,6 +1462,7 @@ class VentanaPrincipal(QMainWindow):
         self._open_sidebar_tab(title, temporary=False)
 
     def _open_sidebar_tab(self, title, temporary):
+        """Abre pestaña según título del sidebar (presupuesto, conceptos, explosión, insumos). Reemplaza temporal anterior si existe."""
         if self._tab_temp is not None:
             idx = self._tabs.indexOf(self._tab_temp)
             if idx >= 0:
@@ -1478,12 +1495,15 @@ class VentanaPrincipal(QMainWindow):
             self._tab_temp = content
 
     def _next_tab(self):
+        """Avanza a la siguiente pestaña cíclicamente."""
         self._tabs.setCurrentIndex((self._tabs.currentIndex() + 1) % self._tabs.count())
 
     def _prev_tab(self):
+        """Retrocede a la pestaña anterior cíclicamente."""
         self._tabs.setCurrentIndex((self._tabs.currentIndex() - 1) % self._tabs.count())
 
     def _on_tab_close(self, idx):
+        """Cierra la pestaña en el índice dado; limpia referencia temporal si corresponde."""
         widget = self._tabs.widget(idx)
         if widget is self._tab_temp:
             self._tab_temp = None
@@ -1494,12 +1514,14 @@ class VentanaPrincipal(QMainWindow):
     # Se re-ejecuta al escribir o al cambiar de pestaña.
 
     def _on_search(self, text):
+        """Filtra filas del TreeTableWidget activo aplicando el texto de búsqueda."""
         from frontend.widgets.base import TreeTableWidget
         w = self._tabs.currentWidget()
         if isinstance(w, TreeTableWidget):
             w.filter_rows(text)
 
     def _on_tab_changed(self, idx):
+        """Re-aplica el filtro de búsqueda al cambiar de pestaña."""
         self._on_search(self._search_input.text())
 
     # ── StatusBar ─────────────────────────────────────────────────────────
@@ -1507,11 +1529,13 @@ class VentanaPrincipal(QMainWindow):
     # y la versión de la aplicación.
 
     def _build_statusbar(self):
+        """Crea la barra de estado inferior con tema y versión."""
         self._sb = QStatusBar(self)
         self._update_statusbar()
         self.setStatusBar(self._sb)
 
     def _update_statusbar(self):
+        """Actualiza el texto de la barra de estado con nombre del tema activo y versión."""
         nombre = Temas.nombre(self._tema)
         self._sb.showMessage(
             f"Tema: {nombre}  │  v0.3"

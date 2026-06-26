@@ -136,6 +136,7 @@ class ProjectDialog(QDialog):
     # ── Resaltado visual del ítem seleccionado ────────────────────
 
     def _on_seleccion(self, current, previous):
+        """Actualiza el estilo de fondo del item seleccionado en la lista."""
         for item in (current, previous):
             if not item:
                 continue
@@ -148,6 +149,7 @@ class ProjectDialog(QDialog):
     # ── Filtro por nombre ─────────────────────────────────────────
 
     def _filtrar(self, texto: str):
+        """Filtra la lista de proyectos por nombre (case-insensitive) y oculta los que no coinciden."""
         t = texto.lower()
         for i in range(self._lista.count()):
             item = self._lista.item(i)
@@ -160,6 +162,7 @@ class ProjectDialog(QDialog):
 
     @property
     def proyecto_seleccionado(self) -> str | None:
+        """Devuelve el nombre del proyecto seleccionado o None si no hay selección."""
         item = self._lista.currentItem()
         if not item:
             return None

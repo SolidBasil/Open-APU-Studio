@@ -48,6 +48,7 @@ class DialogoAjustes(QDialog):
     """Ventana de configuración general de la aplicación."""
 
     def __init__(self, parent=None):
+        """Diálogo de ajustes: inicializa UI con valores guardados."""
         super().__init__(parent)
         self.setWindowTitle("Ajustes")
         self.setModal(True)
@@ -58,6 +59,7 @@ class DialogoAjustes(QDialog):
     # ── Construcción ─────────────────────────────────────────────
 
     def _build_ui(self):
+        """Construye layout: sección de cálculo + botón Guardar/Cancelar."""
         layout = QVBoxLayout(self)
         layout.setSpacing(14)
         layout.setContentsMargins(16, 16, 16, 12)
@@ -83,6 +85,7 @@ class DialogoAjustes(QDialog):
         layout.addWidget(btns)
 
     def _build_seccion_calculo(self) -> QWidget:
+        """GroupBox con control de decimales para la explosión de insumos."""
         grp = QGroupBox("Cálculo")
         vbox = QVBoxLayout(grp)
         vbox.setSpacing(10)
@@ -130,11 +133,13 @@ class DialogoAjustes(QDialog):
     # ── Carga / guardado ─────────────────────────────────────────
 
     def _cargar_valores(self):
+        """Lee valores guardados de config.json y los aplica a los controles."""
         val = get_decimales_explosion()
         # None → 1 (special text "Completa")
         self._spin_decimales.setValue(1 if val is None else val)
 
     def _guardar(self):
+        """Lee controles, persiste en config.json y cierra con accept()."""
         val = self._spin_decimales.value()
         # 1 = precisión completa → guardar None
         if val == 1:

@@ -15,6 +15,7 @@ from frontend.ventana import VentanaPrincipal
 
 
 def main():
+    """Punto de entrada: inicializa QApplication, aplica tema, crea y muestra la ventana principal."""
     app = QApplication(sys.argv)
     app.setApplicationName("Open APU Studio")
     app.setOrganizationName("OpenAPU")
