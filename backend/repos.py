@@ -404,6 +404,28 @@ class InsumoRepo(RepoBase):
             WHERE ac.insumo_id = ?
         """, [insumo_id])
 
+    def donde_se_usa(self, insumo_id):
+        return self._lista("""
+            SELECT
+                am.matriz_id,
+                am.cantidad,
+                am.precio,
+                am.cantidad * am.precio                           AS importe,
+                CASE WHEN am.matriz_id > 0
+                     THEN 'concepto' ELSE 'compuesto' END         AS tipo_origen,
+                COALESCE(ep.clave,  ic.clave)                     AS matriz_clave,
+                COALESCE(ep.descripcion,
+                         ic.descripcion)                          AS matriz_descripcion,
+                ep.wbs                                            AS matriz_wbs
+            FROM apu_matrices am
+            LEFT JOIN estructura_presupuesto ep
+                   ON ep.id = am.matriz_id AND am.matriz_id > 0
+            LEFT JOIN insumos ic
+                   ON ic.id = ABS(am.matriz_id) AND am.matriz_id < 0
+            WHERE am.insumo_id = ?
+            ORDER BY matriz_wbs, matriz_clave
+        """, [insumo_id])
+
     def actualizar_precio(self, insumo_id, precio, usuario_id=1):
         self._ejecutar("""
             UPDATE insumos SET
@@ -629,7 +651,9 @@ class ExplosionRepo(RepoBase):
         matriz_id positivo = APU de concepto; negativo = APU de insumo compuesto.
         """
         return self._lista("""
-            SELECT am.insumo_id, am.cantidad, am.importe,
+            SELECT am.insumo_id, am.cantidad,
+                   am.precio                             AS precio_apu,
+                   am.cantidad * am.precio               AS importe_apu,
                    i.clave, i.descripcion, i.descripcion_corta,
                    i.unidad, i.costo_final, i.es_compuesto, i.tipo_id,
                    ti.nombre AS tipo_nombre, ti.orden AS tipo_orden
@@ -646,23 +670,25 @@ class ExplosionRepo(RepoBase):
         cant_padre: float,
         acumulado: dict,
         visitados: set,
+        decimales: int | None = None,
     ):
         """Desciende recursivamente hasta insumos hoja (es_compuesto=0).
-        acumulado — dict {insumo_id: entry} que se va llenando.
-        cant_padre — cantidad acumulada de los niveles superiores.
-        Herramienta: usa am.importe proporcional a cant_padre (no cantidad × PU).
+        decimales — si se indica, redondea importes igual que OPUS (2 dec).
         """
         if matriz_id in visitados:
             return
         visitados.add(matriz_id)
 
+        def rd(v):
+            return round(v, decimales) if decimales is not None else v
+
         for comp in self._get_componentes(matriz_id):
             insumo_id  = comp["insumo_id"]
-            cant_local = (comp["cantidad"] or 0) * cant_padre
+            cant_local = rd((comp["cantidad"] or 0) * cant_padre)
             es_herr    = (comp["tipo_id"] == self.TIPO_ID_HERRAMIENTA)
 
             if comp["es_compuesto"]:
-                self._expandir_basicos(-insumo_id, cant_local, acumulado, visitados)
+                self._expandir_basicos(-insumo_id, cant_local, acumulado, visitados, decimales)
             else:
                 if insumo_id not in acumulado:
                     acumulado[insumo_id] = {
@@ -679,10 +705,10 @@ class ExplosionRepo(RepoBase):
                     }
                 entry = acumulado[insumo_id]
                 if es_herr:
-                    entry["importe_herr"] += (comp["importe"] or 0) * cant_padre
+                    entry["importe_herr"] += rd((comp["importe_apu"] or 0) * cant_padre)
                 else:
                     entry["cantidad_total"] += cant_local
-                    entry["total"]          += cant_local * (comp["costo_final"] or 0)
+                    entry["total"]          += rd(cant_local * (comp["costo_final"] or 0))
 
     def _postprocesar(self, filas: list[dict], tipos_set: set) -> tuple[list[dict], float]:
         """Filtra por tipos, calcula pct_mo para herramienta, % global y ordena."""
@@ -709,6 +735,7 @@ class ExplosionRepo(RepoBase):
         concepto_ids: list[int],
         tipos_ids: list[int],
         ph_conceptos: str,
+        decimales: int | None = None,
     ) -> tuple[list[dict], float]:
         tipos_set = set(tipos_ids)
 
@@ -720,7 +747,7 @@ class ExplosionRepo(RepoBase):
 
         acumulado: dict[int, dict] = {}
         for concepto_id, cant_ep in cant_concepto.items():
-            self._expandir_basicos(concepto_id, cant_ep, acumulado, set())
+            self._expandir_basicos(concepto_id, cant_ep, acumulado, set(), decimales)
 
         # Convertir acumulado a lista, usando importe_herr como total para herramienta
         filas = []
@@ -783,7 +810,7 @@ class ExplosionRepo(RepoBase):
                     i.clave,
                     COALESCE(i.descripcion, i.descripcion_corta, '') AS descripcion,
                     i.unidad,
-                    SUM(am.importe * ep.cantidad) AS total,
+                    SUM(am.cantidad * am.precio * ep.cantidad) AS total,
                     (
                         SELECT SUM(am2.importe * ep2.cantidad)
                         FROM apu_matrices am2
@@ -798,7 +825,11 @@ class ExplosionRepo(RepoBase):
                           AND ti2.id         = {self.TIPO_ID_MO}
                           AND ep2.id         IN ({ph_conceptos})
                           AND ep2.proyecto_id = ?
-                    ) AS mo_total_apu
+                    ) AS mo_total_apu,
+                    -- pct_mo: importe herramienta / subtotal MO del mismo APU
+                    -- am.precio contiene el subtotal MO calculado por OPUS
+                    SUM(am.cantidad * am.precio * ep.cantidad) /
+                    NULLIF(SUM(am.precio * ep.cantidad), 0) AS pct_mo_directo
                 FROM estructura_presupuesto ep
                 JOIN apu_matrices am ON am.matriz_id = ep.id
                 JOIN insumos i       ON i.id = am.insumo_id
@@ -830,6 +861,7 @@ class ExplosionRepo(RepoBase):
         concepto_ids: list[int],
         nivel: str,
         tipos_ids: list[int],
+        decimales: int | None = None,
     ) -> tuple[list[dict], float]:
         """
         Devuelve (filas, total_global).
@@ -837,7 +869,9 @@ class ExplosionRepo(RepoBase):
                 descripcion, unidad, pu, cantidad_total, total, pct, pct_mo.
         Ordenada por tipo_orden asc, total desc dentro de cada tipo.
 
-        nivel  — 'basico' | 'compuesto' | 'primer_nivel'
+        nivel     — 'basico' | 'compuesto' | 'primer_nivel'
+        decimales — None = precisión flotante completa
+                    2    = redondea como OPUS (para comparación)
         """
         if not concepto_ids or not tipos_ids:
             return [], 0.0
@@ -845,7 +879,7 @@ class ExplosionRepo(RepoBase):
         ph = ",".join("?" * len(concepto_ids))
 
         if nivel == "basico":
-            return self._calcular_basico_recursivo(proyecto_id, concepto_ids, tipos_ids, ph)
+            return self._calcular_basico_recursivo(proyecto_id, concepto_ids, tipos_ids, ph, decimales)
         elif nivel == "compuesto":
             return self._calcular_sql(proyecto_id, concepto_ids, tipos_ids, ph,
                                       "AND i.es_compuesto = 1")

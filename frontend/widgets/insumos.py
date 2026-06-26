@@ -7,8 +7,8 @@ Uso:
     from frontend.widgets.insumos import TablaInsumos
 """
 
-from PySide6.QtCore import QByteArray
-from PySide6.QtWidgets import QHeaderView
+from PySide6.QtCore import QByteArray, Signal
+from PySide6.QtWidgets import QHeaderView, QMenu
 from frontend.widgets.base import TreeTableWidget
 from backend.db import Config
 
@@ -43,6 +43,7 @@ class TablaInsumos(TreeTableWidget):
     y visibilidad de columnas entre sesiones.
     """
     _HEADER_KEY = "insumos_header_state"
+    rastrear_insumo = Signal(str)  # clave
 
     def __init__(self, parent=None):
         super().__init__(COLUMNAS, EDITABLE, flat=True, parent=parent)
@@ -58,6 +59,22 @@ class TablaInsumos(TreeTableWidget):
         # (Desc. Corta disponible en el menú pero no tildada por defecto)
         self._search_cols = {0, 1, 5}
         self._restore_header_state()
+
+    def contextMenuEvent(self, event):
+        items = self.selectedItems()
+        if len(items) != 1:
+            super().contextMenuEvent(event)
+            return
+        item = items[0]
+        menu = QMenu(self)
+        act = menu.addAction("\U0001f50d Rastrear uso")
+        act.triggered.connect(lambda: self._emit_rastrear(item))
+        menu.exec(event.globalPos())
+
+    def _emit_rastrear(self, item):
+        clave = item.text(0)
+        if clave:
+            self.rastrear_insumo.emit(clave)
 
     def _header_context_menu(self, pos):
         super()._header_context_menu(pos)

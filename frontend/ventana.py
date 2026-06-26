@@ -53,6 +53,7 @@ _TOOLBAR_CFG = {
         ("Guardar",      [("💾", "Guardar"), ("💾", "Guardar como")]),
         ("Gestión",      [("📋", "Duplicar"), ("✏", "Renombrar"), ("🗑", "Eliminar proyecto")]),
         ("Transferir",   [("📤", "Exportar"), ("📥", "Importar OPUS")]),
+        ("Explorar",     [("📁", "Abrir carpeta BD")]),
     ],
     "INICIO": [
         ("Historial",     [[("↩", "Deshacer"), ("↪", "Rehacer")]]),
@@ -456,6 +457,10 @@ class VentanaPrincipal(QMainWindow):
             btn.clicked.connect(self._on_renombrar_proyecto)
         elif tip == "Eliminar proyecto":
             btn.clicked.connect(self._on_eliminar_proyecto)
+        elif tip == "Abrir carpeta BD":
+            btn.clicked.connect(self._on_abrir_carpeta_bd)
+        elif tip == "Configuración":
+            btn.clicked.connect(self._on_configuracion)
         elif tip == "Seleccionar todo":
             btn.clicked.connect(self._on_select_all_toolbar)
         else:
@@ -689,7 +694,7 @@ class VentanaPrincipal(QMainWindow):
             for r in data.get("detalle", []):
                 tid = r.get("tipo_id", 0)
                 tn  = r.get("tipo_nombre", "")
-                desc = r.get("insumo_desc_corta") or r.get("insumo_descripcion", "")
+                desc = r.get("insumo_descripcion") or r.get("insumo_desc_corta", "")
                 if r.get("insumo_clave") in claves_con_apu:
                     desc = f"\u25b6 {desc}"
                 detail.add_row([
@@ -701,6 +706,11 @@ class VentanaPrincipal(QMainWindow):
                     f"${r.get('precio', 0):,.2f}",
                     f"${r.get('importe', 0):,.2f}",
                 ], editable=False)
+
+        # menú contextual → rastrear uso del insumo
+        detail.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        detail.customContextMenuRequested.connect(
+            lambda pos: self._on_rastrear_context_menu(detail, pos))
 
         detail.itemDoubleClicked.connect(self._on_apu_detail_dblclick)
         return detail
@@ -758,6 +768,85 @@ class VentanaPrincipal(QMainWindow):
         idx = self._tabs.addTab(self._build_apu_tab(clave, matriz_id), title)
         self._tabs.setCurrentIndex(idx)
 
+    # ── Rastrear insumo ──────────────────────────────────────────────────
+    # Muestra en una pestaña las matrices (conceptos/compuestos) que usan
+    # un insumo. Doble clic en cualquier columna abre el APU de la matriz.
+
+    def _on_rastrear_insumo(self, clave: str):
+        if not clave or not self._db:
+            return
+        from backend.repos import InsumoRepo
+        insumo = InsumoRepo(self._db.conn).buscar_por_clave(clave, proyecto_id=1)
+        if not insumo:
+            self._sb.showMessage(f"Insumo '{clave}' no encontrado", 4000)
+            return
+        title = f"\U0001f50d Uso: {clave}"
+        for i in range(self._tabs.count()):
+            if self._tabs.tabText(i) == title:
+                self._tabs.setCurrentIndex(i)
+                return
+        idx = self._tabs.addTab(
+            self._build_rastrear_tab(clave, insumo["id"]), title
+        )
+        self._tabs.setCurrentIndex(idx)
+
+    def _build_rastrear_tab(self, clave: str, insumo_id: int):
+        from frontend.widgets.base import TreeTableWidget
+        from PySide6.QtWidgets import QHeaderView, QMenu
+        from backend.repos import InsumoRepo
+
+        tabla = TreeTableWidget(
+            ["Tipo", "Clave", "Descripción", "WBS", "Cantidad", "P.U.", "Importe"],
+            flat=True,
+        )
+        tabla.set_column_modes({
+            c: (QHeaderView.ResizeMode.Interactive, w)
+            for c, w in enumerate([80, 90, 250, 100, 80, 100, 110])
+        })
+        tabla.header().setMaximumSectionSize(400)
+
+        filas = InsumoRepo(self._db.conn).donde_se_usa(insumo_id)
+        for r in filas:
+            tipo = "📄 Concepto" if r["tipo_origen"] == "concepto" else "\u2699 Compuesto"
+            tabla.add_row([
+                tipo,
+                r.get("matriz_clave", ""),
+                r.get("matriz_descripcion", ""),
+                r.get("matriz_wbs", ""),
+                f"{r.get('cantidad', 0):,.3f}",
+                f"${r.get('precio', 0):,.2f}",
+                f"${r.get('importe', 0):,.2f}",
+            ], editable=False)
+
+        if not filas:
+            tabla.add_row([
+                "", f"\u2716 '{clave}' no se usa en ninguna matriz", "", "", "", "", ""
+            ], editable=False)
+            return tabla
+
+        # menú contextual → rastrear uso de la matriz
+        tabla.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        tabla.customContextMenuRequested.connect(
+            lambda pos: self._on_rastrear_context_menu(tabla, pos))
+
+        # doble clic → abre APU de la matriz
+        tabla.itemDoubleClicked.connect(
+            lambda item, col: self._abrir_apu(item.text(1).strip())
+        )
+        return tabla
+
+    def _on_rastrear_context_menu(self, tabla, pos):
+        item = tabla.itemAt(pos)
+        if not item:
+            return
+        clave = item.text(1).strip()
+        if not clave:
+            return
+        menu = QMenu(self)
+        act = menu.addAction("\U0001f50d Rastrear uso")
+        act.triggered.connect(lambda: self._on_rastrear_insumo(clave))
+        menu.exec(tabla.mapToGlobal(pos))
+
     # ── Insumos ───────────────────────────────────────────────────────────
     # Catálogo completo de insumos, filtrable por tipo desde el sidebar.
     # Muestra ▶ en insumos que tienen APU (compuestos o matrices).
@@ -798,6 +887,7 @@ class VentanaPrincipal(QMainWindow):
             if title == "🧮 Matrices":
                 insumos = [i for i in insumos if i.get("clave") in claves]
             tabla.poblar(insumos, claves)
+        tabla.rastrear_insumo.connect(self._on_rastrear_insumo)
         tabla.itemDoubleClicked.connect(self._on_item_dblclick)
         return tabla
 
@@ -886,6 +976,8 @@ class VentanaPrincipal(QMainWindow):
 
         nivel     = dlg.nivel
         tipos_ids = dlg.tipos_ids
+        from frontend.widgets.ajustes import get_decimales_explosion
+        decimales = get_decimales_explosion()
 
         # ── Calcular explosión
         repo           = ExplosionRepo(self._db.conn)
@@ -894,6 +986,7 @@ class VentanaPrincipal(QMainWindow):
             concepto_ids = concepto_ids,
             nivel        = nivel,
             tipos_ids    = tipos_ids,
+            decimales    = decimales,
         )
 
         if not filas:
@@ -918,6 +1011,23 @@ class VentanaPrincipal(QMainWindow):
 
         return PestañaExplosion(filas, total_g, resumen)
 
+
+    def _on_configuracion(self):
+        from frontend.widgets.ajustes import DialogoAjustes
+        DialogoAjustes(self).exec()
+
+    def _on_abrir_carpeta_bd(self):
+        """Abre en el explorador la carpeta donde se guardan los .db."""
+        from backend.db import Rutas
+        import subprocess, sys
+        carpeta = Rutas.proyectos()
+        carpeta.mkdir(parents=True, exist_ok=True)
+        if sys.platform == "win32":
+            subprocess.Popen(["explorer", str(carpeta)])
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(carpeta)])
+        else:
+            subprocess.Popen(["xdg-open", str(carpeta)])
 
     # ── Gestión de proyectos (Abrir / Cerrar / Duplicar / Eliminar) ─────
 
