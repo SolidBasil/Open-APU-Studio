@@ -713,14 +713,14 @@ class ExplosionRepo(RepoBase):
         for f in filas:
             f["pct"] = (f["total"] / total_global * 100) if total_global else 0
             if f["tipo_id"] == self.TIPO_ID_HERRAMIENTA:
-                f["pct_mo"] = f["total"] / total_mo if total_mo else None
+                f.setdefault("pct_mo", f["total"] / total_mo if total_mo else None)
             else:
                 f.setdefault("pct_mo", None)
 
         filas.sort(key=lambda f: (f.get("tipo_orden") or 99, -(f.get("total") or 0)))
         return filas, total_global
 
-    # ── Nivel básico: bottom-up (cada ruta insumo→presupuesto es independiente) ──
+    # ── Niveles básico / compuesto: bottom-up (cada ruta insumo→presupuesto es independiente) ──
 
     def _calcular_basico_bottom_up(
         self,
@@ -729,11 +729,15 @@ class ExplosionRepo(RepoBase):
         tipos_ids: list[int],
         ph_conceptos: str,
         decimales: int | None = None,
+        solo_compuestos: bool = False,
     ) -> tuple[list[dict], float]:
         """
-        Bottom-up: para cada insumo hoja, rastrea hacia arriba todas las rutas
+        Bottom-up: para cada insumo, rastrea hacia arriba todas las rutas
         hasta llegar a un concepto del presupuesto. Cada rama es independiente
         — no se omiten duplicados aunque el mismo compuesto aparezca varias veces.
+
+        solo_compuestos=False → insumos hoja (es_compuesto=0)
+        solo_compuestos=True  → insumos compuestos (es_compuesto=1)
         """
         tipos_set = set(tipos_ids)
 
@@ -822,12 +826,18 @@ class ExplosionRepo(RepoBase):
             _mult_cache[matriz_id] = total
             return total
 
-        # ── 5. Procesar cada insumo hoja ──
+        # ── 5. Procesar cada insumo ──
         acumulado: dict[int, dict] = {}
 
         for insumo_id, info in insumos_map.items():
-            if info["es_compuesto"] or info["tipo_id"] not in tipos_set:
+            if info["tipo_id"] not in tipos_set:
                 continue
+            if solo_compuestos:
+                if not info["es_compuesto"]:
+                    continue
+            else:
+                if info["es_compuesto"]:
+                    continue
             is_herr = (info["tipo_id"] == self.TIPO_ID_HERRAMIENTA)
             parents = reverse.get(insumo_id, [])
             if not parents:
@@ -938,25 +948,8 @@ class ExplosionRepo(RepoBase):
                     COALESCE(i.descripcion, i.descripcion_corta, '') AS descripcion,
                     i.unidad,
                     SUM(am.cantidad * am.precio * ep.cantidad) AS total,
-                    (
-                        SELECT SUM(am2.importe * ep2.cantidad)
-                        FROM apu_matrices am2
-                        JOIN insumos i2       ON i2.id  = am2.insumo_id
-                        JOIN tipos_insumo ti2 ON ti2.id = i2.tipo_id
-                        JOIN estructura_presupuesto ep2 ON ep2.id = am2.matriz_id
-                        WHERE am2.matriz_id IN (
-                                SELECT am3.matriz_id FROM apu_matrices am3
-                                WHERE am3.insumo_id = i.id
-                                  AND am3.matriz_id IN ({ph_conceptos})
-                              )
-                          AND ti2.id         = {self.TIPO_ID_MO}
-                          AND ep2.id         IN ({ph_conceptos})
-                          AND ep2.proyecto_id = ?
-                    ) AS mo_total_apu,
-                    -- pct_mo: importe herramienta / subtotal MO del mismo APU
-                    -- am.precio contiene el subtotal MO calculado por OPUS
                     SUM(am.cantidad * am.precio * ep.cantidad) /
-                    NULLIF(SUM(am.precio * ep.cantidad), 0) AS pct_mo_directo
+                    NULLIF(SUM(am.precio * ep.cantidad), 0) AS pct_mo
                 FROM estructura_presupuesto ep
                 JOIN apu_matrices am ON am.matriz_id = ep.id
                 JOIN insumos i       ON i.id = am.insumo_id
@@ -971,12 +964,8 @@ class ExplosionRepo(RepoBase):
                   {filtro_nivel}
                 GROUP BY i.id
             """
-            params_h = (concepto_ids + concepto_ids + [proyecto_id]
-                        + concepto_ids + [proyecto_id, proyecto_id])
-            filas_herr = self._lista(sql_h, params_h)
-            for f in filas_herr:
-                mo = f.get("mo_total_apu") or 0
-                f["pct_mo"] = f["total"] / mo if mo else None
+            params_h = [proyecto_id, proyecto_id]
+            filas_herr = self._lista(sql_h, concepto_ids + params_h)
 
         return self._postprocesar(filas_normales + filas_herr, tipos_set)
 
@@ -1005,10 +994,10 @@ class ExplosionRepo(RepoBase):
 
         ph = ",".join("?" * len(concepto_ids))
 
-        if nivel == "basico":
+        if nivel == "compuesto":
+            return self._calcular_basico_bottom_up(proyecto_id, concepto_ids, tipos_ids, ph, decimales,
+                                                   solo_compuestos=True)
+        elif nivel == "basico":
             return self._calcular_basico_bottom_up(proyecto_id, concepto_ids, tipos_ids, ph, decimales)
-        elif nivel == "compuesto":
-            return self._calcular_sql(proyecto_id, concepto_ids, tipos_ids, ph,
-                                      "AND i.es_compuesto = 1")
         else:  # primer_nivel
             return self._calcular_sql(proyecto_id, concepto_ids, tipos_ids, ph, "")

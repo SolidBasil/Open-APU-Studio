@@ -11,7 +11,7 @@ from PySide6.QtCore    import Qt, QRect, QSize
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QStackedWidget, QFrame, QToolButton, QLabel, QLineEdit, QMenu,
-    QHeaderView,
+    QHeaderView, QApplication,
 )
 from PySide6.QtGui import QFont, QPixmap, QPainter, QColor, QIcon
 
