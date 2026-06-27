@@ -161,7 +161,7 @@ def get_apu(db_path: str, concepto_id: int) -> dict:
                 ad.rendimiento,
                 ad.cantidad,
                 ad.precio,
-                ad.importe,
+                ad.cantidad * ad.precio AS importe,
                 ad.formula,
                 i.es_compuesto      AS insumo_es_compuesto,
                 i.clave             AS insumo_clave,

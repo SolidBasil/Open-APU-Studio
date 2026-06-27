@@ -6,8 +6,13 @@ Punto de entrada de Open APU Studio.
 
 import sys
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QIcon
 from PySide6.QtWidgets import QApplication
+
+# Windows: required for the taskbar icon to show our .ico instead of python.exe's icon
+if sys.platform == "win32":
+    import ctypes
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("openapu.studio.1")
 
 from backend.db import Config, Rutas
 from frontend.temas import Temas
@@ -19,6 +24,7 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("Open APU Studio")
     app.setOrganizationName("OpenAPU")
+    app.setWindowIcon(QIcon("assets/favicon.ico"))
     app.setFont(QFont("Segoe UI", 10))
 
     # Aplicar tema guardado (default: dark)

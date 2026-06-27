@@ -75,11 +75,10 @@ class TablaArbol(TreeTableWidget):
         super().__init__(COLUMNAS, EDITABLE, parent=parent)
         self.set_column_modes({
             c: (QHeaderView.ResizeMode.Interactive, w)
-            for c, w in enumerate([50, 80, 250, 45, 60, 80, 90,
+            for c, w in enumerate([120, 80, 250, 45, 60, 80, 90,
                                    120, 60, 70, 100, 130, 130])
         })
         self.header().setMaximumSectionSize(400)
-        self.header().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self._restore_header_state()
         # enforce _VISIBLE después del restore (el estado guardado puede tener columnas visibles)
         for c in range(len(COLUMNAS)):

@@ -9,7 +9,7 @@ Componentes:
     PestañaExplosion   — widget completo de la pestaña
 
 Herramienta: su total viene de am.importe (ya calculado como % de MO),
-no de cantidad × costo_final. Por eso sus columnas Cantidad y P.U. muestran —.
+no de cantidad x costo_final. Por eso sus columnas Cantidad y P.U. muestran —.
 """
 
 from PySide6.QtCore    import Qt, QSize
@@ -92,7 +92,7 @@ NIVEL_INFO = {
 
 class _TarjetaRadio(QFrame):
     """Botón grande seleccionable: icono + nombre + descripción.
-    Activo → fondo highlight + texto highlightedText.
+    Activo -> fondo highlight + texto highlightedText.
     Recibe un callable on_click(valor) en lugar de Signal para
     evitar problemas de propagación de eventos con subwidgets.
     """
@@ -153,7 +153,7 @@ class _TarjetaRadio(QFrame):
         return self._activo
 
     def _refresh_style(self):
-        """Aplica colores highlight o default según estado activo/inactivo.
+        """Aplica colores highlight o default según estado activo/inactivo."""
         pal = self.palette()
         if self._activo:
             bg  = pal.color(QPalette.ColorRole.Highlight).name()
@@ -209,7 +209,7 @@ class _TarjetaCheck(QWidget):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
     def tipo_id(self) -> int:
-        """ID del tipo de insumo (1=Materiales, 2=MO, 4=Herramienta, …)."""
+        """ID del tipo de insumo (1=Materiales, 2=MO, 4=Herramienta, ...)."""
         return self._tipo_id
 
     def is_checked(self) -> bool:
@@ -252,9 +252,9 @@ class DialogoExplosion(QDialog):
     """Ventana de configuración de la explosión de insumos.
 
     Layout de dos columnas:
-      ┌─ Método de cálculo ─────│─ Composición del desglose ──┐
-      │  [tarjeta radio × 3]    │  [tarjeta check × 8]  2 col │
-      └─────────────────────────┴─────────────────────────────┘
+      -- Método de cálculo -----|- Composición del desglose ---
+      |  [tarjeta radio x 3]    |  [tarjeta check x 8]  2 col |
+      ---------------------------------------------------------
     """
 
     def __init__(self, parent=None):
@@ -269,7 +269,7 @@ class DialogoExplosion(QDialog):
         self.tipos_ids = [t[0] for t in TIPOS_INSUMO]
         self._build_ui()
 
-    # ── Construcción de UI ────────────────────────────────────────
+    # -- Construcción de UI ----------------------------------------
 
     def _build_ui(self):
         """Ensambla layout vertical: banner + dos columnas + pie."""
@@ -390,7 +390,7 @@ class DialogoExplosion(QDialog):
         hbox.addWidget(btn_ok)
         return w
 
-    # ── Lógica ────────────────────────────────────────────────────
+    # -- Lógica ----------------------------------------------------
 
     def _toggle_seleccion(self):
         """Alterna entre seleccionar/deseleccionar todos los tipos y actualiza texto del botón."""
@@ -569,14 +569,14 @@ class PestañaExplosion(QWidget):
                 lambda pos: self._on_context_menu(pos, on_rastrear))
 
     def _on_apu_click(self, item, on_apu_click):
-        """Doble clic en fila → abre APU del insumo, ignorando subtotales y total."""
+        """Doble clic en fila -> abre APU del insumo, ignorando subtotales y total."""
         clave = item.text(1).strip()
         if not clave or clave.startswith("Subtotal") or clave == "TOTAL GENERAL":
             return
         on_apu_click(clave)
 
     def _on_context_menu(self, pos, on_rastrear):
-        """Menú contextual → Rastrear uso para el insumo bajo el cursor."""
+        """Menú contextual -> Rastrear uso para el insumo bajo el cursor."""
         item = self._tabla.itemAt(pos)
         if not item:
             return

@@ -450,17 +450,20 @@ def importar(carpeta: str, db_path: str, nombre: str | None = None) -> dict:
             n_skip_ins += 1
             continue
 
-        # Buscar el padre primero en el árbol, luego en insumos compuestos
-        padres = clave_a_conceptos.get(concepto_clave, [])
-        es_comp = False
-        if not padres:
-            padres = clave_a_insumos_compuestos.get(concepto_clave, [])
-            es_comp = True
-        if not padres:
+        # Insertar en TODOS los padres que correspondan:
+        # — conceptos del árbol (matriz_id positivo)
+        # — insumos compuestos del catálogo (matriz_id negativo)
+        # Un mismo concepto_clave puede aparecer en ambas listas si es
+        # a la vez concepto del presupuesto e insumo compuesto reutilizable.
+        padres_arbol  = [(pid, False) for pid in clave_a_conceptos.get(concepto_clave, [])]
+        padres_comp   = [(pid, True)  for pid in clave_a_insumos_compuestos.get(concepto_clave, [])]
+        todos_padres  = padres_arbol + padres_comp
+
+        if not todos_padres:
             n_skip_padre += 1
             continue
 
-        for pid in padres:
+        for pid, es_comp in todos_padres:
             mid = -pid if es_comp else pid
             cur.execute("""
                 INSERT INTO apu_matrices

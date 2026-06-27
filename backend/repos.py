@@ -434,7 +434,7 @@ class InsumoRepo(RepoBase):
     def uso_en_proyecto(self, insumo_id):
         """Devuelve el número de apariciones y el importe total de un insumo en APUs."""
         return self._uno("""
-            SELECT COUNT(ac.id) AS apariciones, SUM(ac.importe) AS importe_total
+            SELECT COUNT(ac.id) AS apariciones, SUM(ac.cantidad * ac.precio) AS importe_total
             FROM apu_matrices ac
             WHERE ac.insumo_id = ?
         """, [insumo_id])
@@ -554,15 +554,15 @@ class ApuResumenTotalesRepo(RepoBase):
                  modificado_en)
             SELECT
                 ac.matriz_id,
-                COALESCE(SUM(CASE WHEN t.clave='material'    THEN ac.importe ELSE 0 END),0),
-                COALESCE(SUM(CASE WHEN t.clave='mano_obra'   THEN ac.importe ELSE 0 END),0),
-                COALESCE(SUM(CASE WHEN t.clave='herramienta' THEN ac.importe ELSE 0 END),0),
-                COALESCE(SUM(CASE WHEN t.clave='equipo'      THEN ac.importe ELSE 0 END),0),
-                COALESCE(SUM(CASE WHEN t.clave='auxiliar'    THEN ac.importe ELSE 0 END),0),
-                COALESCE(SUM(CASE WHEN t.clave='concepto'    THEN ac.importe ELSE 0 END),0),
-                COALESCE(SUM(CASE WHEN t.clave='flete'       THEN ac.importe ELSE 0 END),0),
-                COALESCE(SUM(CASE WHEN t.clave='trabajo'     THEN ac.importe ELSE 0 END),0),
-                COALESCE(SUM(ac.importe), 0),
+                COALESCE(SUM(CASE WHEN t.clave='material'    THEN ac.cantidad*ac.precio ELSE 0 END),0),
+                COALESCE(SUM(CASE WHEN t.clave='mano_obra'   THEN ac.cantidad*ac.precio ELSE 0 END),0),
+                COALESCE(SUM(CASE WHEN t.clave='herramienta' THEN ac.cantidad*ac.precio ELSE 0 END),0),
+                COALESCE(SUM(CASE WHEN t.clave='equipo'      THEN ac.cantidad*ac.precio ELSE 0 END),0),
+                COALESCE(SUM(CASE WHEN t.clave='auxiliar'    THEN ac.cantidad*ac.precio ELSE 0 END),0),
+                COALESCE(SUM(CASE WHEN t.clave='concepto'    THEN ac.cantidad*ac.precio ELSE 0 END),0),
+                COALESCE(SUM(CASE WHEN t.clave='flete'       THEN ac.cantidad*ac.precio ELSE 0 END),0),
+                COALESCE(SUM(CASE WHEN t.clave='trabajo'     THEN ac.cantidad*ac.precio ELSE 0 END),0),
+                COALESCE(SUM(ac.cantidad * ac.precio), 0),
                 datetime('now')
             FROM apu_matrices ac
             JOIN insumos i      ON i.id  = ac.insumo_id
@@ -689,7 +689,9 @@ class ExplosionRepo(RepoBase):
     """Calcula la explosión de insumos para un conjunto de conceptos.
 
     Niveles:
-        'basico'       — recursivo: desciende en compuestos hasta insumos hoja
+        'basico'       — bottom-up: desde cada insumo hoja rastrea todas las
+                          rutas hacia arriba hasta el presupuesto. Cada rama es
+                          independiente, no omite duplicados.
         'compuesto'    — solo insumos compuestos del APU directo
         'primer_nivel' — todos los insumos del APU directo (sin bajar)
 
@@ -700,70 +702,6 @@ class ExplosionRepo(RepoBase):
     TIPO_ID_MO          = 2
 
     # ── Helpers internos ─────────────────────────────────────────────────
-
-    def _get_componentes(self, matriz_id: int) -> list[dict]:
-        """Devuelve los componentes directos de un APU.
-        matriz_id positivo = APU de concepto; negativo = APU de insumo compuesto.
-        """
-        return self._lista("""
-            SELECT am.insumo_id, am.cantidad,
-                   am.precio                             AS precio_apu,
-                   am.cantidad * am.precio               AS importe_apu,
-                   i.clave, i.descripcion, i.descripcion_corta,
-                   i.unidad, i.costo_final, i.es_compuesto, i.tipo_id,
-                   ti.nombre AS tipo_nombre, ti.orden AS tipo_orden
-            FROM apu_matrices am
-            JOIN insumos i       ON i.id  = am.insumo_id
-            JOIN tipos_insumo ti ON ti.id = i.tipo_id
-            WHERE am.matriz_id = ?
-            ORDER BY am.orden
-        """, [matriz_id])
-
-    def _expandir_basicos(
-        self,
-        matriz_id: int,
-        cant_padre: float,
-        acumulado: dict,
-        visitados: set,
-        decimales: int | None = None,
-    ):
-        """Desciende recursivamente hasta insumos hoja (es_compuesto=0).
-        decimales — si se indica, redondea importes igual que OPUS (2 dec).
-        """
-        if matriz_id in visitados:
-            return
-        visitados.add(matriz_id)
-
-        def rd(v):
-            return round(v, decimales) if decimales is not None else v
-
-        for comp in self._get_componentes(matriz_id):
-            insumo_id  = comp["insumo_id"]
-            cant_local = rd((comp["cantidad"] or 0) * cant_padre)
-            es_herr    = (comp["tipo_id"] == self.TIPO_ID_HERRAMIENTA)
-
-            if comp["es_compuesto"]:
-                self._expandir_basicos(-insumo_id, cant_local, acumulado, visitados, decimales)
-            else:
-                if insumo_id not in acumulado:
-                    acumulado[insumo_id] = {
-                        "tipo_id":        comp["tipo_id"],
-                        "tipo_nombre":    comp["tipo_nombre"],
-                        "tipo_orden":     comp["tipo_orden"],
-                        "clave":          comp["clave"],
-                        "descripcion":    comp["descripcion"] or comp["descripcion_corta"] or "",
-                        "unidad":         comp["unidad"] or "",
-                        "pu":             None if es_herr else comp["costo_final"],
-                        "cantidad_total": 0.0,
-                        "total":          0.0,
-                        "importe_herr":   0.0,
-                    }
-                entry = acumulado[insumo_id]
-                if es_herr:
-                    entry["importe_herr"] += rd((comp["importe_apu"] or 0) * cant_padre)
-                else:
-                    entry["cantidad_total"] += cant_local
-                    entry["total"]          += rd(cant_local * (comp["costo_final"] or 0))
 
     def _postprocesar(self, filas: list[dict], tipos_set: set) -> tuple[list[dict], float]:
         """Filtra por tipos, calcula pct_mo para herramienta, % global y ordena."""
@@ -782,9 +720,9 @@ class ExplosionRepo(RepoBase):
         filas.sort(key=lambda f: (f.get("tipo_orden") or 99, -(f.get("total") or 0)))
         return filas, total_global
 
-    # ── Nivel básico: recursivo en Python ────────────────────────────────
+    # ── Nivel básico: bottom-up (cada ruta insumo→presupuesto es independiente) ──
 
-    def _calcular_basico_recursivo(
+    def _calcular_basico_bottom_up(
         self,
         proyecto_id: int,
         concepto_ids: list[int],
@@ -792,20 +730,152 @@ class ExplosionRepo(RepoBase):
         ph_conceptos: str,
         decimales: int | None = None,
     ) -> tuple[list[dict], float]:
-        """Nivel 'basico': desciende recursivamente hasta insumos hoja."""
+        """
+        Bottom-up: para cada insumo hoja, rastrea hacia arriba todas las rutas
+        hasta llegar a un concepto del presupuesto. Cada rama es independiente
+        — no se omiten duplicados aunque el mismo compuesto aparezca varias veces.
+        """
         tipos_set = set(tipos_ids)
 
+        def rd(v):
+            return round(v, decimales) if decimales is not None else v
+
+        # ── 1. Budget concepts ──
         rows = self._lista(f"""
             SELECT id, cantidad FROM estructura_presupuesto
             WHERE id IN ({ph_conceptos}) AND tipo='concepto' AND activo=1
         """, concepto_ids)
-        cant_concepto = {r["id"]: (r["cantidad"] or 1) for r in rows}
+        budget_cant = {r["id"]: r["cantidad"] for r in rows if r["cantidad"]}
 
+        # ── 2. All insumos del proyecto ──
+        insumos = self._lista(f"""
+            SELECT i.id, i.clave,
+                   COALESCE(i.descripcion, i.descripcion_corta, '') AS descripcion,
+                   i.unidad, i.costo_final, i.es_compuesto, i.tipo_id,
+                   ti.nombre AS tipo_nombre, ti.orden AS tipo_orden
+            FROM insumos i
+            JOIN tipos_insumo ti ON ti.id = i.tipo_id
+            WHERE i.proyecto_id = ? AND i.activo = 1
+        """, [proyecto_id])
+        insumos_map = {r["id"]: r for r in insumos}
+        clave_a_insumo: dict[str, int] = {r["clave"]: r["id"] for r in insumos if r["clave"]}
+
+        # ── 2b. All conceptos -> insumo_id mapping (for intermedios) ──
+        conceptos = self._lista(f"""
+            SELECT id, clave FROM estructura_presupuesto
+            WHERE proyecto_id = ? AND tipo = 'concepto' AND activo = 1
+        """, [proyecto_id])
+        concepto_a_insumo: dict[int, int] = {}
+        for r in conceptos:
+            ins_id = clave_a_insumo.get(r["clave"])
+            if ins_id is not None:
+                concepto_a_insumo[r["id"]] = ins_id
+
+        # ── 3. All APU matrices (reverse index) ──
+        matrices = self._lista(f"""
+            SELECT am.matriz_id, am.insumo_id, am.cantidad, am.precio
+            FROM apu_matrices am
+            JOIN insumos i ON i.id = am.insumo_id
+            WHERE i.proyecto_id = ? AND i.activo = 1
+        """, [proyecto_id])
+
+        # Reverse: insumo_id -> [padres]
+        reverse: dict[int, list[dict]] = {}
+        for row in matrices:
+            iid = row["insumo_id"]
+            reverse.setdefault(iid, []).append(row)
+
+        # ── 4. Caché de multiplicadores bottom-up ──
+        #   _mult_cache[matriz_id] = cantidad_total_acumulada_hasta_presupuesto
+        #   Para conceptos en budget_cant: devuelve cantidad del presupuesto
+        #   Para conceptos intermedios: rastrea su insumo en el índice reverso
+        #   Para compuestos (mid<0): suma de (cantidad × multiplicador del padre)
+        _mult_cache: dict[int, float] = {}
+        _visitando: set = set()
+
+        def _calc_mult(matriz_id: int) -> float:
+            """Multiplicador desde matriz_id hasta el presupuesto (suma de todas las rutas)."""
+            if matriz_id in _visitando:
+                return 0.0  # ciclo
+            if matriz_id in _mult_cache:
+                return _mult_cache[matriz_id]
+            if matriz_id > 0:
+                if matriz_id in budget_cant:
+                    return budget_cant[matriz_id]
+                # Concepto intermedio (usado como componente de otro APU)
+                ins_id = concepto_a_insumo.get(matriz_id)
+                if ins_id is None:
+                    return 0.0
+                _visitando.add(matriz_id)
+                total = 0.0
+                for p in reverse.get(ins_id, []):
+                    total += (p["cantidad"] or 0) * _calc_mult(p["matriz_id"])
+                _visitando.discard(matriz_id)
+                _mult_cache[matriz_id] = total
+                return total
+
+            _visitando.add(matriz_id)
+            total = 0.0
+            for p in reverse.get(-matriz_id, []):
+                total += (p["cantidad"] or 0) * _calc_mult(p["matriz_id"])
+            _visitando.discard(matriz_id)
+            _mult_cache[matriz_id] = total
+            return total
+
+        # ── 5. Procesar cada insumo hoja ──
         acumulado: dict[int, dict] = {}
-        for concepto_id, cant_ep in cant_concepto.items():
-            self._expandir_basicos(concepto_id, cant_ep, acumulado, set(), decimales)
 
-        # Convertir acumulado a lista, usando importe_herr como total para herramienta
+        for insumo_id, info in insumos_map.items():
+            if info["es_compuesto"] or info["tipo_id"] not in tipos_set:
+                continue
+            is_herr = (info["tipo_id"] == self.TIPO_ID_HERRAMIENTA)
+            parents = reverse.get(insumo_id, [])
+            if not parents:
+                continue
+
+            qty_total = 0.0
+            herr_importe = 0.0
+
+            for p in parents:
+                mult = _calc_mult(p["matriz_id"])
+                if mult == 0.0:
+                    continue
+                if is_herr:
+                    herr_importe += rd((p["cantidad"] or 0) * (p["precio"] or 0) * mult)
+                else:
+                    qty_total += rd((p["cantidad"] or 0) * mult)
+
+            pu = info.get("costo_final") or 0
+            if is_herr:
+                if herr_importe:
+                    acumulado[insumo_id] = {
+                        "tipo_id":        info["tipo_id"],
+                        "tipo_nombre":    info["tipo_nombre"],
+                        "tipo_orden":     info["tipo_orden"],
+                        "clave":          info["clave"],
+                        "descripcion":    info["descripcion"] or "",
+                        "unidad":         info["unidad"] or "",
+                        "pu":             None,
+                        "cantidad_total": 0.0,
+                        "total":          0.0,
+                        "importe_herr":   herr_importe,
+                    }
+            else:
+                if qty_total:
+                    acumulado[insumo_id] = {
+                        "tipo_id":        info["tipo_id"],
+                        "tipo_nombre":    info["tipo_nombre"],
+                        "tipo_orden":     info["tipo_orden"],
+                        "clave":          info["clave"],
+                        "descripcion":    info["descripcion"] or "",
+                        "unidad":         info["unidad"] or "",
+                        "pu":             pu,
+                        "cantidad_total": qty_total,
+                        "total":          rd(qty_total * pu),
+                        "importe_herr":   0.0,
+                    }
+
+        # ── 6. Convertir a lista ──
         filas = []
         for entry in acumulado.values():
             es_herr = (entry["tipo_id"] == self.TIPO_ID_HERRAMIENTA)
@@ -936,7 +1006,7 @@ class ExplosionRepo(RepoBase):
         ph = ",".join("?" * len(concepto_ids))
 
         if nivel == "basico":
-            return self._calcular_basico_recursivo(proyecto_id, concepto_ids, tipos_ids, ph, decimales)
+            return self._calcular_basico_bottom_up(proyecto_id, concepto_ids, tipos_ids, ph, decimales)
         elif nivel == "compuesto":
             return self._calcular_sql(proyecto_id, concepto_ids, tipos_ids, ph,
                                       "AND i.es_compuesto = 1")
