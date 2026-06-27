@@ -55,7 +55,7 @@ _TOOLBAR_CFG = {
         ("Guardar",      [("💾", "Guardar"), ("💾", "Guardar como")]),
         ("Gestión",      [("📋", "Duplicar"), ("✏", "Renombrar"), ("🗑", "Eliminar proyecto")]),
         ("Transferir",   [("📤", "Exportar"), ("📥", "Importar OPUS")]),
-        ("Explorar",     [("📁", "Abrir carpeta BD")]),
+        ("Explorar",     []),
     ],
     "INICIO": [
         ("Historial",     [[("↩", "Deshacer"), ("↪", "Rehacer")]]),
@@ -105,7 +105,9 @@ _TOOLBAR_CFG = {
     ],
     "HERRAMIENTAS": [
         ("Sistema",     [("⚙", "Configuración")]),
-        ("Datos",       [("📦", "Importar OPUS")]),
+        ("Proyecto",    [("📁", "Abrir carpeta BD"), ("📎", "Adjuntar archivo"),
+                         ("📂", "Ver adjuntos"),
+                         ("🔧", "Depurar catálogos"), ("🏷", "Homologar claves")]),
         ("Utilidades",  [("🔢", "Calculadora")]),
     ],
 }
@@ -240,12 +242,15 @@ class ToolbarMixin:
         groups         = _TOOLBAR_CFG[tab_name]
         # Altura mínima: entre más items apilados, más alto el botón
         page_max_rows  = max(
-            max((len(item) if isinstance(item, list) else 1) for item in g[1])
+            (max((len(item) if isinstance(item, list) else 1) for item in g[1])
+             if g[1] else 0)
             for g in groups
-        )
+        ) if any(g[1] for g in groups) else 1
         page_min_btn_h = max(56, page_max_rows * 22)
 
         for idx, (label, items) in enumerate(groups):
+            if not items:
+                continue
             if idx > 0:
                 sep = QFrame()
                 sep.setFrameShape(QFrame.Shape.VLine)
@@ -398,6 +403,16 @@ class ToolbarMixin:
             btn.clicked.connect(self._on_configuracion)
         elif tip == "Seleccionar todo":
             btn.clicked.connect(self._on_select_all_toolbar)
+        elif tip == "Adjuntar archivo":
+            btn.clicked.connect(self._on_adjuntar_archivo)
+        elif tip == "Ver adjuntos":
+            btn.clicked.connect(self._on_ver_adjuntos)
+        elif tip == "Depurar catálogos":
+            btn.clicked.connect(self._on_depurar_catalogos)
+        elif tip == "Homologar claves":
+            btn.clicked.connect(self._on_homologar_claves)
+        elif tip == "Calculadora":
+            btn.clicked.connect(self._on_calculadora)
         else:
             conn = False
         btn._conectado = conn

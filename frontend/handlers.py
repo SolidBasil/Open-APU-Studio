@@ -500,6 +500,380 @@ class HandlersMixin:
         """Re-aplica el filtro de búsqueda al cambiar de pestaña."""
         self._on_search(self._search_input.text())
 
+    # ── Adjuntar archivo ───────────────────────────────────────────────────
+
+    def _on_adjuntar_archivo(self):
+        from PySide6.QtWidgets import QMessageBox
+        from backend.db import Rutas
+        import shutil
+
+        if not self._db or not self._db.db_path:
+            QMessageBox.information(self, "Sin proyecto", "Abre un proyecto primero.")
+            return
+
+        path, _ = QFileDialog.getOpenFileName(self, "Adjuntar archivo al proyecto")
+        if not path:
+            return
+
+        nombre = Path(self._db.db_path).stem
+        dst_dir = Rutas.proyectos() / f"{nombre}_adjuntos"
+        dst_dir.mkdir(parents=True, exist_ok=True)
+        dst = dst_dir / Path(path).name
+        shutil.copy2(path, dst)
+
+        self._sb.showMessage(f"Archivo adjuntado: {dst.name}", 4000)
+
+    # ── Ver adjuntos ───────────────────────────────────────────────────────
+
+    def _on_ver_adjuntos(self):
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, \
+            QPushButton, QListWidget, QListWidgetItem, QMessageBox
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtCore import QUrl
+        from backend.db import Rutas
+
+        if not self._db:
+            QMessageBox.information(self, "Sin proyecto",
+                                    "Abre un proyecto primero.")
+            return
+
+        adj_dir = Rutas.proyectos() / f"{Path(self._db.db_path).stem}_adjuntos"
+        if not adj_dir.is_dir():
+            QMessageBox.information(self, "Sin adjuntos",
+                                    "Este proyecto no tiene archivos adjuntos.")
+            return
+
+        archivos = sorted(adj_dir.iterdir())
+        if not archivos:
+            QMessageBox.information(self, "Sin adjuntos",
+                                    "La carpeta de adjuntos está vacía.")
+            return
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"Adjuntos — {Path(self._db.db_path).stem}")
+        dlg.setMinimumSize(500, 360)
+        layout = QVBoxLayout(dlg)
+
+        lst = QListWidget()
+        for f in archivos:
+            st = f.stat()
+            size = st.st_size
+            if size < 1024:
+                label = f"{size} B"
+            elif size < 1024**2:
+                label = f"{size/1024:.1f} KB"
+            else:
+                label = f"{size/1024**2:.1f} MB"
+            item = QListWidgetItem(f"{f.name}  ({label})")
+            item.setData(1, str(f))  # ponytail: store path as user role
+            lst.addItem(item)
+        layout.addWidget(lst)
+
+        row = QHBoxLayout()
+        btn_open = QPushButton("Abrir")
+        btn_del  = QPushButton("Eliminar")
+        btn_close = QPushButton("Cerrar")
+        row.addWidget(btn_open)
+        row.addWidget(btn_del)
+        row.addStretch()
+        row.addWidget(btn_close)
+        layout.addLayout(row)
+
+        def abrir():
+            item = lst.currentItem()
+            if item:
+                QDesktopServices.openUrl(QUrl.fromLocalFile(item.data(1)))
+
+        def eliminar():
+            item = lst.currentItem()
+            if not item:
+                return
+            r = QMessageBox.question(
+                dlg, "Confirmar",
+                f"¿Eliminar '{Path(item.data(1)).name}'?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if r == QMessageBox.StandardButton.Yes:
+                Path(item.data(1)).unlink()
+                lst.takeItem(lst.row(item))
+                if lst.count() == 0:
+                    dlg.accept()
+
+        btn_open.clicked.connect(abrir)
+        btn_del.clicked.connect(eliminar)
+        btn_close.clicked.connect(dlg.close)
+        dlg.exec()
+
+    # ── Depurar catálogos ──────────────────────────────────────────────────
+
+    def _on_depurar_catalogos(self):
+        from PySide6.QtWidgets import QMessageBox, QWidget, QVBoxLayout, QLabel, QAbstractItemView, QHeaderView
+        from frontend.widgets.base import TreeTableWidget
+
+        if not self._db:
+            QMessageBox.information(self, "Sin proyecto", "Abre un proyecto primero.")
+            return
+
+        conn = self._db.conn
+        from frontend.widgets.insumos import TIPO_NOMBRE
+
+        def _tipo_str(tipo_id):
+            return TIPO_NOMBRE.get(tipo_id, "")
+
+        grupos = {}
+
+        def _ins(item_id, clave, desc, tipo, origen):
+            """Agrega un item a su grupo."""
+            grupos.setdefault(origen, []).append({
+                "id": item_id, "clave": clave, "desc": desc,
+                "tipo": tipo, "origen": origen,
+            })
+
+        def _id_tipo(origen, item_id):
+            """Resuelve el tipo display para un item según su origen."""
+            if origen == "concepto":
+                return "📄 Concepto"
+            if item_id is None:
+                return ""
+            return _tipo_str(item_id)
+
+        # Insumos sin uso
+        filas = conn.execute("""
+            SELECT i.id, i.clave, i.descripcion, i.tipo_id
+            FROM insumos i
+            WHERE i.proyecto_id = 1 AND i.activo = 1
+              AND NOT EXISTS (SELECT 1 FROM apu_matrices am WHERE am.insumo_id = i.id)
+            ORDER BY i.clave
+        """).fetchall()
+        for r in filas:
+            _ins(r["id"], r["clave"], r["descripcion"],
+                 _tipo_str(r["tipo_id"]), "Insumos sin uso")
+
+        # Conceptos sin APU
+        filas = conn.execute("""
+            SELECT ep.id, ep.clave, ep.descripcion
+            FROM estructura_presupuesto ep
+            WHERE ep.proyecto_id = 1 AND ep.tipo = 'concepto' AND ep.activo = 1
+              AND NOT EXISTS (SELECT 1 FROM apu_matrices am WHERE am.matriz_id = ep.id)
+            ORDER BY ep.clave
+        """).fetchall()
+        for r in filas:
+            _ins(r["id"], r["clave"], r["descripcion"],
+                 "📄 Concepto", "Conceptos sin APU")
+
+        # Claves duplicadas — enlistar cada fila duplicada
+        filas = conn.execute("""
+            SELECT i.id, i.clave, i.descripcion, i.tipo_id
+            FROM insumos i
+            WHERE i.proyecto_id = 1 AND i.activo = 1
+              AND i.clave IN (
+                  SELECT clave FROM insumos
+                  WHERE proyecto_id = 1 AND activo = 1
+                  GROUP BY clave HAVING COUNT(*) > 1
+              )
+            ORDER BY i.clave, i.id
+        """).fetchall()
+        for r in filas:
+            _ins(r["id"], r["clave"], r["descripcion"],
+                 _tipo_str(r["tipo_id"]), "Claves duplicadas (insumos)")
+
+        # Costos en cero
+        filas = conn.execute("""
+            SELECT i.id, i.clave, i.descripcion, i.tipo_id
+            FROM insumos i
+            WHERE i.proyecto_id = 1 AND i.activo = 1
+              AND (i.costo_final IS NULL OR i.costo_final = 0)
+            ORDER BY i.clave
+        """).fetchall()
+        for r in filas:
+            _ins(r["id"], r["clave"], r["descripcion"],
+                 _tipo_str(r["tipo_id"]), "Costos en cero")
+
+        # Descripción vacía
+        filas = conn.execute("""
+            SELECT i.id, i.clave, i.tipo_id, 'insumo' AS src
+            FROM insumos i
+            WHERE i.proyecto_id = 1 AND i.activo = 1
+              AND (i.descripcion IS NULL OR i.descripcion = '')
+            UNION ALL
+            SELECT ep.id, ep.clave, NULL, 'concepto'
+            FROM estructura_presupuesto ep
+            WHERE ep.proyecto_id = 1 AND ep.activo = 1 AND ep.tipo = 'concepto'
+              AND (ep.descripcion IS NULL OR ep.descripcion = '')
+            ORDER BY 2
+        """).fetchall()
+        for r in filas:
+            _ins(r["id"], r["clave"], "",
+                 _tipo_str(r["tipo_id"]) if r["tipo_id"] else "📄 Concepto",
+                 "Descripción vacía")
+
+        # Auto-referencia
+        filas = conn.execute("""
+            SELECT i.id, i.clave, i.descripcion, t.id AS tipo_id
+            FROM insumos i
+            JOIN tipos_insumo t ON t.id = i.tipo_id
+            WHERE i.es_compuesto = 1
+              AND i.proyecto_id = 1 AND i.activo = 1
+              AND EXISTS (
+                SELECT 1 FROM apu_matrices ac
+                WHERE ac.matriz_id = i.id
+                  AND ac.insumo_id = i.id
+                  AND NOT EXISTS (
+                    SELECT 1 FROM estructura_presupuesto ep
+                    WHERE ep.id = ac.matriz_id AND ep.activo = 1
+                  )
+              )
+            ORDER BY i.clave
+        """).fetchall()
+        for r in filas:
+            _ins(r["id"], r["clave"], r["descripcion"],
+                 _tipo_str(r["tipo_id"]), "Auto-referencia (circular)")
+
+        total = sum(len(v) for v in grupos.values())
+        if not total:
+            QMessageBox.information(self, "Catálogo limpio",
+                                    "No se encontraron inconsistencias.")
+            return
+
+        # ── Construir árbol ────────────────────────────────────────────
+
+        w = QWidget()
+        layout = QVBoxLayout(w)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(4)
+
+        lbl = QLabel(f"<b>Diagnóstico del catálogo</b> — {total} incidencias")
+        lbl.setTextFormat(Qt.TextFormat.RichText)
+        layout.addWidget(lbl)
+
+        tree = TreeTableWidget(["Problema", "Clave", "Descripción", "Tipo"])
+        tree.setAlternatingRowColors(True)
+        tree.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        tree.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+
+        for nombre_grupo, items in grupos.items():
+            padre = tree.add_row(
+                [f"▶ {nombre_grupo} ({len(items)})", "", "", ""],
+                editable=False)
+            for item in items:
+                tree.add_row(
+                    ["", item["clave"], item["desc"], item["tipo"]],
+                    parent=padre, editable=False)
+            padre.setExpanded(True)
+
+        tree.set_column_modes({
+            0: (QHeaderView.ResizeMode.ResizeToContents, None),
+            1: (QHeaderView.ResizeMode.ResizeToContents, None),
+            2: (QHeaderView.ResizeMode.Stretch, 300),
+            3: (QHeaderView.ResizeMode.ResizeToContents, None),
+        })
+        layout.addWidget(tree)
+
+        title = f"🔧 Depurar catálogos ({total})"
+        self._tabs.addTab(w, title)
+        self._tabs.setCurrentWidget(w)
+
+    # ── Homologar claves ───────────────────────────────────────────────────
+
+    def _on_homologar_claves(self):
+        from PySide6.QtWidgets import QMessageBox, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget, QTableWidgetItem, QAbstractItemView, QHeaderView
+
+        if not self._db:
+            QMessageBox.information(self, "Sin proyecto", "Abre un proyecto primero.")
+            return
+
+        conn = self._db.conn
+        cambios = []
+
+        # Insumos con espacios o mayúsculas inconsistentes
+        filas = conn.execute("""
+            SELECT id, clave FROM insumos
+            WHERE proyecto_id = 1 AND activo = 1
+            ORDER BY id
+        """).fetchall()
+        for r in filas:
+            orig = r["clave"]
+            prop = orig.strip().upper()
+            if prop != orig:
+                cambios.append(("insumos", orig, prop))
+
+        # Conceptos con espacios o mayúsculas inconsistentes
+        filas = conn.execute("""
+            SELECT id, clave FROM estructura_presupuesto
+            WHERE proyecto_id = 1 AND activo = 1 AND clave IS NOT NULL
+            ORDER BY id
+        """).fetchall()
+        for r in filas:
+            orig = r["clave"]
+            prop = orig.strip().upper()
+            if prop != orig:
+                cambios.append(("estructura_presupuesto", orig, prop))
+
+        if not cambios:
+            QMessageBox.information(self, "Claves normalizadas",
+                                    "Todas las claves ya están estandarizadas.")
+            return
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"Homologar claves ({len(cambios)} cambios)")
+        dlg.setMinimumSize(600, 400)
+        layout = QVBoxLayout(dlg)
+
+        lbl = QLabel(
+            f"Se encontraron <b>{len(cambios)}</b> claves con formato inconsistente. "
+            "Revisa los cambios propuestos antes de aplicar."
+        )
+        lbl.setTextFormat(Qt.TextFormat.RichText)
+        lbl.setWordWrap(True)
+        layout.addWidget(lbl)
+
+        cols = ["Tabla", "Original", "Propuesto"]
+        tabla = QTableWidget(len(cambios), 3)
+        tabla.setHorizontalHeaderLabels(cols)
+        tabla.horizontalHeader().setStretchLastSection(True)
+        tabla.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        tabla.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        tabla.verticalHeader().setVisible(False)
+        for i, (tbl, orig, prop) in enumerate(cambios):
+            tabla.setItem(i, 0, QTableWidgetItem(tbl))
+            tabla.setItem(i, 1, QTableWidgetItem(orig))
+            tabla.setItem(i, 2, QTableWidgetItem(prop))
+        tabla.resizeColumnsToContents()
+        layout.addWidget(tabla)
+
+        row = QHBoxLayout()
+        btn_aplicar = QPushButton("Aplicar cambios")
+        btn_cancel  = QPushButton("Cancelar")
+        row.addStretch()
+        row.addWidget(btn_aplicar)
+        row.addWidget(btn_cancel)
+        layout.addLayout(row)
+
+        def aplicar():
+            cur = conn.cursor()
+            for tbl, orig, prop in cambios:
+                cur.execute(
+                    f"UPDATE {tbl} SET clave = ? WHERE clave = ? AND proyecto_id = 1",
+                    (prop, orig)
+                )
+            conn.commit()
+            self._sb.showMessage(f"Homologadas {len(cambios)} claves", 4000)
+            dlg.accept()
+
+        btn_aplicar.clicked.connect(aplicar)
+        btn_cancel.clicked.connect(dlg.reject)
+        dlg.exec()
+
+    # ── Calculadora ────────────────────────────────────────────────────────
+
+    def _on_calculadora(self):
+        import subprocess, sys
+        if sys.platform == "win32":
+            subprocess.Popen(["calc.exe"])
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", "-a", "Calculator"])
+        else:
+            subprocess.Popen(["gnome-calculator"])
+
     # ── StatusBar ─────────────────────────────────────────────────────────
     # Barra de estado inferior que muestra información del tema activo
     # y la versión de la aplicación.
