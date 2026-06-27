@@ -45,7 +45,8 @@ class PanelesMixin:
             ("📁 Propuesta", [
                 "📋 Presupuesto programable", "📐 Conceptos", "💰 Cálculo de indirectos",
                 "👷 Personal en indirectos", "📊 Cálculo de sobrecostos",
-                "📦 Explosión de insumos", "🚚 Programa de suministros",
+                "📦 Explosión de insumos", "📦 Explosión de matrices",
+                "🚚 Programa de suministros",
             ]),
             ("📁 Insumos", [
                 "📚 Todos", "🧱 Materiales", "👷 Mano de obra", "🔧 Herramienta",
@@ -493,6 +494,148 @@ class PanelesMixin:
             on_rastrear=self._on_rastrear_insumo,
         )
 
+    # ── Explosión de matrices ────────────────────────────────────────────
+    # Muestra el APU de uno o más conceptos como árbol expandible.
+    # Cada concepto es raíz; hijos = componentes directos.
+    # Si un componente es compuesto, se expande perezosamente.
+
+    def _build_matriz_explosion(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QAbstractItemView, QHeaderView, QMessageBox, QTreeWidgetItem
+        from PySide6.QtGui import QBrush, QColor, QFont
+        from frontend.widgets.base import TreeTableWidget
+        from frontend.widgets.arbol import COLORES_NIVEL, ID_ROLE
+        from backend.core import get_apu
+
+        _DEPTH_ROLE = ID_ROLE + 1
+
+        if not self._db:
+            return self._build_placeholder("📦 Explosión de matrices")
+
+
+        concepto_ids = []
+        arbol = self._arbol_presupuesto
+        if arbol is not None:
+            for item in arbol.selectedItems():
+                cid = item.data(0, ID_ROLE)
+                if cid is not None:
+                    concepto_ids.append(cid)
+        if not concepto_ids:
+            concepto_ids = self._api.todos_concepto_ids()
+        if not concepto_ids:
+            QMessageBox.information(self, "Sin conceptos",
+                                    "No hay conceptos en el presupuesto.")
+            return None
+
+        db_path = self._db.db_path
+        conn = self._db.conn
+        cur = conn.cursor()
+
+        cols = ["Nivel", "Clave", "Descripción", "Unidad", "Cantidad", "P.U.", "Importe", "Tipo"]
+        tree = TreeTableWidget(cols)
+        tree.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        tree.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+
+        tree.set_column_modes({
+            0: (QHeaderView.ResizeMode.Interactive, 60),
+            1: (QHeaderView.ResizeMode.Interactive, 90),
+            2: (QHeaderView.ResizeMode.Stretch, 250),
+            3: (QHeaderView.ResizeMode.Interactive, 55),
+            4: (QHeaderView.ResizeMode.Interactive, 80),
+            5: (QHeaderView.ResizeMode.Interactive, 80),
+            6: (QHeaderView.ResizeMode.Interactive, 95),
+            7: (QHeaderView.ResizeMode.Interactive, 110),
+        })
+
+        total_conceptos = 0
+        for cid in concepto_ids:
+            cur.execute("""
+                SELECT clave, descripcion, wbs
+                FROM estructura_presupuesto WHERE id = ? AND activo = 1
+            """, [cid])
+            row = cur.fetchone()
+            if not row:
+                continue
+            raiz = QTreeWidgetItem(tree, [
+                row["wbs"] or "", row["clave"], row["descripcion"],
+                "", "", "", "", "",
+            ])
+            color = QBrush(QColor(COLORES_NIVEL[0]))
+            f = QFont()
+            f.setBold(True)
+            for c in range(tree.columnCount()):
+                raiz.setForeground(c, color)
+                raiz.setFont(c, f)
+
+            apu = get_apu(db_path, cid)
+            for comp in apu["detalle"]:
+                item = self._add_comp_row(raiz, comp, "", 1, _DEPTH_ROLE)
+                if comp["insumo_es_compuesto"]:
+                    QTreeWidgetItem(item, [""] * len(cols))
+                total_conceptos += 1
+            raiz.setExpanded(True)
+
+        if total_conceptos == 0:
+            QMessageBox.information(self, "Sin APU",
+                                    "Los conceptos seleccionados no tienen APU.")
+            return None
+
+        def _on_expanded(item):
+            if item.childCount() == 1 and not item.child(0).text(1):
+                # Placeholder — replace with real data
+                placeholder = item.child(0)
+                item.removeChild(placeholder)
+                insumo_id = item.data(0, ID_ROLE)
+                if insumo_id is None:
+                    return
+                depth = item.data(0, _DEPTH_ROLE) or 0
+                apu = get_apu(db_path, insumo_id)
+                for comp in apu["detalle"]:
+                    sub = self._add_comp_row(item, comp, "", depth + 1, _DEPTH_ROLE)
+                    if comp["insumo_es_compuesto"]:
+                        QTreeWidgetItem(sub, [""] * len(cols))
+
+        tree.itemExpanded.connect(_on_expanded)
+
+        w = QWidget()
+        layout = QVBoxLayout(w)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(4)
+
+        lbl = QLabel(f"<b>Explosión de matrices</b> — {len(concepto_ids)} conceptos")
+        lbl.setTextFormat(Qt.TextFormat.RichText)
+        layout.addWidget(lbl)
+        layout.addWidget(tree)
+
+        return w
+
+    def _add_comp_row(self, parent, comp, nivel, depth=0, depth_role=None):
+        """Agrega una fila de componente APU al árbol y guarda insumo_id como ID_ROLE."""
+        from frontend.widgets.arbol import ID_ROLE, COLORES_NIVEL
+        from PySide6.QtGui import QBrush, QColor
+        pu = comp.get("precio") or comp.get("costo_final", 0)
+        importe = comp.get("importe", 0) or (pu * comp.get("cantidad", 0))
+        item = QTreeWidgetItem(parent, [
+            str(nivel) if nivel else "",
+            comp["insumo_clave"],
+            comp.get("insumo_descripcion", comp.get("insumo_desc_corta", "")),
+            comp.get("insumo_unidad", ""),
+            f"{comp['cantidad']:.4f}" if comp.get("cantidad") else "",
+            f"{pu:.2f}" if pu else "",
+            f"{importe:.2f}" if importe else "",
+            comp.get("tipo_nombre", ""),
+        ])
+        item.setData(0, ID_ROLE, comp.get("insumo_id"))
+        if depth_role is not None:
+            item.setData(0, depth_role, depth)
+        if depth > 0 and comp.get("insumo_es_compuesto"):
+            color = QBrush(QColor(COLORES_NIVEL[min(depth, len(COLORES_NIVEL) - 1)]))
+            f = item.font(0)
+            f.setBold(True)
+            for c in range(item.columnCount()):
+                item.setForeground(c, color)
+                item.setFont(c, f)
+        return item
 
     def _on_configuracion(self):
         """Abre el diálogo de ajustes de la aplicación."""

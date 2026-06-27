@@ -456,6 +456,10 @@ class HandlersMixin:
             content = self._build_explosion()
             if content is None:
                 return   # usuario canceló el diálogo
+        elif title == "📦 Explosión de matrices":
+            content = self._build_matriz_explosion()
+            if content is None:
+                return
         elif title in insumos_titles:
             content = self._build_insumos(title)
         else:

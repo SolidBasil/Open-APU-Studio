@@ -87,8 +87,7 @@ class Rutas:
         Devuelve la ruta al .db de un proyecto dado su nombre.
         Ejemplo: Rutas.db_proyecto("D60JALISCOT") → .../proyectos/D60JALISCOT.db
         """
-        nombre_limpio = nombre.strip().replace(" ", "_")
-        return Rutas.proyectos() / f"{nombre_limpio}.db"
+        return Rutas.proyectos() / f"{nombre.strip()}.db"
 
 
 # =============================================================================
