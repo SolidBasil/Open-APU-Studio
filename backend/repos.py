@@ -298,6 +298,11 @@ class NodoRepo(RepoBase):
 
     def eliminar(self, concepto_id, usuario_id=1):
         """Marca un nodo y sus descendientes como inactivos (borrado lógico)."""
+        # Leer padre_id ANTES del UPDATE — buscar() filtra activo=1,
+        # por lo que después del marcado siempre devuelve None.
+        nodo = self.buscar(concepto_id)
+        padre_id = nodo.get("padre_id") if nodo else None
+
         desc = self.descendientes(concepto_id)
         ids  = [d["id"] for d in desc]
         if ids:
@@ -307,9 +312,9 @@ class NodoRepo(RepoBase):
                     modificado_por = ?, modificado_en = datetime('now')
                 WHERE id IN ({ph})
             """, [usuario_id] + ids)
-        nodo = self.buscar(concepto_id)
-        if nodo and nodo.get("padre_id"):
-            self.actualizar_subtotal(nodo["padre_id"])
+
+        if padre_id:
+            self.actualizar_subtotal(padre_id)
 
 
 # =============================================================================
@@ -546,9 +551,15 @@ class ApuResumenTotalesRepo(RepoBase):
         """, [matriz_id])
 
     def recalcular(self, matriz_id):
-        """Recalcula el resumen de costos de un APU desde apu_matrices."""
+        """Recalcula el resumen de costos de un APU desde apu_matrices.
+
+        Usa INSERT ... ON CONFLICT(matriz_id) DO UPDATE en lugar de
+        INSERT OR REPLACE para evitar que se destruya el id existente.
+        INSERT OR REPLACE elimina la fila y la reinsertar con un id nuevo,
+        lo que invalida cualquier referencia cacheada al id anterior.
+        """
         self._ejecutar("""
-            INSERT OR REPLACE INTO apu_resumen_totales
+            INSERT INTO apu_resumen_totales
                 (matriz_id, materiales, mano_obra, herramienta, equipo,
                  auxiliares, subcontratos, fletes, trabajos, costo_directo,
                  modificado_en)
@@ -569,6 +580,17 @@ class ApuResumenTotalesRepo(RepoBase):
             JOIN tipos_insumo t ON t.id  = i.tipo_id
             WHERE ac.matriz_id = ?
             GROUP BY ac.matriz_id
+            ON CONFLICT(matriz_id) DO UPDATE SET
+                materiales         = excluded.materiales,
+                mano_obra          = excluded.mano_obra,
+                herramienta        = excluded.herramienta,
+                equipo             = excluded.equipo,
+                auxiliares         = excluded.auxiliares,
+                subcontratos       = excluded.subcontratos,
+                fletes             = excluded.fletes,
+                trabajos           = excluded.trabajos,
+                costo_directo      = excluded.costo_directo,
+                modificado_en      = excluded.modificado_en
         """, [matriz_id, matriz_id])
 
     def actualizar_sobrecostos(self, matriz_id,
@@ -798,11 +820,18 @@ class ExplosionRepo(RepoBase):
         _visitando: set = set()
 
         def _calc_mult(matriz_id: int) -> float:
-            """Multiplicador desde matriz_id hasta el presupuesto (suma de todas las rutas)."""
+            """Multiplicador desde matriz_id hasta el presupuesto (suma de todas las rutas).
+
+            _visitando protege contra ciclos en el grafo de insumos compuestos.
+            Se usa try/finally para garantizar que el id se retire del set incluso
+            si ocurre una excepción durante la recursión — de lo contrario el id
+            quedaría "bloqueado" y todos los cálculos siguientes devolverían 0.
+            """
             if matriz_id in _visitando:
-                return 0.0  # ciclo
+                return 0.0  # ciclo detectado
             if matriz_id in _mult_cache:
                 return _mult_cache[matriz_id]
+
             if matriz_id > 0:
                 if matriz_id in budget_cant:
                     return budget_cant[matriz_id]
@@ -811,18 +840,23 @@ class ExplosionRepo(RepoBase):
                 if ins_id is None:
                     return 0.0
                 _visitando.add(matriz_id)
-                total = 0.0
-                for p in reverse.get(ins_id, []):
-                    total += (p["cantidad"] or 0) * _calc_mult(p["matriz_id"])
-                _visitando.discard(matriz_id)
+                try:
+                    total = 0.0
+                    for p in reverse.get(ins_id, []):
+                        total += (p["cantidad"] or 0) * _calc_mult(p["matriz_id"])
+                finally:
+                    _visitando.discard(matriz_id)
                 _mult_cache[matriz_id] = total
                 return total
 
+            # matriz_id < 0 → insumo compuesto
             _visitando.add(matriz_id)
-            total = 0.0
-            for p in reverse.get(-matriz_id, []):
-                total += (p["cantidad"] or 0) * _calc_mult(p["matriz_id"])
-            _visitando.discard(matriz_id)
+            try:
+                total = 0.0
+                for p in reverse.get(-matriz_id, []):
+                    total += (p["cantidad"] or 0) * _calc_mult(p["matriz_id"])
+            finally:
+                _visitando.discard(matriz_id)
             _mult_cache[matriz_id] = total
             return total
 

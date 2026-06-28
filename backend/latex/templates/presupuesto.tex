@@ -1,0 +1,117 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[scaled]{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage[a4paper,margin=2cm]{geometry}
+\setlength{\headheight}{15pt}
+\usepackage{booktabs,longtable,tabularx,array}
+\usepackage[table]{xcolor}
+\usepackage{fancyhdr,lastpage}
+
+\definecolor{Principal}{RGB}{35,45,65}
+\definecolor{Gris}{RGB}{245,245,245}
+\definecolor{Gris2}{RGB}{228,231,235}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\textbf{<<nombre_prototipo>>}}
+\fancyhead[R]{<<fecha>>}
+\fancyfoot[L]{<<nombre_presupuesto>>}
+\fancyfoot[R]{P\'agina \thepage\ de \pageref{LastPage}}
+
+% Partida: wbs col1, clave vacía col2, nombre en col3 (descripción), cols 4-6 vacías
+% #1=wbs  #2=nombre
+\newcommand{\Partida}[2]{%
+  \rowcolor{Gris2}%
+  {\fontsize{10.5}{13}\selectfont\textbf{#1}} &
+  &
+  \multicolumn{4}{l}{{\fontsize{10.5}{13}\selectfont\textbf{#2}}}\\}
+
+\newcommand{\Concepto}[6]{%
+  #1 & #2 & #3 & #4 & #5 & #6\\}
+
+\newcommand{\SubtotalPartida}[1]{%
+  \rowcolor{Gris}%
+  \multicolumn{5}{r}{\textbf{Total partida:}} & \textbf{#1}\\}
+
+\begin{document}
+
+% ── Encabezado ───────────────────────────────────────────────────────────────
+\begin{center}
+  {\Huge\color{Principal}\textbf{PRESUPUESTO}}\\[2mm]
+  {\Large <<nombre_presupuesto>>}
+\end{center}
+
+\vspace{5mm}
+
+\rowcolors{2}{Gris}{white}
+\begin{tabularx}{\textwidth}{@{} l X @{}}
+  Proyecto    & <<proyecto>>\\
+  Cliente     & <<cliente>>\\
+  Ubicaci\'on & <<ubicacion>>\\
+  Versi\'on   & <<version>>\\
+  Fecha       & <<fecha>>\\
+  Moneda      & <<moneda>>\\
+\end{tabularx}
+\rowcolors{1}{}{}
+
+\vspace{8mm}
+
+% ── Tabla de conceptos ───────────────────────────────────────────────────────
+{\Large\textbf{Conceptos}}
+
+\renewcommand{\arraystretch}{1.2}
+\begin{longtable}{@{}>{\centering\arraybackslash}p{1cm} >{\centering\arraybackslash}p{2cm} p{6.6cm} >{\centering\arraybackslash}p{1.2cm} >{\raggedleft\arraybackslash}p{2cm} >{\raggedleft\arraybackslash}p{2.2cm}@{}}
+  \toprule
+  \rowcolor{Gris2}
+  \textbf{Nivel} & \textbf{Clave} & \textbf{Descripci\'on} &
+  \textbf{Unidad} & \textbf{Cantidad} & \textbf{Importe}\\
+  \midrule
+  \endfirsthead
+
+  \toprule
+  \rowcolor{Gris2}
+  \textbf{Nivel} & \textbf{Clave} & \textbf{Descripci\'on} &
+  \textbf{Unidad} & \textbf{Cantidad} & \textbf{Importe}\\
+  \midrule
+  \endhead
+
+  \midrule
+  \multicolumn{6}{r}{\textit{Contin\'ua...}}\\
+  \endfoot
+
+  \bottomrule
+  \endlastfoot
+
+<<conceptos>>
+
+\end{longtable}
+
+% ── Resumen de importes (al final, tras los conceptos) ───────────────────────
+\vspace{4mm}
+\begin{flushright}
+  \begin{tabular}{@{} l r @{}}
+    \toprule
+    Subtotal       & <<subtotal>>\\
+    IVA            & <<iva>>\\
+    \midrule
+    \textbf{TOTAL} & \textbf{<<total>>}\\
+    \bottomrule
+  \end{tabular}
+\end{flushright}
+
+% ── Observaciones ────────────────────────────────────────────────────────────
+\vspace{5mm}
+{\Large\textbf{Observaciones}}
+
+<<observaciones>>
+
+% ── Firma ────────────────────────────────────────────────────────────────────
+\vfill
+\begin{center}
+  \rule{7cm}{0.4pt}\\
+  <<responsable>>
+\end{center}
+
+\end{document}

@@ -17,13 +17,34 @@ Uso:
 
 import sqlite3
 
+from backend.db import Database
+
+
+# =============================================================================
+# HELPERS INTERNOS
+# =============================================================================
+
+def _conn():
+    """
+    Devuelve la conexión SQLite del singleton Database.
+    Todas las funciones de core.py la usan para no abrir una segunda
+    conexión concurrente mientras el frontend tiene la DB abierta.
+    Lanza RuntimeError con mensaje claro si no hay proyecto abierto.
+    """
+    conn = Database.instancia().conn
+    if conn is None:
+        raise RuntimeError(
+            "No hay ningún proyecto abierto. "            "Llama a Database.abrir(db_path) antes de usar core.py."
+        )
+    return conn
+
 
 # =============================================================================
 # ÁRBOL DEL PRESUPUESTO
 # =============================================================================
 
 # ── construir árbol jerárquico del presupuesto ──
-def build_budget_tree(db_path: str, proyecto_id: int = 1) -> list[dict]:
+def build_budget_tree(db_path: str | None = None, proyecto_id: int = 1) -> list[dict]:
     """
     Lee el árbol de presupuesto desde el SQLite y lo devuelve como lista
     de nodos raíz con sus hijos anidados en el campo 'hijos'.
@@ -61,38 +82,32 @@ def build_budget_tree(db_path: str, proyecto_id: int = 1) -> list[dict]:
         Lista de nodos raíz. Cada nodo tiene 'hijos' con sus descendientes.
         Lista vacía si no hay nodos o el proyecto no existe.
     """
-    con = sqlite3.connect(db_path)
-    con.row_factory = sqlite3.Row
+    cur = _conn().cursor()
+    cur.execute("""
+        SELECT
+            n.id,
+            n.padre_id,
+            n.wbs,
+            n.nivel,
+            n.tipo,
+            n.clave,
+            n.descripcion,
+            n.descripcion_corta,
+            n.unidad,
+            n.cantidad,
+            n.precio_unitario,
+            n.importe,
+            n.subtotal,
+            n.notas_rapidas,
+            n.modificado_en,
+            n.creado_en,
+            n.estado
+        FROM estructura_presupuesto n
+        WHERE n.proyecto_id = ? AND n.activo = 1
+        ORDER BY n.wbs
+    """, (proyecto_id,))
 
-    try:
-        cur = con.cursor()
-        cur.execute("""
-            SELECT
-                n.id,
-                n.padre_id,
-                n.wbs,
-                n.nivel,
-                n.tipo,
-                n.clave,
-                n.descripcion,
-                n.descripcion_corta,
-                n.unidad,
-                n.cantidad,
-                n.precio_unitario,
-                n.importe,
-                n.subtotal,
-                n.notas_rapidas,
-                n.modificado_en,
-                n.creado_en,
-                n.estado
-            FROM estructura_presupuesto n
-            WHERE n.proyecto_id = ? AND n.activo = 1
-            ORDER BY n.wbs
-        """, (proyecto_id,))
-
-        filas = [dict(r) for r in cur.fetchall()]
-    finally:
-        con.close()
+    filas = [dict(r) for r in cur.fetchall()]
 
     if not filas:
         return []
@@ -114,32 +129,27 @@ def build_budget_tree(db_path: str, proyecto_id: int = 1) -> list[dict]:
 
 
 # ── obtener metadatos del proyecto ──
-def get_proyecto(db_path: str, proyecto_id: int = 1) -> dict | None:
+def get_proyecto(db_path: str | None = None, proyecto_id: int = 1) -> dict | None:
     """
     Devuelve los metadatos del proyecto (nombre, total, config).
 
     Returns:
         Dict con campos de 'proyectos' + 'configuracion_proyecto', o None si no existe.
     """
-    con = sqlite3.connect(db_path)
-    con.row_factory = sqlite3.Row
-    try:
-        cur = con.cursor()
-        cur.execute("""
-            SELECT p.*, pc.horas_dia, pc.tasa_seguro, pc.tasa_interes,
-                   pc.decimales_costo, pc.decimales_cantidad
-            FROM proyectos p
-            LEFT JOIN configuracion_proyecto pc ON pc.proyecto_id = p.id
-            WHERE p.id = ? AND p.activo = 1
-        """, (proyecto_id,))
-        row = cur.fetchone()
-        return dict(row) if row else None
-    finally:
-        con.close()
+    cur = _conn().cursor()
+    cur.execute("""
+        SELECT p.*, pc.horas_dia, pc.tasa_seguro, pc.tasa_interes,
+               pc.decimales_costo, pc.decimales_cantidad
+        FROM proyectos p
+        LEFT JOIN configuracion_proyecto pc ON pc.proyecto_id = p.id
+        WHERE p.id = ? AND p.activo = 1
+    """, (proyecto_id,))
+    row = cur.fetchone()
+    return dict(row) if row else None
 
 
 # ── obtener APU completo de un concepto ──
-def get_apu(db_path: str, concepto_id: int) -> dict:
+def get_apu(db_path: str | None = None, concepto_id: int = 0) -> dict:
     """
     Devuelve el APU completo de un concepto.
 
@@ -149,45 +159,40 @@ def get_apu(db_path: str, concepto_id: int) -> dict:
             "totales":  dict | None,  # subtotales por tipo
         }
     """
-    con = sqlite3.connect(db_path)
-    con.row_factory = sqlite3.Row
-    try:
-        cur = con.cursor()
+    cur = _conn().cursor()
 
-        cur.execute("""
-            SELECT
-                ad.id,
-                ad.orden,
-                ad.rendimiento,
-                ad.cantidad,
-                ad.precio,
-                ad.cantidad * ad.precio AS importe,
-                ad.formula,
-                i.es_compuesto      AS insumo_es_compuesto,
-                i.clave             AS insumo_clave,
-                i.descripcion       AS insumo_descripcion,
-                i.descripcion_corta AS insumo_desc_corta,
-                i.unidad            AS insumo_unidad,
-                t.clave             AS tipo_clave,
-                t.nombre            AS tipo_nombre,
-                t.id                AS tipo_id
-            FROM apu_matrices ad
-            JOIN insumos i      ON i.id  = ad.insumo_id
-            JOIN tipos_insumo t ON t.id  = i.tipo_id
-            WHERE ad.matriz_id = ?
-            ORDER BY ad.orden
-        """, (concepto_id,))
-        detalle = [dict(r) for r in cur.fetchall()]
+    cur.execute("""
+        SELECT
+            ad.id,
+            ad.orden,
+            ad.rendimiento,
+            ad.cantidad,
+            ad.precio,
+            ad.cantidad * ad.precio AS importe,
+            ad.formula,
+            i.es_compuesto      AS insumo_es_compuesto,
+            i.clave             AS insumo_clave,
+            i.descripcion       AS insumo_descripcion,
+            i.descripcion_corta AS insumo_desc_corta,
+            i.unidad            AS insumo_unidad,
+            t.clave             AS tipo_clave,
+            t.nombre            AS tipo_nombre,
+            t.id                AS tipo_id
+        FROM apu_matrices ad
+        JOIN insumos i      ON i.id  = ad.insumo_id
+        JOIN tipos_insumo t ON t.id  = i.tipo_id
+        WHERE ad.matriz_id = ?
+        ORDER BY ad.orden
+    """, (concepto_id,))
+    detalle = [dict(r) for r in cur.fetchall()]
 
-        cur.execute("""
-            SELECT * FROM apu_resumen_totales WHERE matriz_id = ?
-        """, (concepto_id,))
-        row = cur.fetchone()
-        totales = dict(row) if row else None
+    cur.execute("""
+        SELECT * FROM apu_resumen_totales WHERE matriz_id = ?
+    """, (concepto_id,))
+    row = cur.fetchone()
+    totales = dict(row) if row else None
 
-        return {"detalle": detalle, "totales": totales}
-    finally:
-        con.close()
+    return {"detalle": detalle, "totales": totales}
 
 
 # =============================================================================
@@ -237,7 +242,7 @@ def flatten(nodes: list[dict]) -> list[dict]:
 # =============================================================================
 
 # ── validar integridad del proyecto ──
-def validar(db_path: str, proyecto_id: int = 1) -> dict:
+def validar(db_path: str | None = None, proyecto_id: int = 1) -> dict:
     """
     Corre checks de integridad sobre el proyecto y devuelve un reporte.
     Útil para detectar problemas después de la importación.
@@ -251,78 +256,71 @@ def validar(db_path: str, proyecto_id: int = 1) -> dict:
             "advertencias":         list[str],
         }
     """
-    con = sqlite3.connect(db_path)
-    con.row_factory = sqlite3.Row
     advertencias = []
+    cur = _conn().cursor()
 
-    try:
-        cur = con.cursor()
+    # Conteos básicos
+    cur.execute("""
+        SELECT COUNT(*) FROM estructura_presupuesto
+        WHERE proyecto_id = ? AND activo = 1
+    """, (proyecto_id,))
+    total_nodos = cur.fetchone()[0]
 
-        # Conteos básicos
-        cur.execute("""
-            SELECT COUNT(*) FROM estructura_presupuesto
-            WHERE proyecto_id = ? AND activo = 1
-        """, (proyecto_id,))
-        total_nodos = cur.fetchone()[0]
+    cur.execute("""
+        SELECT COUNT(*) FROM estructura_presupuesto
+        WHERE proyecto_id = ? AND tipo = 'concepto' AND activo = 1
+    """, (proyecto_id,))
+    total_conceptos = cur.fetchone()[0]
 
-        cur.execute("""
-            SELECT COUNT(*) FROM estructura_presupuesto
-            WHERE proyecto_id = ? AND tipo = 'concepto' AND activo = 1
-        """, (proyecto_id,))
-        total_conceptos = cur.fetchone()[0]
+    # Conceptos sin APU
+    cur.execute("""
+        SELECT COUNT(*) FROM estructura_presupuesto n
+        LEFT JOIN apu_matrices ac ON ac.matriz_id = n.id
+        WHERE n.proyecto_id = ? AND n.tipo = 'concepto'
+          AND n.activo = 1 AND ac.id IS NULL
+    """, (proyecto_id,))
+    sin_apu = cur.fetchone()[0]
+    if sin_apu:
+        advertencias.append(f"{sin_apu} conceptos sin componentes APU")
 
-        # Conceptos sin APU
-        cur.execute("""
-            SELECT COUNT(*) FROM estructura_presupuesto n
-            LEFT JOIN apu_matrices ac ON ac.matriz_id = n.id
-            WHERE n.proyecto_id = ? AND n.tipo = 'concepto'
-              AND n.activo = 1 AND ac.id IS NULL
-        """, (proyecto_id,))
-        sin_apu = cur.fetchone()[0]
-        if sin_apu:
-            advertencias.append(f"{sin_apu} conceptos sin componentes APU")
+    # Nodos huérfanos (padre_id apunta a un id que no existe)
+    cur.execute("""
+        SELECT COUNT(*) FROM estructura_presupuesto n
+        WHERE n.proyecto_id = ? AND n.activo = 1
+          AND n.padre_id IS NOT NULL
+          AND n.padre_id NOT IN (
+              SELECT id FROM estructura_presupuesto WHERE activo = 1
+          )
+    """, (proyecto_id,))
+    huerfanos = cur.fetchone()[0]
+    if huerfanos:
+        advertencias.append(f"{huerfanos} nodos con padre_id inválido")
 
-        # Nodos huérfanos (padre_id apunta a un id que no existe)
-        cur.execute("""
-            SELECT COUNT(*) FROM estructura_presupuesto n
-            WHERE n.proyecto_id = ? AND n.activo = 1
-              AND n.padre_id IS NOT NULL
-              AND n.padre_id NOT IN (
-                  SELECT id FROM estructura_presupuesto WHERE activo = 1
-              )
-        """, (proyecto_id,))
-        huerfanos = cur.fetchone()[0]
-        if huerfanos:
-            advertencias.append(f"{huerfanos} nodos con padre_id inválido")
+    # Verificar subtotales (diff > $1 = posible desincronización)
+    cur.execute("""
+        SELECT COUNT(*) FROM estructura_presupuesto n
+        WHERE n.proyecto_id = ? AND n.tipo = 'capitulo' AND n.activo = 1
+          AND ABS(n.subtotal - (
+              SELECT COALESCE(SUM(
+                  CASE WHEN tipo='concepto'
+                       THEN COALESCE(importe, 0)
+                       ELSE COALESCE(subtotal, 0)
+                  END
+              ), 0)
+              FROM estructura_presupuesto WHERE padre_id = n.id AND activo = 1
+          )) > 1.0
+    """, (proyecto_id,))
+    subtotales_mal = cur.fetchone()[0]
+    subtotales_ok = subtotales_mal == 0
+    if not subtotales_ok:
+        advertencias.append(
+            f"{subtotales_mal} capítulos con subtotales desincronizados"
+        )
 
-        # Verificar subtotales (diff > $1 = posible desincronización)
-        cur.execute("""
-            SELECT COUNT(*) FROM estructura_presupuesto n
-            WHERE n.proyecto_id = ? AND n.tipo = 'capitulo' AND n.activo = 1
-              AND ABS(n.subtotal - (
-                  SELECT COALESCE(SUM(
-                      CASE WHEN tipo='concepto'
-                           THEN COALESCE(importe, 0)
-                           ELSE COALESCE(subtotal, 0)
-                      END
-                  ), 0)
-                  FROM estructura_presupuesto WHERE padre_id = n.id AND activo = 1
-              )) > 1.0
-        """, (proyecto_id,))
-        subtotales_mal = cur.fetchone()[0]
-        subtotales_ok = subtotales_mal == 0
-        if not subtotales_ok:
-            advertencias.append(
-                f"{subtotales_mal} capítulos con subtotales desincronizados"
-            )
-
-        return {
-            "total_nodos":       total_nodos,
-            "total_conceptos":   total_conceptos,
-            "conceptos_sin_apu": sin_apu,
-            "subtotales_ok":     subtotales_ok,
-            "advertencias":      advertencias,
-        }
-
-    finally:
-        con.close()
+    return {
+        "total_nodos":       total_nodos,
+        "total_conceptos":   total_conceptos,
+        "conceptos_sin_apu": sin_apu,
+        "subtotales_ok":     subtotales_ok,
+        "advertencias":      advertencias,
+    }

@@ -27,6 +27,7 @@ Uso:
 # ── imports / platformdirs ──
 import json
 import sqlite3
+import shutil
 from pathlib import Path
 
 try:
@@ -40,6 +41,18 @@ except ImportError:
 # =============================================================================
 # RUTAS DEL SISTEMA
 # =============================================================================
+
+def _copiar_plantillas_incluidas(destino: Path):
+    """Copia las plantillas .tex incluidas en el proyecto a la carpeta del usuario.
+    Solo copia si la carpeta destino está vacía (primera ejecución).
+    """
+    if any(destino.iterdir()):
+        return
+    bundled = Path(__file__).parent / "latex" / "templates"
+    if bundled.exists():
+        for f in bundled.iterdir():
+            if f.suffix == ".tex":
+                shutil.copy2(f, destino / f.name)
 
 class Rutas:
     """
@@ -71,6 +84,23 @@ class Rutas:
     def config_path() -> Path:
         """Ruta al archivo de configuración de la app."""
         return _BASE / "config.json"
+
+    @staticmethod
+    def templates() -> Path:
+        """Carpeta donde se almacenan las plantillas LaTeX del usuario.
+        En primera ejecución se copian desde las incluidas en el proyecto.
+        """
+        p = _BASE / "templates"
+        p.mkdir(parents=True, exist_ok=True)
+        _copiar_plantillas_incluidas(p)
+        return p
+
+    @staticmethod
+    def reportes() -> Path:
+        """Carpeta donde se guardan los .tex y .pdf generados."""
+        p = _BASE / "reportes"
+        p.mkdir(parents=True, exist_ok=True)
+        return p
 
     @staticmethod
     def listar_proyectos() -> list[Path]:
@@ -133,12 +163,12 @@ class Config:
     def set(cls, clave: str, valor):
         """Persiste par clave/valor en config.json y actualiza el caché."""
         datos = cls._cargar()
-        datos = cls._cargar()
         datos[clave] = valor
         Rutas.config_path().write_text(
             json.dumps(datos, indent=2, ensure_ascii=False),
             encoding="utf-8"
         )
+        cls._cache = datos  # sincroniza caché para que get() vea el valor nuevo
 
     @classmethod
     def ultimo_proyecto(cls) -> Path | None:
@@ -180,7 +210,6 @@ class Database:
     # ── abrir conexión a SQLite ──
     def _abrir(self, db_path: str | Path):
         """Abre (o reabre) conexión SQLite, aplica pragmas y schema, guarda como último proyecto."""
-        self._cerrar()
         self._cerrar()
         self._db_path = str(db_path)
         self._conn = sqlite3.connect(self._db_path)

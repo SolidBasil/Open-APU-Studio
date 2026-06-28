@@ -174,17 +174,25 @@ def _tipo_id(prefijo: int) -> int:
 # IMPORTACIÓN PRINCIPAL
 # =============================================================================
 
-def importar(carpeta: str, db_path: str, nombre: str | None = None) -> dict:
+def importar(
+    carpeta: str,
+    db_path: str,
+    nombre: str | None = None,
+    cerrar_al_terminar: bool = False,
+) -> dict:
     """
     Importa un proyecto OPUS al SQLite de Open APU Studio.
 
     Args:
-        carpeta:  Ruta a la carpeta con los archivos .DBF
-        db_path:  Ruta del archivo .db de destino (se crea si no existe)
-        nombre:   Nombre del proyecto (default: se infiere del prefijo)
+        carpeta:            Ruta a la carpeta con los archivos .DBF
+        db_path:            Ruta del archivo .db de destino (se crea si no existe)
+        nombre:             Nombre del proyecto (default: se infiere del prefijo)
+        cerrar_al_terminar: Si True, cierra la conexion al final (util en CLI/tests).
+                            Si False (default), deja la DB abierta para que el
+                            frontend pueda seguir usandola sin reconectar.
 
     Returns:
-        Dict con estadísticas: estructura_presupuesto, insumos, apu_matrices, apu_resumen_totales, etc.
+        Dict con estadisticas: estructura_presupuesto, insumos, apu_matrices, apu_resumen_totales, etc.
     """
     carpeta = Path(carpeta)
     if not carpeta.is_dir():
@@ -549,7 +557,8 @@ def importar(carpeta: str, db_path: str, nombre: str | None = None) -> dict:
     for k, v in stats.items():
         print(f"  {k:<15}: {v}")
 
-    Database.cerrar()
+    if cerrar_al_terminar:
+        Database.cerrar()
     return stats
 
 
@@ -725,4 +734,4 @@ if __name__ == "__main__":
     parser.add_argument("db",            help="Ruta del .db de destino")
     parser.add_argument("--nombre", "-n", default=None, help="Nombre del proyecto")
     args = parser.parse_args()
-    importar(args.carpeta, args.db, args.nombre)
+    importar(args.carpeta, args.db, args.nombre, cerrar_al_terminar=True)

@@ -878,6 +878,237 @@ class HandlersMixin:
         else:
             subprocess.Popen(["gnome-calculator"])
 
+    # ── VISTA handlers ─────────────────────────────────────────────────────
+    # Ajustar columnas, mostrar/ocultar, formato, restablecer,
+    # pantalla completa y filtro avanzado — todos operan sobre el
+    # TreeTableWidget activo en la pestaña actual.
+
+    def _get_active_table(self):
+        """Retorna el TreeTableWidget activo o None."""
+        from frontend.widgets.base import TreeTableWidget
+        w = self._tabs.currentWidget()
+        if isinstance(w, TreeTableWidget):
+            return w
+        return w.findChild(TreeTableWidget) if w else None
+
+    def _on_ajustar_columnas(self):
+        """Auto-ajusta ancho de columnas al contenido."""
+        from PySide6.QtWidgets import QHeaderView
+        t = self._get_active_table()
+        if not t:
+            return
+        h = t.header()
+        h.resizeSections(QHeaderView.ResizeMode.ResizeToContents)
+        for c in range(t.columnCount()):
+            if not t.isColumnHidden(c):
+                h.setSectionResizeMode(c, QHeaderView.ResizeMode.Interactive)
+
+    def _on_mostrar_ocultar(self):
+        """Menú contextual con checkboxes de columnas visibles."""
+        t = self._get_active_table()
+        if not t:
+            return
+        btn = self.sender()
+        menu = QMenu(self)
+        for c in range(t.columnCount()):
+            name = t.headerItem().text(c)
+            if not name:
+                continue
+            act = menu.addAction(name)
+            act.setCheckable(True)
+            act.setChecked(not t.isColumnHidden(c))
+            act.toggled.connect(lambda checked, col=c: t.setColumnHidden(col, not checked))
+        pos = btn.mapToGlobal(btn.rect().bottomLeft()) if btn else self._tb.mapToGlobal(self._tb.rect().topLeft())
+        menu.exec(pos)
+
+    def _on_formato_columnas(self):
+        """Placeholder — diálogo de formato de columnas (v1.x)."""
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.information(self, "Formato de columnas",
+                                "Esta función estará disponible en una próxima versión.")
+
+    def _on_restablecer_formato(self):
+        """Restaura anchos y visibilidad de columnas a sus valores por defecto."""
+        from frontend.widgets.arbol import TablaArbol
+        t = self._get_active_table()
+        if not t:
+            return
+        if isinstance(t, TablaArbol):
+            t._restore_header_state()
+            for c in range(t.columnCount()):
+                t.setColumnHidden(c, c not in TablaArbol._VISIBLE)
+        elif hasattr(t, '_pending_modes'):
+            t._apply_column_modes()
+
+    def _on_pantalla_completa(self):
+        """Alterna entre pantalla completa y normal."""
+        if self.isFullScreen():
+            self.showNormal()
+        else:
+            self.showFullScreen()
+
+    def _on_filtro(self):
+        """Placeholder — toggle panel de filtros avanzados (v1.x)."""
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.information(self, "Filtro avanzado",
+                                "Esta función estará disponible en una próxima versión.")
+
+    # ── INICIO handlers ────────────────────────────────────────────────────
+
+    def _on_parametros_proyecto(self):
+        """Placeholder — parámetros del proyecto (v1.x)."""
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.information(self, "Parámetros de proyecto",
+                                "Esta función estará disponible en una próxima versión.")
+
+    def _on_info_proyecto(self):
+        """Muestra información general del proyecto actual."""
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
+        from pathlib import Path
+
+        if not self._db:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.information(self, "Sin proyecto", "Abre un proyecto primero.")
+            return
+
+        conn = self._db.conn
+        nombre = Path(self._db.db_path).stem
+        n_nodos = conn.execute(
+            "SELECT COUNT(*) FROM estructura_presupuesto WHERE activo = 1"
+        ).fetchone()[0]
+        n_conceptos = conn.execute(
+            "SELECT COUNT(*) FROM estructura_presupuesto WHERE tipo = 'concepto' AND activo = 1"
+        ).fetchone()[0]
+        n_insumos = conn.execute(
+            "SELECT COUNT(*) FROM insumos WHERE activo = 1"
+        ).fetchone()[0]
+        n_matrices = conn.execute(
+            "SELECT COUNT(*) FROM apu_matrices"
+        ).fetchone()[0]
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Información del proyecto")
+        dlg.setMinimumWidth(380)
+        layout = QVBoxLayout(dlg)
+
+        filas = [
+            ("Nombre", nombre),
+            ("Nodos en presupuesto", str(n_nodos)),
+            ("Conceptos", str(n_conceptos)),
+            ("Insumos en catálogo", str(n_insumos)),
+            ("Matrices APU", str(n_matrices)),
+        ]
+        for label, valor in filas:
+            row = QHBoxLayout()
+            row.addWidget(QLabel(f"<b>{label}:</b>"))
+            row.addWidget(QLabel(valor))
+            row.addStretch()
+            layout.addLayout(row)
+
+        layout.addSpacing(12)
+        btn = QPushButton("Cerrar")
+        btn.clicked.connect(dlg.accept)
+        layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignCenter)
+        dlg.exec()
+
+    def _on_usuarios(self):
+        """Placeholder — gestión de usuarios (v1.x)."""
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.information(self, "Usuarios",
+                                "Esta función estará disponible en una próxima versión.")
+
+    # ── INFORMES handlers ───────────────────────────────────────────────────
+
+    def _on_generar_presupuesto(self):
+        """Genera .tex y .pdf del presupuesto en la carpeta de reportes del usuario."""
+        from PySide6.QtWidgets import QMessageBox
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtCore import QUrl
+        from backend.latex import ReportePresupuesto, compilar_pdf
+        from backend.db import Rutas
+        from pathlib import Path
+
+        if not self._api:
+            QMessageBox.information(self, "Sin proyecto", "Abre un proyecto primero.")
+            return
+
+        nombre = Path(self._db.db_path).stem
+        nodos = self._api.presupuesto_arbol()
+        if not nodos:
+            QMessageBox.information(self, "Sin datos", "El presupuesto está vacío.")
+            return
+
+        tex_path = Rutas.reportes() / f"{nombre}_presupuesto.tex"
+        ReportePresupuesto(nombre, nodos).generar(tex_path)
+
+        pdf = compilar_pdf(tex_path)
+        if pdf:
+            self._sb.showMessage(f"PDF generado: {pdf}", 5000)
+            QDesktopServices.openUrl(QUrl.fromLocalFile(pdf))
+        else:
+            self._sb.showMessage(f"Reporte .tex generado: {tex_path}", 5000)
+
+    def _on_generar_apu(self):
+        """Placeholder — reporte APU (próxima versión)."""
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.information(self, "Reporte APU",
+                                "Esta función estará disponible en una próxima versión.")
+
+    def _on_generar_explosion(self):
+        """Placeholder — reporte explosión de insumos (próxima versión)."""
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.information(self, "Reporte explosión",
+                                "Esta función estará disponible en una próxima versión.")
+
+    def _on_generar_catalogo(self):
+        """Placeholder — reporte catálogo de insumos (próxima versión)."""
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.information(self, "Reporte catálogo",
+                                "Esta función estará disponible en una próxima versión.")
+
+    def _on_compilar_pdf(self):
+        """Compila el .tex seleccionado a PDF con pdflatex."""
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
+        from backend.latex import compilar_pdf
+
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Seleccionar archivo .tex",
+            "", "LaTeX (*.tex)",
+        )
+        if not path:
+            return
+
+        pdf = compilar_pdf(path)
+        if pdf:
+            QMessageBox.information(self, "Compilación exitosa",
+                                    f"PDF generado:\n{pdf}")
+        else:
+            QMessageBox.warning(self, "Error de compilación",
+                                "No se pudo compilar el PDF.\n"
+                                "Verifica que pdflatex esté instalado y en el PATH.")
+
+    def _on_vista_previa(self):
+        """Abre el PDF generado con el visor del sistema."""
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtCore import QUrl
+        from pathlib import Path
+
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Seleccionar archivo PDF",
+            "", "PDF (*.pdf)",
+        )
+        if not path:
+            return
+
+        QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+
+    def _on_tema_latex(self):
+        """Placeholder — selector de plantilla LaTeX (v1.x)."""
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.information(self, "Tema LaTeX",
+                                "Esta función estará disponible en una próxima versión.")
+
     # ── StatusBar ─────────────────────────────────────────────────────────
     # Barra de estado inferior que muestra información del tema activo
     # y la versión de la aplicación.

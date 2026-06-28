@@ -58,45 +58,50 @@ _TOOLBAR_CFG = {
         ("Explorar",     []),
     ],
     "INICIO": [
-        ("Historial",     [[("↩", "Deshacer"), ("↪", "Rehacer")]]),
-        ("Portapapeles",  [("✂", "Cortar"), [("📋", "Copiar"), ("📄", "Pegar")]]),
-        ("Acciones",      [("✕", "Eliminar")]),
+        ("Proyecto", [("⚙", "Parámetros proyecto"), ("🛈", "Información proyecto")]),
+        ("Sistema",  [("⚙", "Configuración general"), ("👥", "Usuarios")]),
     ],
     "INFORMES": [
-        ("Exportar", [("📄", "Generar PDF"), ("📊", "Exportar Excel")]),
-        ("Vista",    [("👁", "Vista previa")]),
+        ("Generar", [
+            ("📄", "Presupuesto"),
+            ("📋", "APU"),
+            ("📦", "Explosión"),
+            ("📚", "Catálogo"),
+        ]),
+        ("Exportar", [
+            ("📤", "Compilar PDF"),
+            ("👁", "Vista previa"),
+        ]),
+        ("Plantilla", [
+            ("🎨", "Tema LaTeX"),
+        ]),
     ],
     "VISTA": [
-        ("Datos", [
+        ("Columnas", [
             ("↔", "Ajustar"),
-            ("👁", "Mostrar"),
+            ("👁", "Mostrar/Ocultar"),
         ]),
 
-        ("Presentación de datos", [
-            ("▦", "Formato de columnas"),
-            [("↺", "Restablecer formato"), ("📂", "Cargar formato")],
-            [("☑", "Calculados"), ("👤", "Personalizados"), ("↻", "Actualizar")],
-            ("🗂", "Mantener vistas"),
-            ("▼", "Vista"),
+        ("Presentación", [
+            ("▦", "Formato columnas"),
+            ("↻", "Restablecer"),
         ]),
 
-        ("Ventanas", [
+        ("Ventana", [
             ("▣", "Pantalla completa"),
-            [("◫", "Mosaico horizontal"), ("◧", "Mosaico vertical"), ("⧉", "Cascada")],
         ]),
 
         ("Aspecto", [("🎨", "__TEMAS__")]),
 
         ("Ver", [
             ("📋", "Auditoría"),
-            ("🗔", "Explorador de vistas"),
-            ("📑", "Explorador de reportes"),
-            ("⚙", "Explorador de paramétricos"),
+            ("🔍", "Filtro"),
         ]),
     ],
     "PRINCIPAL": [
+        ("Historial",    [[("↩", "Deshacer"), ("↪", "Rehacer")]]),
         ("Portapapeles", [("📋", "Copiar"), [("✂", "Cortar"), ("📄", "Pegar"), ("☑", "Seleccionar todo")]]),
-        ("Editar",       [("+", "Agregar elemento"), ("✎", "Modificar"), ("→", "Desglosar"), ("✕", "Eliminar"), ("↩", "Deshacer")]),
+        ("Editar",       [("+", "Agregar elemento"), ("✎", "Modificar"), ("→", "Desglosar"), ("✕", "Eliminar")]),
         ("Estructura",   [[("◀", "Izquierda"), ("▶", "Derecha")],[("▲", "Subir"), ("▼", "Bajar")]]),
         ("Buscar",       [("📚", "En catálogos"), ("👁", "En vista")]),
         ("Desplegar",    [("1", "Primer nivel"), ("Σ", "Resumen agrupadores"), ("⊞", "Todo"), ("≡", "Nivel")]),
@@ -413,6 +418,42 @@ class ToolbarMixin:
             btn.clicked.connect(self._on_homologar_claves)
         elif tip == "Calculadora":
             btn.clicked.connect(self._on_calculadora)
+        elif tip == "Ajustar":
+            btn.clicked.connect(self._on_ajustar_columnas)
+        elif tip == "Mostrar/Ocultar":
+            btn.clicked.connect(self._on_mostrar_ocultar)
+        elif tip == "Formato columnas":
+            btn.clicked.connect(self._on_formato_columnas)
+        elif tip == "Restablecer":
+            btn.clicked.connect(self._on_restablecer_formato)
+        elif tip == "Pantalla completa":
+            btn.clicked.connect(self._on_pantalla_completa)
+        elif tip == "Filtro":
+            btn.clicked.connect(self._on_filtro)
+        elif tip == "Auditoría":
+            btn.clicked.connect(self._on_depurar_catalogos)
+        elif tip == "Parámetros proyecto":
+            btn.clicked.connect(self._on_parametros_proyecto)
+        elif tip == "Información proyecto":
+            btn.clicked.connect(self._on_info_proyecto)
+        elif tip == "Configuración general":
+            btn.clicked.connect(self._on_configuracion)
+        elif tip == "Usuarios":
+            btn.clicked.connect(self._on_usuarios)
+        elif tip == "Presupuesto":
+            btn.clicked.connect(self._on_generar_presupuesto)
+        elif tip == "APU":
+            btn.clicked.connect(self._on_generar_apu)
+        elif tip == "Explosión":
+            btn.clicked.connect(self._on_generar_explosion)
+        elif tip == "Catálogo":
+            btn.clicked.connect(self._on_generar_catalogo)
+        elif tip == "Compilar PDF":
+            btn.clicked.connect(self._on_compilar_pdf)
+        elif tip == "Vista previa":
+            btn.clicked.connect(self._on_vista_previa)
+        elif tip == "Tema LaTeX":
+            btn.clicked.connect(self._on_tema_latex)
         else:
             conn = False
         btn._conectado = conn
