@@ -228,6 +228,12 @@ class HandlersMixin:
     # Importa proyectos completos desde formato OPUS 2010 (archivos .DBF).
     # Convierte jerarquía, insumos, APU y auxiliares a SQLite.
 
+    def _on_exportar(self):
+        """Exportar — pendiente de implementación."""
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.information(self, "Exportar",
+                                "La exportación estará disponible en una versión futura.")
+
     def _on_importar_opus(self):
         """Flujo completo de importación OPUS:
         1. Seleccionar carpeta con archivos .DBF
@@ -642,11 +648,11 @@ class HandlersMixin:
 
         # Insumos sin uso
         filas = conn.execute("""
-            SELECT i.id, i.clave, i.descripcion, i.tipo_id
+            SELECT i.id, i.clave_opus AS clave, i.descripcion, i.tipo_id
             FROM insumos i
             WHERE i.proyecto_id = 1 AND i.activo = 1
               AND NOT EXISTS (SELECT 1 FROM apu_matrices am WHERE am.insumo_id = i.id)
-            ORDER BY i.clave
+            ORDER BY i.id
         """).fetchall()
         for r in filas:
             _ins(r["id"], r["clave"], r["descripcion"],
@@ -664,29 +670,31 @@ class HandlersMixin:
             _ins(r["id"], r["clave"], r["descripcion"],
                  "📄 Concepto", "Conceptos sin APU")
 
-        # Claves duplicadas — enlistar cada fila duplicada
+        # Descripciones duplicadas — detectadas por hash, no por clave_opus.
+        # clave_opus ya no es UNIQUE (es solo referencial), así que la
+        # verdadera fuente de duplicados es el hash de descripción normalizada.
         filas = conn.execute("""
-            SELECT i.id, i.clave, i.descripcion, i.tipo_id
+            SELECT i.id, i.clave_opus AS clave, i.descripcion, i.tipo_id
             FROM insumos i
             WHERE i.proyecto_id = 1 AND i.activo = 1
-              AND i.clave IN (
-                  SELECT clave FROM insumos
-                  WHERE proyecto_id = 1 AND activo = 1
-                  GROUP BY clave HAVING COUNT(*) > 1
+              AND i.hash IN (
+                  SELECT hash FROM insumos
+                  WHERE proyecto_id = 1 AND activo = 1 AND hash IS NOT NULL
+                  GROUP BY hash HAVING COUNT(*) > 1
               )
-            ORDER BY i.clave, i.id
+            ORDER BY i.hash, i.id
         """).fetchall()
         for r in filas:
             _ins(r["id"], r["clave"], r["descripcion"],
-                 _tipo_str(r["tipo_id"]), "Claves duplicadas (insumos)")
+                 _tipo_str(r["tipo_id"]), "Descripciones duplicadas (insumos)")
 
         # Costos en cero
         filas = conn.execute("""
-            SELECT i.id, i.clave, i.descripcion, i.tipo_id
+            SELECT i.id, i.clave_opus AS clave, i.descripcion, i.tipo_id
             FROM insumos i
             WHERE i.proyecto_id = 1 AND i.activo = 1
               AND (i.costo_final IS NULL OR i.costo_final = 0)
-            ORDER BY i.clave
+            ORDER BY i.id
         """).fetchall()
         for r in filas:
             _ins(r["id"], r["clave"], r["descripcion"],
@@ -694,7 +702,7 @@ class HandlersMixin:
 
         # Descripción vacía
         filas = conn.execute("""
-            SELECT i.id, i.clave, i.tipo_id, 'insumo' AS src
+            SELECT i.id, i.clave_opus AS clave, i.tipo_id, 'insumo' AS src
             FROM insumos i
             WHERE i.proyecto_id = 1 AND i.activo = 1
               AND (i.descripcion IS NULL OR i.descripcion = '')
@@ -712,7 +720,7 @@ class HandlersMixin:
 
         # Auto-referencia
         filas = conn.execute("""
-            SELECT i.id, i.clave, i.descripcion, t.id AS tipo_id
+            SELECT i.id, i.clave_opus AS clave, i.descripcion, t.id AS tipo_id
             FROM insumos i
             JOIN tipos_insumo t ON t.id = i.tipo_id
             WHERE i.es_compuesto = 1
@@ -726,7 +734,7 @@ class HandlersMixin:
                     WHERE ep.id = ac.matriz_id AND ep.activo = 1
                   )
               )
-            ORDER BY i.clave
+            ORDER BY i.id
         """).fetchall()
         for r in filas:
             _ins(r["id"], r["clave"], r["descripcion"],

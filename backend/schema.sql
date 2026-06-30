@@ -278,8 +278,15 @@ CREATE TABLE IF NOT EXISTS insumos (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     proyecto_id         INTEGER NOT NULL REFERENCES proyectos(id) ON DELETE CASCADE,
 
+    -- Hash de descripción normalizada (uppercase + espacios colapsados).
+    -- Llave funcional principal para búsqueda y deduplicación de insumos.
+    -- Se genera al crear y se regenera junto con descripcion al editar.
+    hash                TEXT,
+
     -- Identificación
-    clave               TEXT    NOT NULL,
+    -- clave_opus: código original importado de OPUS (campo NOMBRE del DBF).
+    -- Solo referencial — no participa en ninguna relación ni búsqueda interna.
+    clave_opus          TEXT,
     clave_usuario       TEXT,
     tipo_id             INTEGER NOT NULL REFERENCES tipos_insumo(id),
     es_compuesto        INTEGER NOT NULL DEFAULT 0,
@@ -339,12 +346,13 @@ CREATE TABLE IF NOT EXISTS insumos (
     modificado_por      INTEGER REFERENCES usuarios(id),
     modificado_en       TEXT    NOT NULL DEFAULT (datetime('now')),
 
-    UNIQUE(proyecto_id, clave)
+    UNIQUE(proyecto_id, hash)
 );
 
 CREATE INDEX IF NOT EXISTS idx_insumos_proyecto   ON insumos(proyecto_id);
+CREATE INDEX IF NOT EXISTS idx_insumos_hash       ON insumos(proyecto_id, hash);
 CREATE INDEX IF NOT EXISTS idx_insumos_tipo       ON insumos(tipo_id);
-CREATE INDEX IF NOT EXISTS idx_insumos_clave      ON insumos(proyecto_id, clave);
+CREATE INDEX IF NOT EXISTS idx_insumos_clave_opus ON insumos(proyecto_id, clave_opus);
 CREATE INDEX IF NOT EXISTS idx_insumos_familia    ON insumos(familia_id);
 CREATE INDEX IF NOT EXISTS idx_insumos_subfamilia ON insumos(subfamilia_id);
 CREATE INDEX IF NOT EXISTS idx_insumos_activo     ON insumos(activo);

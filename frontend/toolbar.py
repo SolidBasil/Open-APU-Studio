@@ -380,7 +380,9 @@ class ToolbarMixin:
         Marca btn._conectado = True/False para que _style_toolbar_btn decida el estilo.
         """
         conn = True
-        if "Importar OPUS" in tip:
+        if tip == "Exportar":
+            btn.clicked.connect(self._on_exportar)
+        elif "Importar OPUS" in tip:
             btn.clicked.connect(self._on_importar_opus)
         elif tip == "Abrir":
             btn.clicked.connect(self._on_abrir_proyecto)

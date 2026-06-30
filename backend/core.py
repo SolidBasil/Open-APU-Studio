@@ -15,9 +15,51 @@ Uso:
     print(count_concepts(tree))  # 148
 """
 
+import hashlib
 import sqlite3
 
 from backend.db import Database
+
+
+# =============================================================================
+# HASH DE DESCRIPCIÓN
+# =============================================================================
+
+def generar_hash(descripcion: str) -> str:
+    """
+    Genera un hash corto y estable a partir de la descripción de un insumo.
+
+    Normalización antes de hashear:
+        - strip()
+        - uppercase
+        - colapso de espacios múltiples a uno solo
+
+    Algoritmo: SHA-256 → primeros 5 bytes → Base36 → 8 caracteres con padding.
+
+    Con 40 bits (2^40 ≈ 1.1 billón de valores) la probabilidad de colisión
+    en un catálogo de 10,000 insumos es ~0.0045 %. En caso de colisión, el
+    repo lanza IntegrityError que la capa de servicio convierte en mensaje
+    claro para el usuario.
+
+    Ejemplos:
+        "Acero de refuerzo fy=4200"  →  "2KR8NM4P"
+        "ACERO DE REFUERZO FY=4200"  →  "2KR8NM4P"  (mismo hash)
+        "  Acero  de refuerzo "      →  "2KR8NM4P"  (mismo hash)
+    """
+    if not descripcion:
+        raise ValueError("La descripción no puede estar vacía para generar un hash.")
+
+    normalizada = " ".join(descripcion.upper().split())
+    digest      = hashlib.sha256(normalizada.encode("utf-8")).digest()
+    n           = int.from_bytes(digest[:5], "big")
+
+    chars  = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    result = []
+    while n:
+        result.append(chars[n % 36])
+        n //= 36
+
+    return "".join(reversed(result)).zfill(8)
 
 
 # =============================================================================
@@ -171,7 +213,7 @@ def get_apu(db_path: str | None = None, concepto_id: int = 0) -> dict:
             ad.cantidad * ad.precio AS importe,
             ad.formula,
             i.es_compuesto      AS insumo_es_compuesto,
-            i.clave             AS insumo_clave,
+            i.id                AS insumo_id,
             i.descripcion       AS insumo_descripcion,
             i.descripcion_corta AS insumo_desc_corta,
             i.unidad            AS insumo_unidad,

@@ -360,3 +360,56 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
 #dlgCancel:hover {
     background-color: #7A5C3A;
 }
+
+/* ── DialogoAjustes ── */
+#dlgAjustes {
+    background-color: #171410;
+}
+#dlgAjustesHeader {
+    background-color: #201D18;
+    border-bottom: 1px solid #2A241D;
+}
+#dlgAjustesHeader QLabel#dlgHeader {
+    font-size: 15px;
+    font-weight: bold;
+    color: #EDE4D8;
+}
+#dlgAjustesBody {
+    background-color: #171410;
+}
+#dlgCard {
+    background-color: #201D18;
+    border: 1px solid #2A241D;
+    border-radius: 6px;
+}
+#dlgCardTitle {
+    font-size: 13px;
+    font-weight: bold;
+    color: #EDE4D8;
+}
+#dlgAjustesFooter {
+    background-color: #201D18;
+}
+#dlgAjustesNav {
+    background-color: #201D18;
+    border: none;
+    border-right: 1px solid #2A241D;
+    outline: none;
+    font-size: 13px;
+    padding: 4px 0;
+}
+#dlgAjustesNav::item {
+    padding: 8px 12px;
+    border: none;
+}
+#dlgAjustesNav::item:selected {
+    background-color: #2A241D;
+    color: #EDE4D8;
+}
+#dlgAjustesNav::item:hover:!selected {
+    background-color: #171410;
+}
+#dlgVSep {
+    background-color: #2A241D;
+    max-width: 1px;
+}

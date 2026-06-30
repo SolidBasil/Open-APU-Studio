@@ -3,9 +3,11 @@ ajustes.py
 ==========
 Diálogo de configuración general de Open APU Studio.
 
-Secciones:
-    Cálculo   — precisión de decimales para la explosión de insumos
-    (extensible a futuro con más secciones)
+Secciones navegables por sidebar:
+    General    — información del proyecto (próximamente)
+    Cálculo    — precisión de decimales para la explosión de insumos
+    Red        — (próximamente)
+    Apariencia — (próximamente)
 
 Uso:
     from frontend.widgets.ajustes import DialogoAjustes
@@ -15,22 +17,28 @@ Uso:
 
 from PySide6.QtCore    import Qt
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QGroupBox,
-    QLabel, QSpinBox, QDialogButtonBox, QWidget,
-    QFrame,
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSpinBox,
+    QWidget, QFrame, QPushButton, QListWidget, QListWidgetItem,
+    QStackedWidget,
 )
 
 from backend.db import Config
 
+
 # ── Claves de Config ─────────────────────────────────────────────
-KEY_DECIMALES_EXPLOSION = "explosion_decimales"   # int | None (None = precisión completa)
-DECIMALES_DEFAULT       = None                    # precisión completa por defecto
+KEY_DECIMALES_EXPLOSION = "explosion_decimales"
+DECIMALES_DEFAULT       = None
+
+# ── Categorías de la sidebar ─────────────────────────────────────
+_CATEGORIAS = [
+    ("📋", "General"),
+    ("🧮", "Cálculo"),
+    ("🌐", "Red"),
+    ("🎨", "Apariencia"),
+]
 
 
 def get_decimales_explosion() -> int | None:
-    """Lee la preferencia de decimales para la explosión.
-    Devuelve None si está en modo precisión completa.
-    """
     val = Config.get(KEY_DECIMALES_EXPLOSION, None)
     if val is None:
         return None
@@ -48,49 +56,116 @@ class DialogoAjustes(QDialog):
     """Ventana de configuración general de la aplicación."""
 
     def __init__(self, parent=None):
-        """Diálogo de ajustes: inicializa UI con valores guardados."""
         super().__init__(parent)
         self.setWindowTitle("Ajustes")
         self.setModal(True)
-        self.setMinimumWidth(380)
+        self.setMinimumWidth(580)
+        self.setMinimumHeight(380)
+        self.setObjectName("dlgAjustes")
         self._build_ui()
         self._cargar_valores()
 
     # ── Construcción ─────────────────────────────────────────────
 
     def _build_ui(self):
-        """Construye layout: sección de cálculo + botón Guardar/Cancelar."""
         layout = QVBoxLayout(self)
-        layout.setSpacing(14)
-        layout.setContentsMargins(16, 16, 16, 12)
+        layout.setSpacing(0)
+        layout.setContentsMargins(0, 0, 0, 0)
 
-        # ── Sección: Cálculo
-        layout.addWidget(self._build_seccion_calculo())
+        layout.addWidget(self._build_header())
+        layout.addWidget(self._build_sep())
+        layout.addWidget(self._build_body(), 1)
+        layout.addWidget(self._build_sep())
+        layout.addWidget(self._build_footer())
 
-        # Separador
+    def _build_header(self) -> QFrame:
+        hdr = QFrame()
+        hdr.setObjectName("dlgAjustesHeader")
+        hdr.setFixedHeight(48)
+        row = QHBoxLayout(hdr)
+        row.setContentsMargins(16, 0, 16, 0)
+
+        icon = QLabel("⚙")
+        icon.setObjectName("dlgIcon")
+        row.addWidget(icon)
+
+        title = QLabel("Ajustes")
+        title.setObjectName("dlgHeader")
+        row.addWidget(title)
+        row.addStretch()
+        return hdr
+
+    def _build_sep(self) -> QFrame:
         sep = QFrame()
+        sep.setObjectName("dlgSep")
         sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setFrameShadow(QFrame.Shadow.Sunken)
-        layout.addWidget(sep)
+        return sep
 
-        # ── Botones
-        btns = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok |
-            QDialogButtonBox.StandardButton.Cancel
-        )
-        btns.button(QDialogButtonBox.StandardButton.Ok).setText("Guardar")
-        btns.button(QDialogButtonBox.StandardButton.Cancel).setText("Cancelar")
-        btns.accepted.connect(self._guardar)
-        btns.rejected.connect(self.reject)
-        layout.addWidget(btns)
+    def _build_body(self) -> QWidget:
+        body = QWidget()
+        body.setObjectName("dlgAjustesBody")
+        row = QHBoxLayout(body)
+        row.setSpacing(0)
+        row.setContentsMargins(0, 0, 0, 0)
 
-    def _build_seccion_calculo(self) -> QWidget:
-        """GroupBox con control de decimales para la explosión de insumos."""
-        grp = QGroupBox("Cálculo")
-        vbox = QVBoxLayout(grp)
-        vbox.setSpacing(10)
+        # Sidebar de navegación
+        self._nav = QListWidget()
+        self._nav.setObjectName("dlgAjustesNav")
+        self._nav.setFixedWidth(150)
+        self._nav.setSpacing(0)
 
-        # Descripción
+        for icono, nombre in _CATEGORIAS:
+            item = QListWidgetItem(f"  {icono}  {nombre}")
+            item.setSizeHint(item.sizeHint())
+            self._nav.addItem(item)
+
+        row.addWidget(self._nav)
+
+        # Separador vertical
+        vsep = QFrame()
+        vsep.setFrameShape(QFrame.Shape.VLine)
+        vsep.setObjectName("dlgVSep")
+        row.addWidget(vsep)
+
+        # Stack de páginas de contenido
+        self._stack = QStackedWidget()
+        self._stack.setObjectName("dlgAjustesStack")
+
+        self._stack.addWidget(self._build_page_general())
+        self._stack.addWidget(self._build_page_calculo())
+        self._stack.addWidget(self._build_page_red())
+        self._stack.addWidget(self._build_page_apariencia())
+
+        row.addWidget(self._stack, 1)
+
+        self._nav.currentRowChanged.connect(self._stack.setCurrentIndex)
+        self._nav.setCurrentRow(0)
+
+        return body
+
+    # ── Páginas de contenido ─────────────────────────────────────
+
+    def _build_page_general(self) -> QWidget:
+        return self._build_placeholder("General",
+            "Información general del proyecto y preferencias básicas.\n\n"
+            "Esta sección estará disponible en una versión futura.")
+
+    def _build_page_calculo(self) -> QWidget:
+        page = QWidget()
+        vbox = QVBoxLayout(page)
+        vbox.setContentsMargins(16, 16, 16, 16)
+        vbox.setSpacing(12)
+
+        card = QFrame()
+        card.setObjectName("dlgCard")
+        cvbox = QVBoxLayout(card)
+        cvbox.setSpacing(10)
+        cvbox.setContentsMargins(12, 12, 12, 12)
+
+        title = QLabel("Cálculo")
+        title.setObjectName("dlgCardTitle")
+        cvbox.addWidget(title)
+
         desc = QLabel(
             "Precisión de decimales usada en la <b>Explosión de insumos</b>.<br>"
             "OPUS 2010 trabaja con 2 decimales por operación. "
@@ -98,26 +173,21 @@ class DialogoAjustes(QDialog):
         )
         desc.setWordWrap(True)
         desc.setTextFormat(Qt.TextFormat.RichText)
-        vbox.addWidget(desc)
+        cvbox.addWidget(desc)
 
-        # Control
         row = QHBoxLayout()
         row.setSpacing(8)
-
         lbl = QLabel("Decimales por operación:")
         row.addWidget(lbl)
 
         self._spin_decimales = QSpinBox()
-        self._spin_decimales.setRange(2, 10)
+        self._spin_decimales.setRange(1, 10)
         self._spin_decimales.setValue(2)
         self._spin_decimales.setSpecialValueText("Completa (sin redondeo)")
-        # El valor mínimo del spinbox = 2; usaremos 1 como señal de "sin redondeo"
-        # Rango real: 1 = sin redondeo (special text), 2..10 = N decimales
-        self._spin_decimales.setRange(1, 10)
         self._spin_decimales.setFixedWidth(170)
         row.addWidget(self._spin_decimales)
         row.addStretch()
-        vbox.addLayout(row)
+        cvbox.addLayout(row)
 
         nota = QLabel(
             "<i>Valor 1 = precisión completa (flotante). "
@@ -126,22 +196,77 @@ class DialogoAjustes(QDialog):
         )
         nota.setWordWrap(True)
         nota.setTextFormat(Qt.TextFormat.RichText)
-        vbox.addWidget(nota)
+        cvbox.addWidget(nota)
 
-        return grp
+        vbox.addWidget(card)
+        vbox.addStretch()
+        return page
+
+    def _build_page_red(self) -> QWidget:
+        return self._build_placeholder("Red",
+            "Configuración de red, proxies y conexión a servicios externos.\n\n"
+            "Esta sección estará disponible en una versión futura.")
+
+    def _build_page_apariencia(self) -> QWidget:
+        return self._build_placeholder("Apariencia",
+            "Personalización de temas, fuentes y disposición de la interfaz.\n\n"
+            "Esta sección estará disponible en una versión futura.")
+
+    def _build_placeholder(self, titulo: str, mensaje: str) -> QWidget:
+        page = QWidget()
+        vbox = QVBoxLayout(page)
+        vbox.setContentsMargins(16, 16, 16, 16)
+        vbox.setSpacing(12)
+
+        card = QFrame()
+        card.setObjectName("dlgCard")
+        cvbox = QVBoxLayout(card)
+        cvbox.setSpacing(8)
+        cvbox.setContentsMargins(12, 12, 12, 12)
+
+        title = QLabel(titulo)
+        title.setObjectName("dlgCardTitle")
+        cvbox.addWidget(title)
+
+        msg = QLabel(mensaje)
+        msg.setWordWrap(True)
+        msg.setStyleSheet("color: palette(mid); font-style: italic; background: transparent; border: none;")
+        cvbox.addWidget(msg)
+
+        vbox.addWidget(card)
+        vbox.addStretch()
+        return page
+
+    # ── Footer ──────────────────────────────────────────────────
+
+    def _build_footer(self) -> QFrame:
+        footer = QFrame()
+        footer.setObjectName("dlgAjustesFooter")
+        row = QHBoxLayout(footer)
+        row.setContentsMargins(16, 10, 16, 10)
+
+        row.addStretch()
+
+        btn_cancel = QPushButton("Cancelar")
+        btn_cancel.setObjectName("dlgCancel")
+        btn_cancel.clicked.connect(self.reject)
+        row.addWidget(btn_cancel)
+
+        btn_save = QPushButton("Guardar")
+        btn_save.setObjectName("btnPrimario")
+        btn_save.clicked.connect(self._guardar)
+        row.addWidget(btn_save)
+
+        return footer
 
     # ── Carga / guardado ─────────────────────────────────────────
 
     def _cargar_valores(self):
-        """Lee valores guardados de config.json y los aplica a los controles."""
         val = get_decimales_explosion()
-        # None → 1 (special text "Completa")
         self._spin_decimales.setValue(1 if val is None else val)
 
     def _guardar(self):
-        """Lee controles, persiste en config.json y cierra con accept()."""
         val = self._spin_decimales.value()
-        # 1 = precisión completa → guardar None
         if val == 1:
             Config.set(KEY_DECIMALES_EXPLOSION, None)
         else:

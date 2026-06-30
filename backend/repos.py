@@ -25,6 +25,9 @@ Uso:
 # BASE
 # =============================================================================
 
+from backend.core import generar_hash
+
+
 class RepoBase:
     def __init__(self, conn):
         """Inicializa el repositorio con una conexión SQLite."""
@@ -369,7 +372,7 @@ class InsumoRepo(RepoBase):
             LEFT JOIN familias f ON f.id = i.familia_id
             LEFT JOIN subfamilias sf ON sf.id = i.subfamilia_id
             WHERE i.proyecto_id = ? AND i.activo = 1
-            ORDER BY t.orden, i.clave
+            ORDER BY t.orden, i.id
         """, [proyecto_id])
 
     def por_tipo(self, proyecto_id, tipo_clave):
@@ -382,7 +385,7 @@ class InsumoRepo(RepoBase):
             LEFT JOIN familias f ON f.id = i.familia_id
             LEFT JOIN subfamilias sf ON sf.id = i.subfamilia_id
             WHERE i.proyecto_id = ? AND t.clave = ? AND i.activo = 1
-            ORDER BY i.clave
+            ORDER BY i.id
         """, [proyecto_id, tipo_clave])
 
     def buscar(self, insumo_id):
@@ -397,18 +400,6 @@ class InsumoRepo(RepoBase):
             WHERE i.id = ? AND i.activo = 1
         """, [insumo_id])
 
-    def buscar_por_clave(self, clave, proyecto_id):
-        """Busca un insumo por su clave dentro de un proyecto."""
-        return self._uno("""
-            SELECT i.*, t.clave AS tipo_clave, t.nombre AS tipo_nombre,
-                   f.nombre AS familia_nombre, sf.nombre AS subfamilia_nombre
-            FROM insumos i
-            JOIN tipos_insumo t ON t.id = i.tipo_id
-            LEFT JOIN familias f ON f.id = i.familia_id
-            LEFT JOIN subfamilias sf ON sf.id = i.subfamilia_id
-            WHERE i.clave = ? AND i.proyecto_id = ? AND i.activo = 1
-        """, [clave, proyecto_id])
-
     def buscar_texto(self, proyecto_id, texto):
         """Busca insumos por texto en clave, descripción o descripción corta."""
         q = f"%{texto}%"
@@ -420,8 +411,8 @@ class InsumoRepo(RepoBase):
             LEFT JOIN familias f ON f.id = i.familia_id
             LEFT JOIN subfamilias sf ON sf.id = i.subfamilia_id
             WHERE i.proyecto_id = ? AND i.activo = 1
-              AND (i.clave LIKE ? OR i.descripcion LIKE ? OR i.descripcion_corta LIKE ?)
-            ORDER BY t.orden, i.clave
+              AND (i.clave_opus LIKE ? OR i.descripcion LIKE ? OR i.descripcion_corta LIKE ?)
+            ORDER BY t.orden, i.id
         """, [proyecto_id, q, q, q])
 
     def resumen_por_tipo(self, proyecto_id):
@@ -454,7 +445,7 @@ class InsumoRepo(RepoBase):
                 am.cantidad * am.precio                           AS importe,
                 CASE WHEN am.matriz_id > 0
                      THEN 'concepto' ELSE 'compuesto' END         AS tipo_origen,
-                COALESCE(ep.clave,  ic.clave)                     AS matriz_clave,
+                COALESCE(ep.clave,  CAST(ic.id AS TEXT))          AS matriz_clave,
                 COALESCE(ep.descripcion,
                          ic.descripcion)                          AS matriz_descripcion,
                 ep.wbs                                            AS matriz_wbs
@@ -476,6 +467,69 @@ class InsumoRepo(RepoBase):
             WHERE id = ?
         """, [precio, precio, usuario_id, insumo_id])
 
+    def buscar_por_hash(self, hash_val, proyecto_id):
+        """Busca un insumo por su hash dentro de un proyecto.
+        Útil para detectar duplicados antes de insertar o renombrar.
+        """
+        return self._uno("""
+            SELECT i.*, t.clave AS tipo_clave, t.nombre AS tipo_nombre
+            FROM insumos i
+            JOIN tipos_insumo t ON t.id = i.tipo_id
+            WHERE i.hash = ? AND i.proyecto_id = ? AND i.activo = 1
+        """, [hash_val, proyecto_id])
+
+    def actualizar_descripcion(self, insumo_id, descripcion, proyecto_id, usuario_id=1):
+        """Actualiza la descripción de un insumo y regenera su hash.
+
+        Verifica antes de escribir que el hash nuevo no colisione con otro
+        insumo del mismo proyecto. Si hay colisión, lanza ValueError con el
+        id y descripción del insumo existente para que la UI informe al usuario.
+        """
+        nuevo_hash = generar_hash(descripcion)
+        existente  = self.buscar_por_hash(nuevo_hash, proyecto_id)
+        if existente and existente["id"] != insumo_id:
+            raise ValueError(
+                f"Ya existe un insumo con esa descripción: "
+                f"[{existente['id']}] {existente['descripcion']}"
+            )
+        self._ejecutar("""
+            UPDATE insumos SET
+                descripcion     = ?,
+                hash            = ?,
+                modificado_por  = ?,
+                modificado_en   = datetime('now')
+            WHERE id = ?
+        """, [descripcion, nuevo_hash, usuario_id, insumo_id])
+
+    def insertar(self, proyecto_id, tipo_id, descripcion,
+                 descripcion_corta=None, unidad=None, costo=0.0,
+                 es_compuesto=0, clave_opus=None, usuario_id=1):
+        """Inserta un insumo creado desde la app (no importado).
+
+        Genera el hash automáticamente desde la descripción — es la llave
+        funcional para deduplicación. clave_opus es opcional y puramente
+        referencial (queda NULL salvo que el insumo provenga de OPUS).
+        Verifica duplicados por hash antes de insertar. Si hay colisión
+        lanza ValueError igual que actualizar_descripcion.
+
+        Devuelve el id (rowid) del insumo insertado.
+        """
+        nuevo_hash = generar_hash(descripcion) if descripcion else None
+        if nuevo_hash:
+            existente = self.buscar_por_hash(nuevo_hash, proyecto_id)
+            if existente:
+                raise ValueError(
+                    f"Ya existe un insumo con esa descripción: "
+                    f"[{existente['id']}] {existente['descripcion']}"
+                )
+        return self._ejecutar("""
+            INSERT INTO insumos
+                (proyecto_id, tipo_id, descripcion, descripcion_corta,
+                 unidad, costo_mn, costo_final, es_compuesto, hash, clave_opus, creado_por)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, [proyecto_id, tipo_id, descripcion, descripcion_corta,
+               unidad, costo, costo, es_compuesto, nuevo_hash, clave_opus, usuario_id])
+
     def tipos_disponibles(self):
         """Devuelve todos los tipos de insumo ordenados."""
         return self._lista("SELECT * FROM tipos_insumo ORDER BY orden")
@@ -494,7 +548,6 @@ class ApuMatricesRepo(RepoBase):
         """Devuelve los componentes del APU de una matriz (concepto o compuesto)."""
         return self._lista("""
             SELECT ac.*,
-                   i.clave             AS insumo_clave,
                    i.descripcion       AS insumo_descripcion,
                    i.descripcion_corta AS insumo_desc_corta,
                    i.unidad            AS insumo_unidad,
@@ -775,7 +828,7 @@ class ExplosionRepo(RepoBase):
 
         # ── 2. All insumos del proyecto ──
         insumos = self._lista(f"""
-            SELECT i.id, i.clave,
+            SELECT i.id, i.clave_opus,
                    COALESCE(i.descripcion, i.descripcion_corta, '') AS descripcion,
                    i.unidad, i.costo_final, i.es_compuesto, i.tipo_id,
                    ti.nombre AS tipo_nombre, ti.orden AS tipo_orden
@@ -784,7 +837,10 @@ class ExplosionRepo(RepoBase):
             WHERE i.proyecto_id = ? AND i.activo = 1
         """, [proyecto_id])
         insumos_map = {r["id"]: r for r in insumos}
-        clave_a_insumo: dict[str, int] = {r["clave"]: r["id"] for r in insumos if r["clave"]}
+        # Cruce concepto(árbol).clave ↔ insumo.clave_opus: válido solo para datos
+        # importados de OPUS, donde ambos comparten el mismo código original (NOMBRE).
+        # Insumos creados desde la app (clave_opus NULL) no participan de este cruce.
+        clave_a_insumo: dict[str, int] = {r["clave_opus"]: r["id"] for r in insumos if r["clave_opus"]}
 
         # ── 2b. All conceptos -> insumo_id mapping (for intermedios) ──
         conceptos = self._lista(f"""
@@ -896,7 +952,7 @@ class ExplosionRepo(RepoBase):
                         "tipo_id":        info["tipo_id"],
                         "tipo_nombre":    info["tipo_nombre"],
                         "tipo_orden":     info["tipo_orden"],
-                        "clave":          info["clave"],
+                        "clave":          info["clave_opus"],
                         "descripcion":    info["descripcion"] or "",
                         "unidad":         info["unidad"] or "",
                         "pu":             None,
@@ -910,7 +966,7 @@ class ExplosionRepo(RepoBase):
                         "tipo_id":        info["tipo_id"],
                         "tipo_nombre":    info["tipo_nombre"],
                         "tipo_orden":     info["tipo_orden"],
-                        "clave":          info["clave"],
+                        "clave":          info["clave_opus"],
                         "descripcion":    info["descripcion"] or "",
                         "unidad":         info["unidad"] or "",
                         "pu":             pu,
@@ -949,7 +1005,7 @@ class ExplosionRepo(RepoBase):
                     i.tipo_id,
                     ti.nombre           AS tipo_nombre,
                     ti.orden            AS tipo_orden,
-                    i.clave,
+                    i.clave_opus        AS clave,
                     COALESCE(i.descripcion, i.descripcion_corta, '') AS descripcion,
                     i.unidad,
                     i.costo_final       AS pu,
@@ -978,7 +1034,7 @@ class ExplosionRepo(RepoBase):
                     i.tipo_id,
                     ti.nombre           AS tipo_nombre,
                     ti.orden            AS tipo_orden,
-                    i.clave,
+                    i.clave_opus        AS clave,
                     COALESCE(i.descripcion, i.descripcion_corta, '') AS descripcion,
                     i.unidad,
                     SUM(am.cantidad * am.precio * ep.cantidad) AS total,

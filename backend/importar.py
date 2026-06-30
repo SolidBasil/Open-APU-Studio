@@ -42,6 +42,7 @@ import sys
 import uuid
 from pathlib import Path
 
+from backend.core import generar_hash
 from backend.db import Database
 
 try:
@@ -353,36 +354,61 @@ def importar(
 
         comentario = _s(r.get("COMENTARIO") or r.get("COMEN") or r.get("MEMO"))
 
-        cur.execute("""
-            INSERT OR IGNORE INTO insumos
-                (proyecto_id, clave, tipo_id, descripcion, descripcion_corta,
-                 unidad, costo_mn, costo_final, es_basico, es_compuesto,
-                 fecha_precio, clave_usuario, peso_kg,
-                 familia_id, subfamilia_id,
-                 salario_real, creado_por)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
-        """, (
-            proyecto_id,
-            clave,
-            _tipo_id(prefijo),
-            _s(r.get("DESCRIPCIO") or r.get("DESCRIPCION")),
-            _s(r.get("DESCCORTA")),
-            _s(r.get("UNIDAD")),
-            _f(r.get("PRECIO")),
-            _f(r.get("PRECIO")),
-            1 if _s(r.get("BASICO")).upper() == "S" else 0,
-            es_compuesto,
-            _s(r.get("FECHA")),
-            _s(r.get("CLAVE_USU") or r.get("CLVUSUARIO") or r.get("CLV_USU")),
-            _f(r.get("PESO")) or None,
-            familia_id,
-            subfamilia_id,
-            salario_real,
-        ))
+        _desc = _s(r.get("DESCRIPCIO") or r.get("DESCRIPCION"))
+        _hash = generar_hash(_desc) if _desc else None
+
+        # Resolver duplicados ANTES de insertar.
+        # Caso normal (hash no nulo): UNIQUE(proyecto_id, hash) ya protegería,
+        # pero se verifica aquí también para evitar dos SELECT distintos.
+        # Caso especial (hash nulo): SQLite nunca activa UNIQUE entre NULLs,
+        # así que sin esta verificación manual se duplicaría en cada reimportación.
+        # Se usa clave_opus como respaldo de deduplicación en ese caso, ya que
+        # dentro de un mismo archivo OPUS es única.
+        if _hash is not None:
+            cur.execute("""
+                SELECT id FROM insumos WHERE proyecto_id = ? AND hash = ?
+            """, (proyecto_id, _hash))
+        else:
+            cur.execute("""
+                SELECT id FROM insumos
+                WHERE proyecto_id = ? AND hash IS NULL AND clave_opus = ?
+            """, (proyecto_id, clave))
+        ya_existe = cur.fetchone()
+
+        if not ya_existe:
+            cur.execute("""
+                INSERT INTO insumos
+                    (proyecto_id, clave_opus, tipo_id, descripcion, descripcion_corta,
+                     unidad, costo_mn, costo_final, es_basico, es_compuesto,
+                     fecha_precio, clave_usuario, peso_kg,
+                     familia_id, subfamilia_id,
+                     salario_real, hash, creado_por)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+            """, (
+                proyecto_id,
+                clave,
+                _tipo_id(prefijo),
+                _desc,
+                _s(r.get("DESCCORTA")),
+                _s(r.get("UNIDAD")),
+                _f(r.get("PRECIO")),
+                _f(r.get("PRECIO")),
+                1 if _s(r.get("BASICO")).upper() == "S" else 0,
+                es_compuesto,
+                _s(r.get("FECHA")),
+                _s(r.get("CLAVE_USU") or r.get("CLVUSUARIO") or r.get("CLV_USU")),
+                _f(r.get("PESO")) or None,
+                familia_id,
+                subfamilia_id,
+                salario_real,
+                _hash,
+            ))
 
         cur.execute("""
-            SELECT id FROM insumos WHERE proyecto_id = ? AND clave = ?
-        """, (proyecto_id, clave))
+            SELECT id FROM insumos
+            WHERE proyecto_id = ?
+              AND (hash = ? OR (hash IS NULL AND ? IS NULL AND clave_opus = ?))
+        """, (proyecto_id, _hash, _hash, clave))
         row = cur.fetchone()
         if row:
             insumo_id = row["id"]
@@ -437,9 +463,12 @@ def importar(
         clave_a_conceptos.setdefault(r["clave"], []).append(r["id"])
 
     # Lookup de insumos compuestos por clave (es_compuesto=1)
-    # Reemplaza el lookup de apu_auxiliares que fue eliminado
+    # Reemplaza el lookup de apu_auxiliares que fue eliminado.
+    # clave_opus es la clave original de OPUS (mismo NOMBRE que usan los
+    # registros de componentes COMPONENTE en regs_f) — sigue siendo necesaria
+    # aquí solo como llave de cruce *durante* la importación, en memoria.
     cur.execute("""
-        SELECT clave, id FROM insumos
+        SELECT clave_opus AS clave, id FROM insumos
         WHERE proyecto_id = ? AND es_compuesto = 1
     """, (proyecto_id,))
     clave_a_insumos_compuestos: dict[str, list[int]] = {}

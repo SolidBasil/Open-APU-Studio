@@ -193,20 +193,21 @@ class PanelesMixin:
         detail.header().setMaximumSectionSize(400)
 
         if self._api:
-            resultado = self._api.apu(clave)
+            resultado = self._api.apu(clave=clave) if matriz_id > 0 else self._api.apu(insumo_id=-matriz_id)
             if resultado:
                 for r in resultado["detalle"]:
                     tid = r["tipo_id"]
                     tn  = r["tipo_nombre"]
-                    detail.add_row([
+                    row_item = detail.add_row([
                         f"{r['tipo_emoji']} {tn}".strip() if r["tipo_emoji"] else tn,
-                        r["insumo_clave"],
+                        "",  # columna Clave: ya no se usa para navegación, el insumo_id va en UserRole
                         r["descripcion"],
                         r["insumo_unidad"],
                         f"{r['cantidad']:,.3f}",
                         f"${r['precio']:,.2f}",
                         f"${r['importe']:,.2f}",
                     ], editable=False)
+                    row_item.setData(0, Qt.ItemDataRole.UserRole, r.get("insumo_id"))
 
         # menú contextual → rastrear uso del insumo
         detail.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -219,11 +220,11 @@ class PanelesMixin:
 
     def _on_apu_detail_dblclick(self, item, column):
         """Doble clic en cualquier celda del APU → abre sub-APU si el insumo es compuesto.
-        Solo abre si la clave (columna 1) corresponde a un insumo con APU propio.
+        El insumo_id se guarda en UserRole de la columna 0 al poblar la fila.
         """
-        clave = item.text(1).strip()
-        if clave and self._api and self._api.insumo_es_compuesto(clave):
-            self._abrir_apu(clave)
+        insumo_id = item.data(0, Qt.ItemDataRole.UserRole)
+        if insumo_id and self._api and self._api.insumo_es_compuesto(insumo_id):
+            self._abrir_apu_insumo(insumo_id)
 
     def _on_item_dblclick(self, item, column):
         """Doble clic en presupuesto/insumos → abre APU del concepto."""
@@ -240,16 +241,12 @@ class PanelesMixin:
         return "PU" in h or "PRECIO" in h
 
     def _abrir_apu(self, clave: str):
-        """Busca un concepto/insumo por clave y abre su APU en una nueva pestaña.
-        matriz_id es positivo si el item es un nodo del árbol, negativo si es
-        un insumo compuesto (para evitar colisión de IDs entre ambas tablas).
+        """Busca un concepto del árbol por clave y abre su APU en una nueva pestaña.
+        Para insumos compuestos usar _abrir_apu_insumo (navegación por id).
         """
-        if not clave or not self._db:
+        if not clave or not self._db or not self._api:
             return
-
-        if not self._api:
-            return
-        resultado = self._api.apu(clave)
+        resultado = self._api.apu(clave=clave)
         if not resultado:
             self._sb.showMessage(f"'{clave}' no tiene matriz relacionada", 4000)
             return
@@ -264,31 +261,59 @@ class PanelesMixin:
         idx = self._tabs.addTab(self._build_apu_tab(clave, matriz_id, descripcion), title)
         self._tabs.setCurrentIndex(idx)
 
-    # ── Rastrear insumo ──────────────────────────────────────────────────
-    # Muestra en una pestaña las matrices (conceptos/compuestos) que usan
-    # un insumo. Doble clic en cualquier columna abre el APU de la matriz.
+    def _abrir_apu_insumo(self, insumo_id: int):
+        """Busca un insumo compuesto por id y abre su APU en una nueva pestaña.
+        Equivalente a _abrir_apu pero para insumos del catálogo, no conceptos del árbol.
+        """
+        if not insumo_id or not self._db or not self._api:
+            return
+        resultado = self._api.apu(insumo_id=insumo_id)
+        if not resultado:
+            self._sb.showMessage(f"Insumo #{insumo_id} no tiene matriz relacionada", 4000)
+            return
+        matriz_id   = resultado["matriz_id"]
+        descripcion = resultado["descripcion"]
 
-    def _on_rastrear_insumo(self, clave: str):
-        """Busca insumo por clave y abre pestaña con todas las matrices donde se usa."""
-        if not clave or not self._api:
-            return
-        insumo = self._api.insumo_por_clave(clave)
-        if not insumo:
-            self._sb.showMessage(f"Insumo '{clave}' no encontrado", 4000)
-            return
-        title = f"\U0001f50d Uso: {clave}"
+        title = f"APU: {descripcion[:30]}"
         for i in range(self._tabs.count()):
             if self._tabs.tabText(i) == title:
                 self._tabs.setCurrentIndex(i)
                 return
-        filas = self._api.rastrear_insumo(insumo["id"])
+        # Se usa la descripción como encabezado visual ya que no hay clave que mostrar
+        idx = self._tabs.addTab(self._build_apu_tab(descripcion, matriz_id, descripcion), title)
+        self._tabs.setCurrentIndex(idx)
+
+    # ── Rastrear insumo ──────────────────────────────────────────────────
+    # Muestra en una pestaña las matrices (conceptos/compuestos) que usan
+    # un insumo. Doble clic en cualquier columna abre el APU de la matriz.
+
+    def _on_rastrear_insumo(self, insumo_id: int):
+        """Busca insumo por id y abre pestaña con todas las matrices donde se usa."""
+        if not insumo_id or not self._api:
+            return
+        insumo = self._api.insumo_por_id(insumo_id)
+        if not insumo:
+            self._sb.showMessage(f"Insumo #{insumo_id} no encontrado", 4000)
+            return
+        desc  = insumo.get("descripcion") or insumo.get("descripcion_corta") or f"#{insumo_id}"
+        title = f"\U0001f50d Uso: {desc[:30]}"
+        for i in range(self._tabs.count()):
+            if self._tabs.tabText(i) == title:
+                self._tabs.setCurrentIndex(i)
+                return
+        filas = self._api.rastrear_insumo(insumo_id)
         idx = self._tabs.addTab(
-            self._build_rastrear_tab(clave, filas), title
+            self._build_rastrear_tab(desc, filas), title
         )
         self._tabs.setCurrentIndex(idx)
 
-    def _build_rastrear_tab(self, clave: str, filas: list):
-        """Construye tabla plana con las matrices que consumen un insumo, menú contextual y doble clic."""
+    def _build_rastrear_tab(self, descripcion: str, filas: list):
+        """Construye tabla plana con las matrices que consumen un insumo, menú contextual y doble clic.
+
+        La columna "Clave" se conserva solo para conceptos del árbol (matriz_clave
+        viene de estructura_presupuesto.clave). Para insumos compuestos queda vacía
+        y la navegación usa el matriz_id guardado en UserRole.
+        """
         from frontend.widgets.base import TreeTableWidget
         from PySide6.QtWidgets import QHeaderView, QMenu
 
@@ -303,45 +328,61 @@ class PanelesMixin:
         tabla.header().setMaximumSectionSize(400)
 
         for r in filas:
-            tipo = "📄 Concepto" if r["tipo_origen"] == "concepto" else "\u2699 Compuesto"
-            tabla.add_row([
+            es_concepto = r["tipo_origen"] == "concepto"
+            tipo = "📄 Concepto" if es_concepto else "\u2699 Compuesto"
+            row_item = tabla.add_row([
                 tipo,
-                r.get("matriz_clave", ""),
+                r.get("matriz_clave", "") if es_concepto else "",
                 r.get("matriz_descripcion", ""),
                 r.get("matriz_wbs", ""),
                 f"{r.get('cantidad', 0):,.3f}",
                 f"${r.get('precio', 0):,.2f}",
                 f"${r.get('importe', 0):,.2f}",
             ], editable=False)
+            # matriz_id: positivo (concepto, navegar por clave) o negativo (compuesto, navegar por id)
+            row_item.setData(0, Qt.ItemDataRole.UserRole, r.get("matriz_id"))
 
         if not filas:
             tabla.add_row([
-                "", f"\u2716 '{clave}' no se usa en ninguna matriz", "", "", "", "", ""
+                "", "", f"\u2716 '{descripcion}' no se usa en ninguna matriz", "", "", "", ""
             ], editable=False)
             return tabla
 
-        # menú contextual → rastrear uso de la matriz
         tabla.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         tabla.customContextMenuRequested.connect(
             lambda pos: self._on_rastrear_context_menu(tabla, pos))
 
-        # doble clic → abre APU de la matriz
         tabla.itemDoubleClicked.connect(
-            lambda item, col: self._abrir_apu(item.text(1).strip())
+            lambda item, col: self._abrir_matriz_desde_rastreo(item)
         )
         return tabla
 
+    def _abrir_matriz_desde_rastreo(self, item):
+        """Abre el APU de una fila de rastreo, distinguiendo concepto (clave) de compuesto (id)."""
+        matriz_id = item.data(0, Qt.ItemDataRole.UserRole)
+        if matriz_id is None:
+            return
+        if matriz_id > 0:
+            clave = item.text(1).strip()
+            if clave:
+                self._abrir_apu(clave)
+        else:
+            self._abrir_apu_insumo(-matriz_id)
+
     def _on_rastrear_context_menu(self, tabla, pos):
-        """Menú contextual sobre tabla de rastreo: ofrece 'Rastrear uso' para el insumo de la fila."""
+        """Menú contextual sobre tabla de rastreo: ofrece 'Rastrear uso' del insumo de la fila.
+        Solo aplica a filas tipo 'Compuesto', ya que ahí matriz_id == -insumo_id.
+        """
         item = tabla.itemAt(pos)
         if not item:
             return
-        clave = item.text(1).strip()
-        if not clave:
-            return
+        matriz_id = item.data(0, Qt.ItemDataRole.UserRole)
+        if matriz_id is None or matriz_id > 0:
+            return  # los conceptos del árbol no tienen "rastrear uso" de insumo aquí
+        insumo_id = -matriz_id
         menu = QMenu(self)
         act = menu.addAction("\U0001f50d Rastrear uso")
-        act.triggered.connect(lambda: self._on_rastrear_insumo(clave))
+        act.triggered.connect(lambda: self._on_rastrear_insumo(insumo_id))
         menu.exec(tabla.mapToGlobal(pos))
 
     # ── Insumos ───────────────────────────────────────────────────────────
@@ -366,24 +407,64 @@ class PanelesMixin:
             "🏗️ Trabajos":    "trabajo",
         }
         tabla = TablaInsumos()
+        ids = set()
         if self._api:
-            tipo   = tipo_map.get(title)
-            claves = self._api.claves_con_apu()
+            tipo = tipo_map.get(title)
+            ids  = self._api.insumo_ids_con_apu()
             if title == "🧮 Matrices":
                 insumos = self._api.insumos_con_matrices(tipo)
             else:
                 insumos = self._api.insumos(tipo)
-            tabla.poblar(insumos, claves)
+            tabla.poblar(insumos, ids)
         tabla.rastrear_insumo.connect(self._on_rastrear_insumo)
+        tabla.editar_descripcion.connect(self._on_editar_descripcion_insumo)
+        tabla.editar_precio.connect(self._on_editar_precio_insumo)
 
         # Doble clic en cualquier columna abre el APU si el insumo es compuesto
         def _on_insumo_dblclick(item, column):
-            clave = item.text(0).strip()
-            if clave and clave in claves:
-                self._abrir_apu(clave)
+            insumo_id = item.data(0, Qt.ItemDataRole.UserRole)
+            if insumo_id and insumo_id in ids:
+                self._abrir_apu_insumo(insumo_id)
 
         tabla.itemDoubleClicked.connect(_on_insumo_dblclick)
         return tabla
+
+    def _on_editar_descripcion_insumo(self, insumo_id: int, descripcion_actual: str):
+        """Abre diálogo para editar descripción; valida duplicado y actualiza."""
+        from PySide6.QtWidgets import QMessageBox
+        from frontend.widgets.dialogs import EditarDescripcionDialog
+
+        dlg = EditarDescripcionDialog(descripcion_actual, parent=self)
+        if dlg.exec() != dlg.DialogCode.Accepted:
+            return
+        try:
+            self._api.insumo_actualizar_descripcion(insumo_id, dlg.descripcion)
+            self._refrescar_tab_activa()
+        except ValueError as e:
+            QMessageBox.warning(self, "Descripción duplicada", str(e))
+
+    def _on_editar_precio_insumo(self, insumo_id: int, precio_actual: float):
+        """Abre diálogo para editar precio y actualiza."""
+        from frontend.widgets.dialogs import EditarPrecioDialog
+
+        dlg = EditarPrecioDialog(precio_actual, parent=self)
+        if dlg.exec() != dlg.DialogCode.Accepted:
+            return
+        self._api.insumo_actualizar_precio(insumo_id, dlg.precio)
+        self._refrescar_tab_activa()
+
+    def _refrescar_tab_activa(self):
+        """Recarga la pestaña activa si es una tabla de insumos."""
+        from frontend.widgets.insumos import TablaInsumos
+        w = self._tabs.currentWidget()
+        tabla = w if isinstance(w, TablaInsumos) else w.findChild(TablaInsumos) if w else None
+        if tabla is None:
+            return
+        # Repoblar con los datos frescos manteniendo el tipo activo
+        if self._api:
+            ids = self._api.insumo_ids_con_apu()
+            insumos = self._api.insumos()
+            tabla.poblar(insumos, ids)
 
     # ── Conceptos ─────────────────────────────────────────────────────────
     # Vista plana de todos los nodos de tipo 'concepto' en el presupuesto.
@@ -617,7 +698,7 @@ class PanelesMixin:
         importe = comp.get("importe", 0) or (pu * comp.get("cantidad", 0))
         item = QTreeWidgetItem(parent, [
             str(nivel) if nivel else "",
-            comp["insumo_clave"],
+            "",  # columna Clave: ya no aplica, navegación usa insumo_id vía ID_ROLE
             comp.get("insumo_descripcion", comp.get("insumo_desc_corta", "")),
             comp.get("insumo_unidad", ""),
             f"{comp['cantidad']:.4f}" if comp.get("cantidad") else "",
