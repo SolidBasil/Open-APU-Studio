@@ -29,40 +29,6 @@ No se busca remplazar opus si no ser una alternativa para constructoras pequeña
 **SQL solo vive en `backend/repos.py`.** Si aparece SQL en UI o en
 `backend/core.py`, es error de diseño.
 
-### Capas
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  main.py  ← Entry point (QApplication, tema, ventana)       │
-├─────────────────────────────────────────────────────────────┤
-│  frontend/                                                   │
-│    ventana.py     ← VentanaPrincipal (ensamblaje + estado)   │
-│      ├── toolbar.py   (ToolbarMixin)   — pestañas, toolbar,  │
-│      │                                  búsqueda, temas      │
-│      ├── paneles.py   (PanelesMixin)   — builders de         │
-│      │                                  pestañas de contenido │
-│      └── handlers.py  (HandlersMixin)  — eventos, navegación │
-│    api.py            ← Fachada frontend→backend               │
-│    widgets/           ← Componentes PySide6 reutilizables     │
-│      base.py          — TreeTableWidget (tabla genérica)      │
-│      arbol.py         — Tabla jerárquica del presupuesto      │
-│      insumos.py       — Catálogo plano de insumos             │
-│      explosion.py     — Diálogo + tabla + pestaña explosión   │
-│      dialogs.py       — Diálogos modales (ProjectDialog)      │
-│      ajustes.py       — Configuración de decimales            │
-├─────────────────────────────────────────────────────────────┤
-│  backend/                                                    │
-│    api.py    (frontend/api.py) — fachada para el frontend     │
-│    core.py   — Lógica de negocio pura (sin SQL, sin UI)      │
-│    repos.py  — Repositorios (TODO el SQL del proyecto)       │
-│    db.py     — Conexión SQLite, Config (JSON), Rutas         │
-│    schema.sql — Esquema completo de la base de datos         │
-│    importar.py — Importador OPUS 2010 (DBF → SQLite)        │
-├─────────────────────────────────────────────────────────────┤
-│  SQLite (.db / .presup)                                      │
-└─────────────────────────────────────────────────────────────┘
-```
-
 ### Patrón de herencia (mixins)
 
 ```python
@@ -146,7 +112,6 @@ Open APU Studio/
 **Database** (singleton):
 - Una sola conexión SQLite activa a la vez.
 - Aplica `schema.sql` automáticamente en DB nueva.
-- Migra v2→v3 automáticamente en DB existentes (agrega `matriz_id`).
 - Pragmas: `foreign_keys = ON`, `journal_mode = WAL`.
 
 ```python

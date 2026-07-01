@@ -14,7 +14,7 @@ if sys.platform == "win32":
     import ctypes
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("openapu.studio.1")
 
-from backend.db import Config, Rutas
+from backend.database.db import Config, Rutas
 from frontend.temas import Temas
 from frontend.ventana import VentanaPrincipal
 
@@ -27,9 +27,9 @@ def main():
     app.setWindowIcon(QIcon("assets/favicon.ico"))
     app.setFont(QFont("Segoe UI", 10))
 
-    # Aplicar tema guardado (default: dark)
-    tema = Config.get("tema", "dark")
-    Temas.aplicar(app, tema)
+    # Aplicar tema guardado (default: oscuro + azul)
+    modo, acento = Temas.cargar_preferencia()
+    Temas.aplicar(app, modo, acento)
 
     win = VentanaPrincipal()
     win.show()

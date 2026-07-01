@@ -1,0 +1,137 @@
+/* Acento Rosa — overrides completos para modo-oscuro y modo-claro */
+
+/* ── Toolbar ── */
+#tbCustom {
+    background-color: #2E1F28;
+    border-bottom: 1px solid #2E1F28;
+}
+
+/* ── Tab bar ── */
+#tabBar {
+    background-color: #2E1F28;
+    border-bottom: 1px solid #2E1F28;
+}
+#tabBar QPushButton {
+    color: #C8B0BE;
+}
+#tabBar QPushButton:hover {
+    color: #F0E2EA;
+    background-color: #3A2530;
+}
+#tabBar QPushButton:checked {
+    color: #D48FB7;
+}
+
+/* ── Menus ── */
+QMenuBar {
+    background-color: #2E1F28;
+}
+QMenuBar::item:selected {
+    background-color: #3A2530;
+}
+QMenu::item:selected {
+    background-color: #3A2530;
+}
+
+/* ── Table headers ── */
+QHeaderView::section {
+    background-color: #2E1F28;
+    border-bottom: 1px solid #3A2530;
+    border-right: 1px solid #3A2530;
+}
+
+/* ── Selection ── */
+QTreeView, QTableView {
+    selection-background-color: #8F4E6B;
+}
+QTreeView::item:selected {
+    background: #3A2530;
+}
+QTreeView::item:selected:focus {
+    background: #B07A98;
+}
+QTreeView::branch:selected {
+    background: #3A2530;
+}
+#dlgList::item:selected {
+    background-color: #2E1F28;
+}
+#dlgAjustesNav::item:selected {
+    background-color: #2E1F28;
+}
+
+/* ── Hover rows ── */
+QTreeView::item:hover {
+    background: #281D22;
+}
+QTreeView::branch:hover {
+    background: #281D22;
+}
+
+/* ── Buttons ── */
+QPushButton:hover {
+    border-color: #B06A90;
+}
+QPushButton#btnPrimario {
+    background-color: #8F4E6B;
+}
+QPushButton#btnPrimario:hover {
+    background-color: #B06A90;
+}
+#dlgCancel {
+    background-color: #3A2530;
+}
+#dlgCancel:hover {
+    background-color: #8F4E6B;
+}
+
+/* ── Inputs focus ── */
+#searchInput:focus {
+    border: 1px solid #B06A90;
+}
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
+    border: 1px solid #B06A90;
+}
+
+/* ── Tabs ── */
+QTabBar::tab:selected {
+    color: #D48FB7;
+    border-bottom: 2px solid #B06A90;
+}
+
+/* ── Checkboxes & radios ── */
+QRadioButton::indicator:checked, QCheckBox::indicator:checked {
+    background-color: #8F4E6B;
+    border-color: #B06A90;
+}
+QRadioButton::indicator:hover, QCheckBox::indicator:hover {
+    border-color: #B06A90;
+}
+
+/* ── Scrollbars ── */
+QScrollBar::handle:vertical:hover,
+QScrollBar::handle:horizontal:hover {
+    background-color: #8F4E6B;
+}
+
+/* ── Search bar ── */
+#searchBar {
+    background-color: #231A20;
+    border-bottom: 1px solid #2E1F28;
+}
+
+/* ── Content pane border ── */
+QTabWidget::pane {
+    border-top: 1px solid #2E1F28;
+}
+
+/* ── Status bar ── */
+QStatusBar {
+    background-color: #231A20;
+    color: #8F7080;
+}
+
+/* ── Dialogs ── */
+#dlgSearch:focus {
+    border-color: #D48FB7;
+}

@@ -1,0 +1,5826 @@
+{
+  "1": [
+    {
+      "name": "PRE_ID",
+      "type": "N",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "PRE_IDUNI",
+      "type": "N",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "PRE_TIP",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "PRE_NIVEL",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "PRE_IDPAD",
+      "type": "N",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "PRE_VIS",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "PRE_SIGNO",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "PRE_IDAUX",
+      "type": "N",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "PRE_ESCOL",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "PRE_COM",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "PRE_EXP",
+      "type": "M",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "PRE_VOL",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "PRE_PRE",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "PRE_PMN",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "PRE_PME",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "PRE_VPE",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "PRE_IMP",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "PRE_WBS",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "PRE_CAR1",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "PRE_CAR2",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "PRE_CAR3",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "IDPROP",
+      "type": "N",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "PRE_PAQ",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "PRE_ACUPRO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "MEMOCAD",
+      "type": "M",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "REPROG",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    }
+  ],
+  "P": [
+    {
+      "name": "PREFIJO",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "NOMBRE",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "UNIDAD",
+      "type": "C",
+      "length": 8,
+      "decimal": 0
+    },
+    {
+      "name": "BASICO",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "FSR_MINIMO",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "PRECIO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR",
+      "type": "N",
+      "length": 10,
+      "decimal": 6
+    },
+    {
+      "name": "FECHA",
+      "type": "D",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "MATERIALES",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "MANO_DEO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "HERRAMIENT",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "EQUIPO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "MARCA1",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "MARCA2",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "MARCA3",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "MARCA4",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "MARCA5",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "MARCA6",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "DESCRIPCIO",
+      "type": "M",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "COMENTARIO",
+      "type": "M",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "CLAVEUSUAR",
+      "type": "C",
+      "length": 30,
+      "decimal": 0
+    },
+    {
+      "name": "ARCHIFOTO",
+      "type": "M",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "ACUMULADOR",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "SAL_BASE",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "PUNIT",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AUXILIARES",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "DESCCORTA",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TOTALMN",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "TOTALME",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CATFSR",
+      "type": "C",
+      "length": 6,
+      "decimal": 0
+    },
+    {
+      "name": "ELE_GRUPO",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "ELE_REFBAS",
+      "type": "C",
+      "length": 40,
+      "decimal": 0
+    },
+    {
+      "name": "ELE_RELBAS",
+      "type": "N",
+      "length": 10,
+      "decimal": 6
+    },
+    {
+      "name": "PUNITMN",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "PUNITME",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "SAL_GRA",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "PBASEMN",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "A",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "B",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "C",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "PBASEME",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "D",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "E",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "F",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "PESO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CTD_MOB",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "WBS",
+      "type": "C",
+      "length": 25,
+      "decimal": 0
+    },
+    {
+      "name": "WBS1",
+      "type": "C",
+      "length": 25,
+      "decimal": 0
+    },
+    {
+      "name": "CLV_BDOPUS",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "CLV_PROVEE",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "PERSE",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "PORGEN",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    }
+  ],
+  "F": [
+    {
+      "name": "PREF",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "NOMBRE",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "PREFCOMP",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "COMPONENTE",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "CLAVENUM",
+      "type": "N",
+      "length": 11,
+      "decimal": 0
+    },
+    {
+      "name": "NOELE",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "RENDTO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CANTIDAD",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "EXPRESION",
+      "type": "M",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "COSTO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "TOTALMN",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "TOTALME",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CAMPOREND",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "TIPOCH",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "IMPORTE",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "IMPORTEMN",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "IMPORTEME",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "EXPRESIONM",
+      "type": "M",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "EXPRESIONO",
+      "type": "M",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "TIPOREND",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "CAMPORENDM",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "CAMPORENDO",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "DARENDIM",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "MEMOCAD",
+      "type": "M",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "MARCAAJU",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "CVEEROG",
+      "type": "C",
+      "length": 25,
+      "decimal": 0
+    }
+  ],
+  "N": [
+    {
+      "name": "NOMBRE",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "MM",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "OO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "HH",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "EE",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AA",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "SUBCONT",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "ACARREOS",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "DESTAJOS",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "INDIRECTOS",
+      "type": "N",
+      "length": 11,
+      "decimal": 6
+    },
+    {
+      "name": "FINANCIA",
+      "type": "N",
+      "length": 11,
+      "decimal": 6
+    },
+    {
+      "name": "UTILIDAD",
+      "type": "N",
+      "length": 11,
+      "decimal": 6
+    },
+    {
+      "name": "OTROS",
+      "type": "N",
+      "length": 11,
+      "decimal": 6
+    },
+    {
+      "name": "RENDMTO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "PP",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "INDIRECTO2",
+      "type": "N",
+      "length": 11,
+      "decimal": 6
+    },
+    {
+      "name": "SINPORCE",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    }
+  ],
+  "A": [
+    {
+      "name": "IDUNI",
+      "type": "N",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "FAMILIA",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "COSTODIR",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "PRECIO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "UNIDAD",
+      "type": "C",
+      "length": 8,
+      "decimal": 0
+    },
+    {
+      "name": "NOMBRE",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "DESC",
+      "type": "M",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "PRE_WBS",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "PRECIOMN",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "PRECIOME",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "DESCCORTA",
+      "type": "C",
+      "length": 30,
+      "decimal": 0
+    }
+  ],
+  "C": [
+    {
+      "name": "DEPREN1",
+      "type": "C",
+      "length": 60,
+      "decimal": 0
+    },
+    {
+      "name": "DEPREN2",
+      "type": "C",
+      "length": 60,
+      "decimal": 0
+    },
+    {
+      "name": "DEPREN3",
+      "type": "C",
+      "length": 60,
+      "decimal": 0
+    },
+    {
+      "name": "DEPREN4",
+      "type": "C",
+      "length": 60,
+      "decimal": 0
+    },
+    {
+      "name": "DEPREN5",
+      "type": "C",
+      "length": 60,
+      "decimal": 0
+    },
+    {
+      "name": "AUTOR",
+      "type": "C",
+      "length": 40,
+      "decimal": 0
+    },
+    {
+      "name": "CONNUM",
+      "type": "C",
+      "length": 40,
+      "decimal": 0
+    },
+    {
+      "name": "CONFEC",
+      "type": "D",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "OBRDES",
+      "type": "C",
+      "length": 254,
+      "decimal": 0
+    },
+    {
+      "name": "OBRUBI",
+      "type": "C",
+      "length": 80,
+      "decimal": 0
+    },
+    {
+      "name": "OBRFEC",
+      "type": "D",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "OBRCOS",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "OBRMOGRA",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "OBRMOGIND",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "OBRPRE",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "OBRPIND",
+      "type": "N",
+      "length": 10,
+      "decimal": 6
+    },
+    {
+      "name": "OBRPIND2",
+      "type": "N",
+      "length": 10,
+      "decimal": 6
+    },
+    {
+      "name": "OBRPFIN",
+      "type": "N",
+      "length": 10,
+      "decimal": 6
+    },
+    {
+      "name": "OBRPUTI",
+      "type": "N",
+      "length": 10,
+      "decimal": 6
+    },
+    {
+      "name": "OBRPCAD",
+      "type": "N",
+      "length": 10,
+      "decimal": 6
+    },
+    {
+      "name": "OBRPOTR",
+      "type": "N",
+      "length": 10,
+      "decimal": 6
+    },
+    {
+      "name": "OBRFINI",
+      "type": "D",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "OBRFTER",
+      "type": "D",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "IND_NP_OCE",
+      "type": "N",
+      "length": 10,
+      "decimal": 6
+    },
+    {
+      "name": "IND_NP_OCA",
+      "type": "N",
+      "length": 10,
+      "decimal": 6
+    },
+    {
+      "name": "IND_EJEANT",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "ANEXO",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "DECCANP",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "DECCAND",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "DECPRE",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "TIPCAM",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "IMPUESTO",
+      "type": "N",
+      "length": 10,
+      "decimal": 6
+    },
+    {
+      "name": "LEYMONNAC",
+      "type": "C",
+      "length": 40,
+      "decimal": 0
+    },
+    {
+      "name": "LEYCVSMN",
+      "type": "C",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "LEYREMMN",
+      "type": "C",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "SIMMONNAC",
+      "type": "C",
+      "length": 4,
+      "decimal": 0
+    },
+    {
+      "name": "LEYMONEXT",
+      "type": "C",
+      "length": 40,
+      "decimal": 0
+    },
+    {
+      "name": "LEYCVSME",
+      "type": "C",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "LEYREMME",
+      "type": "C",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "SIMMONEXT",
+      "type": "C",
+      "length": 4,
+      "decimal": 0
+    },
+    {
+      "name": "TITDIR",
+      "type": "C",
+      "length": 60,
+      "decimal": 0
+    },
+    {
+      "name": "TITSAL",
+      "type": "C",
+      "length": 60,
+      "decimal": 0
+    },
+    {
+      "name": "TITMOI",
+      "type": "C",
+      "length": 60,
+      "decimal": 0
+    },
+    {
+      "name": "TITGRA",
+      "type": "C",
+      "length": 60,
+      "decimal": 0
+    },
+    {
+      "name": "TITIND",
+      "type": "C",
+      "length": 60,
+      "decimal": 0
+    },
+    {
+      "name": "TITIND2",
+      "type": "C",
+      "length": 60,
+      "decimal": 0
+    },
+    {
+      "name": "TITSUB1",
+      "type": "C",
+      "length": 60,
+      "decimal": 0
+    },
+    {
+      "name": "TITFIN",
+      "type": "C",
+      "length": 60,
+      "decimal": 0
+    },
+    {
+      "name": "TITSUB2",
+      "type": "C",
+      "length": 60,
+      "decimal": 0
+    },
+    {
+      "name": "TITUTI",
+      "type": "C",
+      "length": 60,
+      "decimal": 0
+    },
+    {
+      "name": "TITSUB3",
+      "type": "C",
+      "length": 60,
+      "decimal": 0
+    },
+    {
+      "name": "TITSAR",
+      "type": "C",
+      "length": 60,
+      "decimal": 0
+    },
+    {
+      "name": "TITINF",
+      "type": "C",
+      "length": 60,
+      "decimal": 0
+    },
+    {
+      "name": "TITSUB4",
+      "type": "C",
+      "length": 60,
+      "decimal": 0
+    },
+    {
+      "name": "TITCAD",
+      "type": "C",
+      "length": 60,
+      "decimal": 0
+    },
+    {
+      "name": "TITSUB5",
+      "type": "C",
+      "length": 60,
+      "decimal": 0
+    },
+    {
+      "name": "TITOTR",
+      "type": "C",
+      "length": 60,
+      "decimal": 0
+    },
+    {
+      "name": "TITIVA",
+      "type": "C",
+      "length": 60,
+      "decimal": 0
+    },
+    {
+      "name": "PONDIR",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "PONSAL",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "PONMOI",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "PONGRA",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "PONPMOI",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "PONIND",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "PONIND2",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "PONSUB1",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "PONFIN",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "PONSUB2",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "PONUTI",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "PONSUB3",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "PONSAR",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "PONINF",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "PONSUB4",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "PONCAD",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "PONSUB5",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "PONOTR",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "TIPFUNFIN",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "TIPFUNUTI",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "TIPFUNCAD",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "TIPFUNOTR",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "PSAR",
+      "type": "N",
+      "length": 10,
+      "decimal": 6
+    },
+    {
+      "name": "PINF",
+      "type": "N",
+      "length": 10,
+      "decimal": 6
+    },
+    {
+      "name": "PMOI",
+      "type": "N",
+      "length": 10,
+      "decimal": 6
+    },
+    {
+      "name": "FGRAVSAR",
+      "type": "N",
+      "length": 12,
+      "decimal": 6
+    },
+    {
+      "name": "FSRMIN",
+      "type": "N",
+      "length": 12,
+      "decimal": 6
+    },
+    {
+      "name": "FSRSUP",
+      "type": "N",
+      "length": 12,
+      "decimal": 6
+    },
+    {
+      "name": "CVSLETRA",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "REGLA5",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "PORINDEST",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "ENOEM",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "YAFEN96",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "VERSION",
+      "type": "N",
+      "length": 7,
+      "decimal": 2
+    },
+    {
+      "name": "SARANTES99",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "COLNIV1",
+      "type": "N",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "COLNIV2",
+      "type": "N",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "COLNIV3",
+      "type": "N",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "COLNIV4",
+      "type": "N",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "COLNIV5",
+      "type": "N",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "COLNIV6",
+      "type": "N",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "COLNIV7",
+      "type": "N",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "COLNIV8",
+      "type": "N",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "COLNIV9",
+      "type": "N",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "COLCON",
+      "type": "N",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "LEYNIV1",
+      "type": "C",
+      "length": 15,
+      "decimal": 0
+    },
+    {
+      "name": "LEYNIV2",
+      "type": "C",
+      "length": 15,
+      "decimal": 0
+    },
+    {
+      "name": "LEYNIV3",
+      "type": "C",
+      "length": 15,
+      "decimal": 0
+    },
+    {
+      "name": "LEYNIV4",
+      "type": "C",
+      "length": 15,
+      "decimal": 0
+    },
+    {
+      "name": "LEYNIV5",
+      "type": "C",
+      "length": 15,
+      "decimal": 0
+    },
+    {
+      "name": "LEYNIV6",
+      "type": "C",
+      "length": 15,
+      "decimal": 0
+    },
+    {
+      "name": "LEYNIV7",
+      "type": "C",
+      "length": 15,
+      "decimal": 0
+    },
+    {
+      "name": "LEYNIV8",
+      "type": "C",
+      "length": 15,
+      "decimal": 0
+    },
+    {
+      "name": "LEYNIV9",
+      "type": "C",
+      "length": 15,
+      "decimal": 0
+    },
+    {
+      "name": "LEYCON",
+      "type": "C",
+      "length": 15,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORHP",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORAP",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORAPMO",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORAPEQ",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORCOMEQ",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORCAT",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORCATMO",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORCATEQ",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFOREXIN",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORPIE",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORPAD",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORLIC",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORHP1",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFOREST",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORXEST",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORREST",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORACT",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORSUM",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORFSR",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORCAPRE",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORESCEX",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORRESC",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORINDI",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORINDIP",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORINDID",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORHESC",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORUTI",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "INAC_DEP",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "INAC_INV",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "INAC_SEG",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "INAC_MAN",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "INAC_ALM",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "INAC_OTR",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "INAC_COM",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "INAC_LUB",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "INAC_LLA",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "INAC_OPE",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "INAC_OTRIN",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "ESPE_DEP",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "ESPE_INV",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "ESPE_SEG",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "ESPE_MAN",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "ESPE_ALM",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "ESPE_OTR",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "ESPE_COM",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "ESPE_LUB",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "ESPE_LLA",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "ESPE_OPE",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "ESPE_OTRIN",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "ANCNIV1",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "ANCNIV2",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "ANCNIV3",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "ANCNIV4",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "ANCNIV5",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "ANCNIV6",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "ANCNIV7",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "ANCNIV8",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "ANCNIV9",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "TITPBASEM",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TITPBASEO",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TITPBASEH",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TITPBASEE",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TITPBASEA",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TITPBASEC",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TITADM",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TITADO",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TITADH",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TITADE",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TITADA",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TITADC",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TITBEM",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TITBEO",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TITBEH",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TITBEE",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TITBEA",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TITBEC",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TITCFM",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TITCFO",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TITCFH",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TITCFE",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TITCFA",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TITCFC",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TITOTM",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TITOTO",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TITOTH",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TITOTE",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TITOTA",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TITOTC",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "FORMUMATN",
+      "type": "C",
+      "length": 80,
+      "decimal": 0
+    },
+    {
+      "name": "FORMUMOBN",
+      "type": "C",
+      "length": 80,
+      "decimal": 0
+    },
+    {
+      "name": "FORMUHERN",
+      "type": "C",
+      "length": 80,
+      "decimal": 0
+    },
+    {
+      "name": "FORMUEQUN",
+      "type": "C",
+      "length": 80,
+      "decimal": 0
+    },
+    {
+      "name": "FORMUAUXN",
+      "type": "C",
+      "length": 80,
+      "decimal": 0
+    },
+    {
+      "name": "FORMUCONN",
+      "type": "C",
+      "length": 80,
+      "decimal": 0
+    },
+    {
+      "name": "FORMUMATE",
+      "type": "C",
+      "length": 80,
+      "decimal": 0
+    },
+    {
+      "name": "FORMUMOBE",
+      "type": "C",
+      "length": 80,
+      "decimal": 0
+    },
+    {
+      "name": "FORMUHERE",
+      "type": "C",
+      "length": 80,
+      "decimal": 0
+    },
+    {
+      "name": "FORMUEQUE",
+      "type": "C",
+      "length": 80,
+      "decimal": 0
+    },
+    {
+      "name": "FORMUAUXE",
+      "type": "C",
+      "length": 80,
+      "decimal": 0
+    },
+    {
+      "name": "FORMUCONE",
+      "type": "C",
+      "length": 80,
+      "decimal": 0
+    },
+    {
+      "name": "LEYPESO",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "ESCALAHIST",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORCATMA",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORCATHE",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORCATAU",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORCATCO",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORAPMA",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORAPHE",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORAPAU",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "IDFORAPCO",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "ABREVMN",
+      "type": "C",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "ABREVME",
+      "type": "C",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "FILTRO_PRE",
+      "type": "C",
+      "length": 120,
+      "decimal": 0
+    },
+    {
+      "name": "USA_FIL_P",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "ENMONEXT",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "CANAGRUPA",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "WBSNIV1",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "WBSNIV2",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "WBSNIV3",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "WBSNIV4",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "WBSNIV5",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "WBSNIV6",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "WBSNIV7",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "WBSNIV8",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "WBSNIV9",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "LIMITE",
+      "type": "N",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "FSRFMT1",
+      "type": "C",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "FSRFMT2",
+      "type": "C",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "DECPORCE",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "CDURACION",
+      "type": "C",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "ANCNIVA1",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "ANCNIVA2",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "ANCNIVA3",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "ANCNIVA4",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "ANCNIVA5",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "ANCNIVA6",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "ANCNIVA7",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "ANCNIVA8",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "ANCNIVA9",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "TIPOIND",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    }
+  ],
+  "I": [
+    {
+      "name": "RENGLON",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "VAR",
+      "type": "C",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "DESC1",
+      "type": "C",
+      "length": 60,
+      "decimal": 0
+    },
+    {
+      "name": "PORCEN",
+      "type": "C",
+      "length": 40,
+      "decimal": 0
+    },
+    {
+      "name": "FORMULA",
+      "type": "C",
+      "length": 100,
+      "decimal": 0
+    },
+    {
+      "name": "IMPORTE",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "PORCENMN",
+      "type": "C",
+      "length": 40,
+      "decimal": 0
+    },
+    {
+      "name": "FORMULAMN",
+      "type": "C",
+      "length": 100,
+      "decimal": 0
+    },
+    {
+      "name": "IMPORTEMN",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "PORCENME",
+      "type": "C",
+      "length": 40,
+      "decimal": 0
+    },
+    {
+      "name": "FORMULAME",
+      "type": "C",
+      "length": 100,
+      "decimal": 0
+    },
+    {
+      "name": "IMPORTEME",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "SE_SUMA",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "SE_IMPR",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "SE_FIN",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "SE_SUBRAYA",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "ALINEA",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "DECIMALES",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    }
+  ],
+  "5": [
+    {
+      "name": "PREFIJO",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "NOMBRE",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "PREFCOMP",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "COMPONE",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "UNIPOR",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "CANTIDAD",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "PRECIO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "MONTO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CANCONC",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "PRECIOMN",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "PRECIOME",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "MONTOMN",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "MONTOME",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    }
+  ],
+  "X": [
+    {
+      "name": "PREFIJO",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "NOMBRE",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "CLAVEUSUAR",
+      "type": "C",
+      "length": 30,
+      "decimal": 0
+    },
+    {
+      "name": "UNIPOR",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "CANTIDAD",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "PRECIO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "MONTO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "ESTOTAL",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "EXP_GRUPO",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "PESO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AJUSTA",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "MONT_SINAJ",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    }
+  ],
+  "8": [
+    {
+      "name": "FSR_TIP",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "FSR_CLV",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "FSR_DES",
+      "type": "C",
+      "length": 50,
+      "decimal": 0
+    },
+    {
+      "name": "FSR_SABA",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_SAMI",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_PPVAC",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_PPDOM",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_DPCAL",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_DPAGU",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_DPPVA",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_DPPDO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_DPHEX",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_DPOT1",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_FSI",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_SABC",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_IMGM",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_IMPE",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_IMEX",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_IMRTR",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_IMENF",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_IMINV",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_IMCE",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_IMGUA",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_IMIMS",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_IMNOM",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_IMSAR",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_IMINF",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_IMOT2",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_DEIMS",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_DEGUA",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_DENOM",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_DESAR",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_DEINF",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_DEOT2",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_DNDOM",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_DNSEP",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_DNFES",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_DNDCO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_DNSIN",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_DNVAC",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_DVAC",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_DNPER",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_DNCLI",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_DNARR",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_DNGUA",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_DNOT3",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_DNLA",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_DLA",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_DPA",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_DEA",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_DCA",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_FSR",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_CALC",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "FSR_FSBC",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FSR_SACAL",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AA",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AB",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AC",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AD",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AE",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AF",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AG",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AH",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AI",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AJ",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AK",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AL",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AM",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AN",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AP",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AQ",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AR",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AS",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AT",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AU",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AV",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AW",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AX",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AY",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AZ",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "BA",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "BB",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "BC",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "BD",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "BE",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "BF",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "BG",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "BH",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "BI",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "BJ",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "BK",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "BL",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "BM",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "BN",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "BO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "BP",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "BQ",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "BR",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "BS",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "BT",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "BU",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "BV",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "BW",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "BX",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "BY",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "BZ",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CA",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CB",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CC",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CD",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CE",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CF",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CG",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CH",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CI",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CJ",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CK",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CL",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CM",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CN",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CP",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CQ",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CR",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CS",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CT",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CU",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CV",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CW",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CX",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CY",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CZ",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "DA",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "DB",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "DC",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "DD",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "DE",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "DF",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "DG",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "DH",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "DI",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "DJ",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "DK",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "DL",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "DM",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "DN",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "DO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "DP",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "DQ",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "DR",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "DS",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "DT",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "DU",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "DV",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "DW",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "DX",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "DY",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "DZ",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "EA",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "EB",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "EC",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "ED",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "EE",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "EF",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "EG",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "EH",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "EI",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "EJ",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "EK",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "EL",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "EM",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "EN",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "EO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "EP",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "EQ",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "ER",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "ES",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "ET",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "EU",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "EV",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "EW",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "EX",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "EY",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "EZ",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FA",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FB",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FC",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FD",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FE",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FF",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FG",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FH",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FI",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FJ",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FK",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FL",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FM",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FN",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FP",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FQ",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FR",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FS",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FT",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FU",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FV",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FW",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FX",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FY",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FZ",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "GA",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "GB",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "GC",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "GD",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "GE",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "GF",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "GG",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "GH",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "GI",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "GJ",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "GK",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "GL",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "GM",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "GN",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "GO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "GP",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "GQ",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "GR",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "GS",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "GT",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "GU",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "GV",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "GW",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "GX",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "GY",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "GZ",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    }
+  ],
+  "9": [
+    {
+      "name": "FFSR_REN",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "FFSR_CLV",
+      "type": "C",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "FFSR_DES",
+      "type": "C",
+      "length": 50,
+      "decimal": 0
+    },
+    {
+      "name": "FFSR_FOR",
+      "type": "C",
+      "length": 254,
+      "decimal": 0
+    },
+    {
+      "name": "MARCA1",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "MARCA2",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "MARCA3",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "MARCA4",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "FFSR_VAL",
+      "type": "N",
+      "length": 18,
+      "decimal": 5
+    },
+    {
+      "name": "FFSR_UNI",
+      "type": "C",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "FFSR_IOP",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "DECIMALES",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "DEUSUARIO",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "COMENTARIO",
+      "type": "C",
+      "length": 100,
+      "decimal": 0
+    }
+  ],
+  "Z": [
+    {
+      "name": "ANCNIVI1",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "ANCNIVI2",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "ANCNIVI3",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "ANCNIVI4",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "ANCNIVI5",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "ANCNIVI6",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "ANCNIVI7",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "ANCNIVI8",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "ANCNIVI9",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "INAC_CAPI",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "ESPE_CAPI",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "TIPODEPEN",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "INAC_PIEZ",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "ESPE_PIEZ",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FHPKW",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "LEY1",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "LEY2",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "LEY3",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "LEY4",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "LEY5",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "CAMPO1",
+      "type": "C",
+      "length": 50,
+      "decimal": 0
+    },
+    {
+      "name": "CAMPO2",
+      "type": "C",
+      "length": 50,
+      "decimal": 0
+    },
+    {
+      "name": "CAMPO3",
+      "type": "C",
+      "length": 50,
+      "decimal": 0
+    },
+    {
+      "name": "CAMPO4",
+      "type": "C",
+      "length": 50,
+      "decimal": 0
+    },
+    {
+      "name": "CAMPO5",
+      "type": "C",
+      "length": 50,
+      "decimal": 0
+    },
+    {
+      "name": "LEYF1",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "LEYF2",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "LEYF3",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "LEYF4",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "LEYF5",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "HORASDIA",
+      "type": "N",
+      "length": 2,
+      "decimal": 0
+    },
+    {
+      "name": "MINSDIA",
+      "type": "N",
+      "length": 2,
+      "decimal": 0
+    },
+    {
+      "name": "HINIDIA",
+      "type": "N",
+      "length": 2,
+      "decimal": 0
+    },
+    {
+      "name": "MINIDIA",
+      "type": "N",
+      "length": 2,
+      "decimal": 0
+    },
+    {
+      "name": "HORAENFECH",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "DURENDT",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "CPO_FSBSG",
+      "type": "C",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "CFARG",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "CPO_FPIMSS",
+      "type": "C",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "VARFINPPP",
+      "type": "C",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "SEGURO",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "TASA_INTER",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "IDFORESCPR",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "SEGUROME",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "TASA_INTME",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    }
+  ],
+  "0": [
+    {
+      "name": "ID",
+      "type": "N",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "SIGUE",
+      "type": "N",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "TIPOVIN",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "APLAZAR",
+      "type": "C",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "DIFEIDS",
+      "type": "N",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "FECHA",
+      "type": "D",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "HORA",
+      "type": "N",
+      "length": 2,
+      "decimal": 0
+    }
+  ],
+  "3": [
+    {
+      "name": "ID",
+      "type": "N",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "IDUNICO",
+      "type": "N",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "FRENTE",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "DESCRIPCIO",
+      "type": "M",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "VISTO",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "NIVEL",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "FECHAUX",
+      "type": "D",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "SIGNO",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "NOMBRE",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "NUMCAL",
+      "type": "M",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "CANTIDAD",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AVANZADO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FINI",
+      "type": "D",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "FTER",
+      "type": "D",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "HINI",
+      "type": "N",
+      "length": 2,
+      "decimal": 0
+    },
+    {
+      "name": "HTER",
+      "type": "N",
+      "length": 2,
+      "decimal": 0
+    },
+    {
+      "name": "CADURA",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "ASIGNADO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CLAVEUSUAR",
+      "type": "C",
+      "length": 30,
+      "decimal": 0
+    },
+    {
+      "name": "UNIDAD",
+      "type": "C",
+      "length": 8,
+      "decimal": 0
+    },
+    {
+      "name": "UNIASIG",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "RENDI",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "COMENTA",
+      "type": "M",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "COSTO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "TAMDIS",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "DISCAN",
+      "type": "M",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "HORAUX",
+      "type": "N",
+      "length": 2,
+      "decimal": 0
+    },
+    {
+      "name": "HOLLIBRE",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "HOLTOTAL",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "MARCA1",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "PRE_IDUN",
+      "type": "N",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "ARCHIFOTO",
+      "type": "M",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "MULVOL",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "SELCONT",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "REMCONTRAT",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CANOPROP",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "ASIGACUM",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "ASIGACUMON",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AVANESTVOL",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AVANESTMON",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AVANCONVOL",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AVANCONMON",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FECHAVAEST",
+      "type": "D",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "HORAVAEST",
+      "type": "N",
+      "length": 2,
+      "decimal": 0
+    },
+    {
+      "name": "FECHAVACON",
+      "type": "D",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "HORAVACON",
+      "type": "N",
+      "length": 2,
+      "decimal": 0
+    },
+    {
+      "name": "CANTIDADC",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "COSTOPAC",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "PAGADO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CEXTRA",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "SIMPOREST",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "SIMPORPROG",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "ASIGACU2",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "ASIGACUMO2",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "POSX",
+      "type": "N",
+      "length": 7,
+      "decimal": 0
+    },
+    {
+      "name": "POSY",
+      "type": "N",
+      "length": 7,
+      "decimal": 0
+    },
+    {
+      "name": "NUM_SUC",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "POSUSU",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "WBS",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "DESCCORTA",
+      "type": "C",
+      "length": 30,
+      "decimal": 0
+    },
+    {
+      "name": "TIPOREN",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "WBSPAD",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "MINI",
+      "type": "N",
+      "length": 2,
+      "decimal": 0
+    },
+    {
+      "name": "SINI",
+      "type": "N",
+      "length": 2,
+      "decimal": 0
+    },
+    {
+      "name": "MTER",
+      "type": "N",
+      "length": 2,
+      "decimal": 0
+    },
+    {
+      "name": "STER",
+      "type": "N",
+      "length": 2,
+      "decimal": 0
+    },
+    {
+      "name": "MINAUX",
+      "type": "N",
+      "length": 2,
+      "decimal": 0
+    },
+    {
+      "name": "SEGAUX",
+      "type": "N",
+      "length": 2,
+      "decimal": 0
+    },
+    {
+      "name": "MINAVAEST",
+      "type": "N",
+      "length": 2,
+      "decimal": 0
+    },
+    {
+      "name": "SEGAVAEST",
+      "type": "N",
+      "length": 2,
+      "decimal": 0
+    },
+    {
+      "name": "MINAVACON",
+      "type": "N",
+      "length": 2,
+      "decimal": 0
+    },
+    {
+      "name": "SEGAVACON",
+      "type": "N",
+      "length": 2,
+      "decimal": 0
+    },
+    {
+      "name": "DIASTRAB",
+      "type": "N",
+      "length": 12,
+      "decimal": 6
+    },
+    {
+      "name": "CCOSTOS",
+      "type": "C",
+      "length": 50,
+      "decimal": 0
+    },
+    {
+      "name": "COLA",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "COLB",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "BAC_C",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "PROGCTRL_C",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "EV_C",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "AC2_C",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "SPI2_C",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "CPI2_C",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "ETC2_C",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "EAC2_C",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "VAC2_C",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "PROYECTO",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TAREA",
+      "type": "C",
+      "length": 25,
+      "decimal": 0
+    },
+    {
+      "name": "TOTALADI",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "TOTALDED",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    }
+  ],
+  "D": [
+    {
+      "name": "WBS",
+      "type": "C",
+      "length": 25,
+      "decimal": 0
+    },
+    {
+      "name": "DESCRIP",
+      "type": "C",
+      "length": 254,
+      "decimal": 0
+    }
+  ],
+  "H": [
+    {
+      "name": "NOMBRE",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "NPRECIO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "NFECHA",
+      "type": "D",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "NPUNITMN",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "NPUNITME",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "NPBASEMN",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "NA",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "NB",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "NC",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "NPBASEME",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "ND",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "NE",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "NF",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "NTOTALMN",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "NTOTALME",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "NPUNIT",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "NNUMESC",
+      "type": "N",
+      "length": 2,
+      "decimal": 0
+    }
+  ],
+  "J": [
+    {
+      "name": "NOMBRE",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "COSTO_BASE",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "COSTO_LLAN",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "VIDA_UTIL",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "HORAS_AN",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "SEGURO",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "TASA_INTER",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "MANTENIMIE",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "RESCATE",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "ALMACENAJE",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "OTROS",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "TOTAL",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "RENTA_HORA",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "RMAX",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "RMIN",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "RINC",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "HAMAX",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "HAMIN",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "HAINC",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "VMAX",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "VMIN",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "VINC",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "IMAX",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "IMIN",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "IINC",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "SMAX",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "SMIN",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "SINC",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "QMAX",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "QMIN",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "QINC",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "VALOR",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "INAC_TOTAL",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "MOTOR",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "OTRO",
+      "type": "C",
+      "length": 15,
+      "decimal": 0
+    },
+    {
+      "name": "VE_LLANTAS",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "POTENCIA",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "FAC_OPERA",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "POTENCIAL",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "COEF_COMB",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "CAP_CARTER",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "T_CAMBIO",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "COEF_ACEIT",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "C_COMBUSTI",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "C_LUBRICAN",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "C_LLANTAS",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "COSTOTOTIN",
+      "type": "N",
+      "length": 15,
+      "decimal": 6
+    },
+    {
+      "name": "MONEDA",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "VER96",
+      "type": "C",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "SAL_GRA",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "ESPE_TOTAL",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "COSTOTOTES",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "NUM_LLANTA",
+      "type": "N",
+      "length": 2,
+      "decimal": 0
+    },
+    {
+      "name": "HORAS_JOR",
+      "type": "N",
+      "length": 10,
+      "decimal": 6
+    },
+    {
+      "name": "P_LUB",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "P_COMB",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "P_LLAN",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "COSTO_BASO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "COSTO_LLAO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "MESES_ANO",
+      "type": "N",
+      "length": 9,
+      "decimal": 6
+    },
+    {
+      "name": "CAPINS",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "GRUPO",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "COSTO_PIEZ",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "COSTO_PIEO",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "VE_PIEZ",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "C_PIEZ",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "P_PIEZ",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "POTENCIAKW",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FACOPERAKW",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "FACTOR",
+      "type": "N",
+      "length": 20,
+      "decimal": 6
+    },
+    {
+      "name": "USAFACT",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    }
+  ],
+  "CONFIG": [
+    {
+      "name": "CCANTI",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "VCANTI",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "VPRECI",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "TCAMBIO",
+      "type": "N",
+      "length": 15,
+      "decimal": 5
+    },
+    {
+      "name": "IMPUESTO",
+      "type": "N",
+      "length": 15,
+      "decimal": 5
+    },
+    {
+      "name": "MONEDA",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "SIMBOLO",
+      "type": "C",
+      "length": 4,
+      "decimal": 0
+    },
+    {
+      "name": "MONEXT",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "SIMBEXT",
+      "type": "C",
+      "length": 4,
+      "decimal": 0
+    },
+    {
+      "name": "LEYIMPUEST",
+      "type": "C",
+      "length": 40,
+      "decimal": 0
+    },
+    {
+      "name": "CVSLETRA",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "CLIENTE",
+      "type": "C",
+      "length": 46,
+      "decimal": 0
+    },
+    {
+      "name": "AUTOR",
+      "type": "C",
+      "length": 7,
+      "decimal": 0
+    },
+    {
+      "name": "FSDI",
+      "type": "N",
+      "length": 15,
+      "decimal": 5
+    },
+    {
+      "name": "FECHA",
+      "type": "D",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "DESCRIPCIO",
+      "type": "M",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "DIRCATGEN",
+      "type": "C",
+      "length": 100,
+      "decimal": 0
+    },
+    {
+      "name": "TFCONTRATO",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "TFDESGLOSE",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "TFESTIMA",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "TFDESGLOES",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "TFRESPONSA",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "TFDOCSALMA",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "TFDESDOCSA",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "TFDESDOCEN",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "TFEDOALMA",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "TFDESEDOAL",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "TFACTIVIDA",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "TFCARACTER",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "VERSION",
+      "type": "N",
+      "length": 15,
+      "decimal": 5
+    },
+    {
+      "name": "PRESICION",
+      "type": "N",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "BUSCA",
+      "type": "C",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "CLAVE",
+      "type": "C",
+      "length": 10,
+      "decimal": 0
+    },
+    {
+      "name": "FECHAVA",
+      "type": "D",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "TIPOPRESAL",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "NIVELSAL",
+      "type": "N",
+      "length": 1,
+      "decimal": 0
+    },
+    {
+      "name": "CONCOMPRAS",
+      "type": "L",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "CLAVEOBRA",
+      "type": "C",
+      "length": 20,
+      "decimal": 0
+    },
+    {
+      "name": "TFREQS",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "TFREQSDET",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "UFECHAMOD",
+      "type": "D",
+      "length": 0,
+      "decimal": 0
+    },
+    {
+      "name": "TFORDENES",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "TFDESGLADI",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "TFDESGLOOC",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "TFESTIMAOC",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    }
+  ],
+  "TIPOSINS": [
+    {
+      "name": "PREFIJO",
+      "type": "N",
+      "length": 5,
+      "decimal": 0
+    },
+    {
+      "name": "STRTIPO",
+      "type": "C",
+      "length": 25,
+      "decimal": 0
+    }
+  ],
+  "FRENTES": [
+    {
+      "name": "NO",
+      "type": "N",
+      "length": 3,
+      "decimal": 0
+    },
+    {
+      "name": "DESCRIPCIO",
+      "type": "C",
+      "length": 50,
+      "decimal": 0
+    },
+    {
+      "name": "CAMPO1",
+      "type": "C",
+      "length": 50,
+      "decimal": 0
+    },
+    {
+      "name": "CAMPO2",
+      "type": "C",
+      "length": 50,
+      "decimal": 0
+    },
+    {
+      "name": "CAMPO3",
+      "type": "C",
+      "length": 50,
+      "decimal": 0
+    },
+    {
+      "name": "CAMPO4",
+      "type": "C",
+      "length": 50,
+      "decimal": 0
+    },
+    {
+      "name": "CAMPO5",
+      "type": "C",
+      "length": 50,
+      "decimal": 0
+    }
+  ]
+}
