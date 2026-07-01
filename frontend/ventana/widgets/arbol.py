@@ -8,11 +8,25 @@ Uso:
 """
 
 from PySide6.QtCore import Qt, QByteArray
-from PySide6.QtGui import QColor, QBrush, QFont
+from PySide6.QtGui import QColor, QBrush, QFont, QIcon, QPixmap, QPainter
+from PySide6.QtCore import QRect
 from PySide6.QtWidgets import QHeaderView
 
 from frontend.ventana.widgets.base import TreeTableWidget
 from backend.database.db import Config
+
+
+# ── Icono desde emoji ───────────────────────────────────────────
+
+def _emoji_icon(char, size=20):
+    pix = QPixmap(size, size)
+    pix.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pix)
+    p.setPen(QColor("#E8EDF2"))
+    p.setFont(QFont("Segoe UI Symbol", size - 6))
+    p.drawText(QRect(0, 0, size, size), Qt.AlignmentFlag.AlignCenter, char)
+    p.end()
+    return QIcon(pix)
 
 
 # ── Roles de datos ────────────────────────────────────────────────
@@ -25,12 +39,12 @@ ID_ROLE      = Qt.ItemDataRole.UserRole + 1  # id de estructura_presupuesto
 # Subtotal se fusionó en Total (col 6): conceptos → importe, capítulos → subtotal.
 # El índice que ocupaba Subtotal (7) se eliminó; columnas posteriores corrieron -1.
 COLUMNAS     = [
-    "Nivel", "Tipo", "Descripción", "Unid", "Cant", "P.U.", "Total",
+    "Estructura", "Nivel", "Tipo", "Descripción", "Unid", "Cant", "P.U.", "Total",
     "Desc. Corta", "Estado", "Notas", "Creado", "Modificado",
 ]
-_VISIBLE    = {0, 1, 2, 3, 4, 5, 6}
-EDITABLE    = frozenset({2, 3, 4, 5})
-_AGRUP_COLS = {0, 2, 6}
+_VISIBLE    = {0, 1, 2, 3, 4, 5, 6, 7}
+EDITABLE    = frozenset({3, 4, 5, 6})
+_AGRUP_COLS = {0, 1, 3, 7}
 
 # ── Colores por nivel jerárquico ─────────────────────────────────
 
@@ -75,7 +89,7 @@ class TablaArbol(TreeTableWidget):
         super().__init__(COLUMNAS, EDITABLE, parent=parent)
         self.set_column_modes({
             c: (QHeaderView.ResizeMode.Interactive, w)
-            for c, w in enumerate([120, 80, 250, 45, 60, 80, 90,
+            for c, w in enumerate([120, 100, 80, 250, 45, 60, 80, 90,
                                    120, 70, 100, 130, 130])
         })
         self.header().setMaximumSectionSize(400)
@@ -85,7 +99,7 @@ class TablaArbol(TreeTableWidget):
             if c not in _VISIBLE:
                 self.setColumnHidden(c, True)
         # búsqueda por defecto: Nivel, Tipo, Descripción
-        self._search_cols = {0, 1, 2}
+        self._search_cols = {1, 2, 3}
 
 
 
@@ -109,19 +123,21 @@ class TablaArbol(TreeTableWidget):
 
     @staticmethod
     def _calc_wbs(wbs: str, parent):
-        """Calcula representación visual del WBS concatenando WBS del padre con sufijo del nodo."""
+        """Concatena el display WBS del padre con el sufijo del nodo."""
         if not wbs:
             return ""
-        pwbs = ""
+        pwbs_raw = ""
+        pwbs_display = ""
         if parent is not None:
             try:
-                pwbs = parent.data(0, WBS_ROLE)
+                pwbs_raw = parent.data(0, WBS_ROLE)
+                pwbs_display = parent.text(1)  # columna Nivel = display WBS
             except AttributeError:
                 pass
-        if not pwbs:
+        if not pwbs_raw:
             return str(int(wbs))
-        suffix = wbs[len(pwbs):]
-        return f"{parent.text(0)}.{str(int(suffix))}"
+        suffix = wbs[len(pwbs_raw):]
+        return f"{pwbs_display}.{str(int(suffix))}"
 
     # ── Construcción de celdas desde dict ─────────────────────────
 
@@ -129,19 +145,20 @@ class TablaArbol(TreeTableWidget):
     def _celdas(n, wbs):
         """Construye la lista de valores para todas las columnas desde el dict del nodo."""
         return [
-            wbs,                                           # 0 Nivel
-            {"capitulo": "Capítulo", "concepto": "Concepto"}.get(n.get("tipo"), n.get("tipo", "")),  # 1 Tipo
-            n.get("descripcion", ""),                      # 2 Descripción
-            n.get("unidad", ""),                           # 3 Unid
-            _num(n.get("cantidad")),                       # 4 Cant
-            _fmt(n.get("precio_unitario")),                # 5 P.U.
+            "",                                            # 0 Estructura (icon via setIcon)
+            wbs,                                           # 1 Nivel
+            {"capitulo": "Capítulo", "concepto": "Concepto"}.get(n.get("tipo"), n.get("tipo", "")),  # 2 Tipo
+            n.get("descripcion", ""),                      # 3 Descripción
+            n.get("unidad", ""),                           # 4 Unid
+            _num(n.get("cantidad")),                       # 5 Cant
+            _fmt(n.get("precio_unitario")),                # 6 P.U.
             # Total: conceptos muestran importe directo, capítulos muestran subtotal acumulado
-            _fmt(n.get("importe") if n.get("tipo") == "concepto" else n.get("subtotal")),  # 6 Total
-            n.get("descripcion_corta", ""),                # 7 Desc. Corta
-            n.get("estado_nombre", ""),                    # 8 Estado
-            n.get("notas_rapidas", ""),                    # 9 Notas
-            str(n.get("creado_en", "") or ""),             # 10 Creado
-            str(n.get("modificado_en", "") or ""),         # 11 Modificado
+            _fmt(n.get("importe") if n.get("tipo") == "concepto" else n.get("subtotal")),  # 7 Total
+            n.get("descripcion_corta", ""),                # 8 Desc. Corta
+            n.get("estado_nombre", ""),                    # 9 Estado
+            n.get("notas_rapidas", ""),                    # 10 Notas
+            str(n.get("creado_en", "") or ""),             # 11 Creado
+            str(n.get("modificado_en", "") or ""),         # 12 Modificado
         ]
 
     # ── Inserción de agrupadores ──────────────────────────────────
@@ -159,6 +176,7 @@ class TablaArbol(TreeTableWidget):
         data = self._celdas(n, fmt)
         item = self.add_row(data, parent, editable=False)
         item.setData(0, WBS_ROLE, wbs)
+        item.setIcon(0, _emoji_icon("\U0001F4C2", 20))  # 📂 folder
         color = COLORES_NIVEL[min(nivel, len(COLORES_NIVEL) - 1)]
         brush = QBrush(QColor(color))
         f     = item.font(0)
@@ -176,6 +194,7 @@ class TablaArbol(TreeTableWidget):
         data = self._celdas(n, "")
         item = self.add_row(data, parent, editable=True)
         item.setData(0, ID_ROLE, n.get("id"))
+        item.setIcon(0, _emoji_icon("\U0001F4C4", 20))  # 📄 leaf
         return item
 
     # ── Poblado del árbol ─────────────────────────────────────────
