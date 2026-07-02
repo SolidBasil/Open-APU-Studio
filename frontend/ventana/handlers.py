@@ -449,6 +449,8 @@ class HandlersMixin:
             content = self._build_conceptos()
         elif title == "💰 Cálculo de indirectos":
             content = self._build_placeholder(title, "En desarrollo")
+        elif title == "📊 Cálculo de sobrecostos":
+            content = self._build_sobrecostos()
         elif title == "📦 Explosión de insumos":
             content = self._build_explosion()
             if content is None:

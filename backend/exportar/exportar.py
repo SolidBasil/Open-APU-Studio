@@ -16,7 +16,7 @@ from pathlib import Path
 
 from backend.database.repos import (
     ProyectoRepo, NodoRepo, InsumoRepo,
-    ApuMatricesRepo, ApuResumenTotalesRepo, SobrecostosRepo,
+    ApuMatricesRepo, ApuResumenTotalesRepo,
 )
 from backend.exportar.exportar_plantillas import (
     TIPOSINS_ROWS, CONFIG_FIJOS, C_FIJOS, FSR_9_ROWS, CONFIG_INI_TEMPLATE,
@@ -211,7 +211,6 @@ class Exportador:
         self._ins_repo  = InsumoRepo(self._conn)
         self._apu_repo  = ApuMatricesRepo(self._conn)
         self._res_repo  = ApuResumenTotalesRepo(self._conn)
-        self._sob_repo  = SobrecostosRepo(self._conn)
 
         self._proy  = self._proy_repo.buscar(proyecto_id)
         self._cfg   = self._proy_repo.config(proyecto_id)
@@ -226,7 +225,6 @@ class Exportador:
             ('Presupuesto → 1+A.DBF',  self._fase3_presupuesto),
             ('APU → F+N.DBF',          self._fase4_apu),
             ('Derivados → 5+X.DBF',    self._fase5_derivados),
-            ('Sobrecostos → I.DBF',    self._fase6_sobrecostos),
             ('FSR → 8+9+Z.DBF',        self._fase7_fsr),
             ('Tablas vacías + aux',    self._fase8_vacias),
             ('OBRA.DBF',               self._fase9_obra_dbf),
@@ -829,34 +827,6 @@ class Exportador:
                     'MONT_SINAJ': cantidad * precio,
                 })
         self._crear_tabla(self._ruta('X'), 'X', registros_x, cdx_sufijo='X')
-
-    # ── FASE 6: Sobrecostos → I.DBF ──────────────────────────────────
-
-    def _fase6_sobrecostos(self):
-        sobrecostos = self._sob_repo.por_proyecto(self._pid)
-        registros = []
-        for sc in sobrecostos:
-            registros.append({
-                'RENGLON':   int(sc.get('orden') or 0),
-                'VAR':       (sc.get('variable') or '')[:10],
-                'DESC1':     (sc.get('descripcion') or '')[:60],
-                'PORCEN':    (str(sc.get('porcentaje_mn') or ''))[:40],
-                'FORMULA':   (sc.get('formula') or '')[:100],
-                'IMPORTE':   0.0,
-                'PORCENMN':  (str(sc.get('porcentaje_mn') or ''))[:40],
-                'FORMULAMN': (sc.get('formula') or '')[:100],
-                'IMPORTEMN': 0.0,
-                'PORCENME':  '',
-                'FORMULAME': '',
-                'IMPORTEME': 0.0,
-                'SE_SUMA':   bool(sc.get('suma_en_total')),
-                'SE_IMPR':   bool(sc.get('se_imprime')),
-                'SE_FIN':    bool(sc.get('es_egreso_financ') or sc.get('es_ingreso_financ')),
-                'SE_SUBRAYA':False,
-                'ALINEA':    '',
-                'DECIMALES': 2,
-            })
-        self._crear_tabla(self._ruta('I'), 'I', registros, cdx_sufijo='I')
 
     # ── FASE 7: FSR ───────────────────────────────────────────────────
 

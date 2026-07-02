@@ -176,13 +176,15 @@ CREATE TABLE IF NOT EXISTS configuracion_proyecto (
 );
 
 -- Factores de sobrecosto para cascada sobre insumos (indirectos, utilidad, etc.)
+-- costo_final = costo_directo * COALESCE(factor_total, 1.0)
 CREATE TABLE IF NOT EXISTS factores_sobrecosto (
     proyecto_id             INTEGER PRIMARY KEY REFERENCES proyectos(id) ON DELETE CASCADE,
     pct_indirectos_campo    REAL NOT NULL DEFAULT 0.0,
     pct_indirectos_oficina  REAL NOT NULL DEFAULT 0.0,
     pct_financiamiento      REAL NOT NULL DEFAULT 0.0,
     pct_utilidad            REAL NOT NULL DEFAULT 0.0,
-    pct_cargos_adicionales  REAL NOT NULL DEFAULT 0.0
+    pct_cargos_adicionales  REAL NOT NULL DEFAULT 0.0,
+    factor_total            REAL NOT NULL DEFAULT 1.0
 );
 
 -- Factores FSR — configuraciones de Factor de Salario Real para mano de obra
@@ -232,26 +234,6 @@ CREATE TABLE IF NOT EXISTS factores_fsr (
     modificado_en           TEXT    NOT NULL DEFAULT (datetime('now')),
     UNIQUE(proyecto_id, clave)
 );
-
--- Sobrecostos / indirectos — renglones del pie de precios unitarios
-CREATE TABLE IF NOT EXISTS sobrecostos (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    proyecto_id     INTEGER NOT NULL REFERENCES proyectos(id) ON DELETE CASCADE,
-    orden           INTEGER NOT NULL DEFAULT 0,
-    variable        TEXT    NOT NULL,   -- ej 'CI'
-    descripcion     TEXT    NOT NULL,   -- ej 'Costos indirectos'
-    formula         TEXT,               -- ej 'CD'
-    porcentaje_mn   REAL    NOT NULL DEFAULT 0.0,
-    porcentaje_me   REAL    NOT NULL DEFAULT 0.0,
-    suma_en_total   INTEGER NOT NULL DEFAULT 1,
-    es_egreso_financ    INTEGER NOT NULL DEFAULT 0,
-    es_ingreso_financ   INTEGER NOT NULL DEFAULT 0,
-    se_imprime      INTEGER NOT NULL DEFAULT 1,
-    tipo            TEXT    NOT NULL DEFAULT 'formula_porcentaje'
-                    CHECK(tipo IN ('formula_porcentaje', 'solo_formula'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_sobrecostos_proyecto ON sobrecostos(proyecto_id);
 
 
 -- =============================================================================

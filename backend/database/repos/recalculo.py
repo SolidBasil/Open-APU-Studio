@@ -38,6 +38,9 @@ class RecalculoRepo(RepoBase):
         # Resumen final de todas las matrices ya con precios definitivos
         self._recalcular_resumenes(cur, proyecto_id)
 
+        # Cascada de sobrecostos: costo_directo * factor_total → costo_final
+        self._aplicar_cascada_sobrecosto(cur, proyecto_id)
+
         # Totales de conceptos = cantidad × costo_final del insumo vinculado
         cur.execute("""
             UPDATE estructura_presupuesto
@@ -195,6 +198,16 @@ class RecalculoRepo(RepoBase):
                 WHERE id = ?
             """, (nuevo, nuevo, row["id"]))
         return cambios
+
+    def _aplicar_cascada_sobrecosto(self, cur, proyecto_id):
+        """Aplica los factores de sobrecosto del proyecto: costo_final = costo_directo * factor_total."""
+        cur.execute("""
+            UPDATE insumos SET
+                costo_final = ROUND(costo_directo * COALESCE(
+                    (SELECT factor_total FROM factores_sobrecosto WHERE proyecto_id = ?), 1.0), 6),
+                modificado_en = datetime('now')
+            WHERE proyecto_id = ? AND activo = 1
+        """, (proyecto_id, proyecto_id))
 
 
 # =============================================================================

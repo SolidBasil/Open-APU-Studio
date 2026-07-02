@@ -48,6 +48,10 @@ class Api:
         self._db_path = str(db_path)
         self._pid    = proyecto_id
 
+    def proyecto_actual_id(self) -> int:
+        """Devuelve el ID del proyecto activo."""
+        return self._pid
+
     # =========================================================================
     # PRESUPUESTO
     # =========================================================================

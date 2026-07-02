@@ -69,7 +69,7 @@ Generado: 2026-07-01
 | `insumos.catfsr` | Categoría FSR | Sin código |
 | `insumos.factor_fsr` | Factor manual FSR | Sin código |
 | `insumos.fsr_minimo` | Flag salario mínimo FSR | Sin código |
-| `factores_sobrecosto` (tabla) | % indirectos, financiamiento, utilidad, cargos | Sin código |
+| `factores_sobrecosto` (tabla) | % indirectos, financiamiento, utilidad, cargos, factor_total | Implementado en v4 |
 | `factores_fsr` (tabla) | Tabla FSR por categoría | Sin código |
 | `variables_formula` (tabla) | Variables para fórmulas | Sin código |
 | `apu_matrices.operador` | `'*'` o `'/'` | Solo INSERT fijo `'*'` en importar.py |
@@ -145,7 +145,7 @@ En OPUS la fórmula de MO es `importe = (CANTIDAD / RENDTO) × PRECIO`. Pero `CA
 
 ## Notas
 
-- `sobrecostos` (tabla vieja, OPUS I.DBF) y `factores_sobrecosto` (tabla nueva, cascada) **coexisten**.
+- `sobrecostos` (tabla vieja, OPUS I.DBF) fue eliminada en v4. Solo existe `factores_sobrecosto` con 5 porcentajes + `factor_total`.
 - `importar.py` INSERT de insumos ya incluye `costo_directo` — OK. Faltan `catfsr`, `factor_fsr`, `fsr_minimo` (tienen DEFAULT/NULL, no rompen).
 - Todas las refs a `estructura_presupuesto.cantidad` son válidas — la columna sigue en schema.
-- Para la cascada de sobrecosto: `costo_final` se usará como resultado final. `costo_directo` = CD base antes de aplicar %.
+- Cascada de sobrecosto: `costo_final = costo_directo * COALESCE(factor_total, 1.0)`. Se aplica en `recalculo.py::_aplicar_cascada_sobrecosto()`.

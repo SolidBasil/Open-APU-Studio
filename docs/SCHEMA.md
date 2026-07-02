@@ -42,7 +42,7 @@ BLOQUE 3 — Catálogos del proyecto (editables)
 BLOQUE 4 — Proyecto
   proyectos               Metadatos completos: concursante, cliente, licitación, financiero
   configuracion_proyecto  Parámetros técnicos de cálculo (horas/día, decimales, etc.)
-  sobrecostos             Renglones de sobrecostos/indirectos por proyecto
+  factores_sobrecosto     5 porcentajes + factor_total para cascada sobre costo_directo
 
 BLOQUE 5 — Árbol del presupuesto
   estructura_presupuesto  Capítulos y conceptos con jerarquía por WBS
@@ -203,7 +203,6 @@ debe filtrar `WHERE activo = 1`**, excepto las de auditoría/historial.
 | Panel de notas por nodo | `notas` | Media |
 | Ctrl+Z (deshacer) | `historial` | Media |
 | Gestión de proveedores | `proveedores` | Baja |
-| Sobrecostos editable | `sobrecostos` | Alta |
 | Multi-moneda | `proyectos.costo_mn/me` | Baja |
 | Trabajo en red / sync | Requiere diseño adicional | Futura |
 

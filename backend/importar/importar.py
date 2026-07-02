@@ -22,7 +22,6 @@ Archivos DBF que lee:
   *F.DBF   — Fórmulas/APU: componentes de cada concepto o insumo compuesto
   *N.DBF   — Resúmenes de APU por concepto (totales por tipo de costo)
   *Z.DBF   — Configuración del proyecto (horas/día, tasas)
-  *I.DBF   — Renglones de sobrecostos (pie de precios)
   *1.DBF   — Árbol jerárquico del presupuesto (formato numérico)
   *A.DBF   — Nombres de unidades/agrupadores para el árbol
 
@@ -223,7 +222,6 @@ def importar(
     regs_f = dbf("F")
     regs_n = dbf("N")
     regs_z = dbf("Z")
-    regs_i = dbf("I")
     regs_1 = dbf("1")
     regs_a = dbf("A")
 
@@ -248,25 +246,6 @@ def importar(
 
     con.commit()
     print(f"  → proyecto '{nombre_proyecto}' (id={proyecto_id})")
-
-    # ── Pie de precios ────────────────────────────────────────────────────
-    for r in regs_i:
-        cur.execute("""
-            INSERT INTO sobrecostos
-                (proyecto_id, orden, variable, descripcion, formula,
-                 porcentaje_mn, porcentaje_me, suma_en_total,
-                 es_egreso_financ, es_ingreso_financ, se_imprime)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (proyecto_id, int(_f(r.get("RENGLON"))),
-              _s(r.get("VAR")), _s(r.get("DESC1") or r.get("DESC")),
-              _s(r.get("FORMULA")), _f(r.get("PORCMN") or r.get("PORC")),
-              _f(r.get("PORCME")),
-              1 if r.get("SE_SUMA") else 0,
-              1 if r.get("ES_EGRE") else 0,
-              1 if r.get("ES_INGR") else 0,
-              1 if r.get("SE_IMPR") else 0))
-    con.commit()
-    print(f"  → sobrecostos: {len(regs_i)}")
 
     # ── Familias y subfamilias ────────────────────────────────────────────
     # Se recopilan los valores únicos de FAMILIA y SUBFAMILIA del catálogo
@@ -615,7 +594,6 @@ def importar(
         "apu_matrices":          n_comp,
         "apu_resumen_totales":   n_tot,
         "insumos_compuestos":    n_compuestos,
-        "sobrecostos":           len(regs_i),
     }
     print("\n--- Resumen ---")
     for k, v in stats.items():

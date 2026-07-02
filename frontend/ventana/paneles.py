@@ -751,6 +751,99 @@ class PanelesMixin:
 
         return w
 
+    def _build_sobrecostos(self):
+        """Pestaña de factores de sobrecosto del proyecto.
+        5 spinboxes porcentuales, guarda y recalcula el factor_total."""
+        from PySide6.QtWidgets import (
+            QWidget, QVBoxLayout, QGridLayout, QLabel,
+            QDoubleSpinBox, QPushButton, QMessageBox, QGroupBox
+        )
+        from PySide6.QtCore import Qt
+        from backend.database.repos import FactoresSobrecostoRepo
+
+        pid = self._api.proyecto_actual_id()
+        if not pid:
+            return self._build_placeholder("Sin proyecto activo")
+
+        repo = FactoresSobrecostoRepo(self._db.conn)
+        datos = repo.obtener(pid) or {}
+
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        lbl = QLabel("<b>Factores de sobrecosto</b>")
+        lbl.setTextFormat(Qt.TextFormat.RichText)
+        layout.addWidget(lbl)
+
+        # Formulario en grid
+        grupo = QGroupBox("Porcentajes")
+        grid = QGridLayout(grupo)
+        grid.setSpacing(8)
+
+        campos = [
+            ("Indirectos de campo:",    "pct_indirectos_campo"),
+            ("Indirectos de oficina:",  "pct_indirectos_oficina"),
+            ("Financiamiento:",         "pct_financiamiento"),
+            ("Utilidad:",               "pct_utilidad"),
+            ("Cargos adicionales:",     "pct_cargos_adicionales"),
+        ]
+
+        spinboxes = {}
+        for i, (etiqueta, clave) in enumerate(campos):
+            lbl_campo = QLabel(etiqueta)
+            spin = QDoubleSpinBox()
+            spin.setRange(0, 999.99)
+            spin.setDecimals(2)
+            spin.setSuffix(" %")
+            spin.setValue(datos.get(clave, 0.0))
+            spinboxes[clave] = spin
+            grid.addWidget(lbl_campo, i, 0)
+            grid.addWidget(spin, i, 1)
+
+        layout.addWidget(grupo)
+
+        # Factor total calculado
+        factor_display = QLabel()
+        factor_display.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(factor_display)
+
+        def _actualizar_factor():
+            f = FactoresSobrecostoRepo._calcular_factor(
+                spinboxes["pct_indirectos_campo"].value(),
+                spinboxes["pct_indirectos_oficina"].value(),
+                spinboxes["pct_financiamiento"].value(),
+                spinboxes["pct_utilidad"].value(),
+                spinboxes["pct_cargos_adicionales"].value(),
+            )
+            factor_display.setText(
+                f"Factor total: <b>{f:.6f}</b>  |  "
+                f"(costo_final = costo_directo × {f:.6f})"
+            )
+            factor_display.setTextFormat(Qt.TextFormat.RichText)
+
+        for spin in spinboxes.values():
+            spin.valueChanged.connect(_actualizar_factor)
+        _actualizar_factor()
+
+        # Botón guardar
+        btn = QPushButton("Guardar y recalcular")
+        btn.clicked.connect(lambda: self._guardar_sobrecostos(repo, spinboxes, pid))
+        layout.addWidget(btn)
+        layout.addStretch()
+
+        return container
+
+    def _guardar_sobrecostos(self, repo, spinboxes, proyecto_id):
+        """Guarda los factores y lanza recálculo."""
+        from backend.database.repos.recalculo import RecalculoRepo
+        valores = {k: s.value() for k, s in spinboxes.items()}
+        repo.guardar(proyecto_id, **valores)
+        RecalculoRepo(repo._conn).recalcular_proyecto(proyecto_id)
+        QMessageBox.information(self, "Guardado",
+                                "Factores guardados y presupuesto recalculado.")
+
     def _add_comp_row(self, parent, comp, nivel, depth=0, depth_role=None):
         """Agrega una fila de componente APU al árbol y guarda insumo_id como ID_ROLE."""
         from frontend.ventana.widgets.arbol import ID_ROLE, COLORES_NIVEL

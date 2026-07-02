@@ -19,7 +19,7 @@ sin necesitar saber en qué archivo interno vive cada clase.
 """
 
 from .base        import RepoBase
-from .proyecto    import ProyectoRepo, SobrecostosRepo
+from .proyecto    import ProyectoRepo, FactoresSobrecostoRepo
 from .presupuesto import NodoRepo, ESTADO_COLOR, ESTADO_NOMBRE
 from .insumos     import InsumoRepo
 from .apu         import ApuMatricesRepo, ApuResumenTotalesRepo
@@ -29,7 +29,7 @@ from .explosion   import ExplosionRepo
 
 __all__ = [
     "RepoBase",
-    "ProyectoRepo", "SobrecostosRepo",
+    "ProyectoRepo", "FactoresSobrecostoRepo",
     "NodoRepo", "ESTADO_COLOR", "ESTADO_NOMBRE",
     "InsumoRepo",
     "ApuMatricesRepo", "ApuResumenTotalesRepo",

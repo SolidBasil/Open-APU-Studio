@@ -134,25 +134,6 @@ class ApuResumenTotalesRepo(RepoBase):
                 modificado_en      = excluded.modificado_en
         """, [subtotal_mo, subtotal_mo, matriz_id])
 
-    def actualizar_sobrecostos(self, matriz_id,
-                                indirectos_pct=0, financiamiento_pct=0,
-                                utilidad_pct=0, cargo_adicional_pct=0):
-        """Actualiza los porcentajes de sobrecostos y el precio de venta de un APU."""
-        res = self.por_matriz(matriz_id)
-        if not res:
-            return
-        cd = res["costo_directo"]
-        pv = cd * (1 + (indirectos_pct + financiamiento_pct +
-                        utilidad_pct + cargo_adicional_pct) / 100)
-        self._ejecutar("""
-            UPDATE apu_resumen_totales SET
-                indirectos_pct = ?, financiamiento_pct = ?,
-                utilidad_pct = ?, cargo_adicional_pct = ?,
-                precio_venta = ?, modificado_en = datetime('now')
-            WHERE matriz_id = ?
-        """, [indirectos_pct, financiamiento_pct, utilidad_pct,
-              cargo_adicional_pct, round(pv, 6), matriz_id])
-
 
 # =============================================================================
 # RECÁLCULO EN CASCADA DEL PRESUPUESTO

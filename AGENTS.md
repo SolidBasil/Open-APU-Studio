@@ -123,6 +123,10 @@ hacia atrás durante el desarrollo temprano.
 - **Exportación (`backend/exportar/`):** rota/incompleta tras cambios de schema.
   `exportar.py` se conserva como referencia para cuando se quiera restaurar, pero
   no se invoca desde la UI y no se mantiene activamente.
+- **Sobrecostos:** la tabla vieja `sobrecostos` (OPUS I.DBF) fue eliminada.
+  Solo existe `factores_sobrecosto` con 5 porcentajes + `factor_total`
+  (multiplicador compuesto). `costo_final = costo_directo * COALESCE(factor_total, 1.0)`.
+  Ver `backend/database/repos/proyecto.py::FactoresSobrecostoRepo`.
 
 ## UI / Diseño
 - Layout principal: sidebar (árbol) | contenido (tab + detalle) — ver `frontend/ventana.py`
