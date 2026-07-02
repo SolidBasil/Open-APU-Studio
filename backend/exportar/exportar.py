@@ -450,7 +450,7 @@ class Exportador:
         for ins in insumos:
             costo  = float(ins.get('costo_final') or 0)
             unidad = (ins.get('unidad') or '').strip()
-            clave  = (ins.get('clave') or '').strip()
+            clave  = (ins.get('clave_opus') or '').strip()
 
             # OPUS valida: longitud clave 1-20, unidad requerida para no-categoría
             if not clave or len(clave) > 20:
@@ -588,7 +588,7 @@ class Exportador:
             # importe = cantidad * precio_unitario (campo GENERATED en SQLite)
             pu       = float(nodo.get('precio_unitario') or 0)
             cantidad = float(nodo.get('cantidad') or 0)
-            subtotal = float(nodo.get('subtotal') or 0)
+            subtotal = float(nodo.get('total') or 0)
 
             pre_pre = subtotal if es_capitulo else pu
             pre_vol = 1.0     if es_capitulo else cantidad
@@ -604,7 +604,7 @@ class Exportador:
                 'PRE_SIGNO': '+',
                 'PRE_IDAUX': 0,
                 'PRE_ESCOL': False,
-                'PRE_COM':   (nodo.get('clave') or '')[:20],
+                'PRE_COM':   (nodo.get('clave_opus') or '')[:20],
                 'PRE_EXP':   (nodo.get('descripcion') or ''),
                 'PRE_VOL':   pre_vol,
                 'PRE_PRE':   pre_pre,
@@ -636,14 +636,14 @@ class Exportador:
             if nodo['tipo'] != 'concepto':
                 continue
             pu = float(nodo.get('precio_unitario') or 0)
-            cd = float(nodo.get('subtotal') or (float(nodo.get('cantidad') or 0) * pu))
+            cd = float(nodo.get('total') or (float(nodo.get('cantidad') or 0) * pu))
             registros_a.append({
                 'IDUNI':    id_a_iduni.get(nodo['id'], 0),
                 'FAMILIA':  '',
                 'COSTODIR': cd,
                 'PRECIO':   pu,
                 'UNIDAD':   (nodo.get('unidad') or '')[:8],
-                'NOMBRE':   (nodo.get('clave') or '')[:20],
+                'NOMBRE':   (nodo.get('clave_opus') or '')[:20],
                 'DESC':     (nodo.get('descripcion') or ''),
                 'PRE_WBS':  (nodo.get('wbs') or '')[:20],
                 'PRECIOMN': pu,
@@ -669,7 +669,7 @@ class Exportador:
                 ins = insumos.get(comp['insumo_id'])
                 if not ins:
                     continue
-                clave_ins  = (ins.get('clave') or '')[:20]
+                clave_ins  = (ins.get('clave_opus') or '')[:20]
                 prefcomp   = int(ins.get('tipo_id') or 1)
                 cantidad   = float(comp.get('cantidad') or 0)
                 rendto     = float(comp.get('rendimiento') or 1) or 1.0
@@ -735,7 +735,7 @@ class Exportador:
             comp = self._apu_repo.por_matriz(mid)
             if not comp:
                 continue
-            nombre = (nodo.get('clave') or '')
+            nombre = (nodo.get('clave_opus') or '')
             _add_f(nombre, 32, comp)
             if mid not in matrices_vistas:
                 matrices_vistas.add(mid)
@@ -752,7 +752,7 @@ class Exportador:
             comp = self._apu_repo.por_matriz(-ins_id)
             if not comp:
                 continue
-            nombre = (ins_parent.get('clave') or '')
+            nombre = (ins_parent.get('clave_opus') or '')
             pref   = int(ins_parent.get('tipo_id') or 32)
             _add_f(nombre, pref, comp)
             key = -ins_id
@@ -786,9 +786,9 @@ class Exportador:
                 precio   = float(ins_comp.get('costo_final') or 0)
                 registros_5.append({
                     'PREFIJO':  int(ins_parent.get('tipo_id') or 1),
-                    'NOMBRE':   (ins_parent.get('clave') or '')[:20],
+                    'NOMBRE':   (ins_parent.get('clave_opus') or '')[:20],
                     'PREFCOMP': int(ins_comp.get('tipo_id') or 1),
-                    'COMPONE':  (ins_comp.get('clave') or '')[:20],
+                    'COMPONE':  (ins_comp.get('clave_opus') or '')[:20],
                     'UNIPOR':   0,
                     'CANTIDAD': cantidad,
                     'PRECIO':   precio,
@@ -814,7 +814,7 @@ class Exportador:
                 precio   = float(ins.get('costo_final') or 0)
                 registros_x.append({
                     'PREFIJO':    int(ins.get('tipo_id') or 1),
-                    'NOMBRE':     (ins.get('clave') or '')[:20],
+                    'NOMBRE':     (ins.get('clave_opus') or '')[:20],
                     'CLAVEUSUAR': '',
                     'UNIPOR':     0,
                     'CANTIDAD':   cantidad,

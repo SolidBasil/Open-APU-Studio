@@ -141,7 +141,7 @@ visualización de datos esté 100% pulida y verificada contra proyectos reales.
 
 **Consecuencias:**
 - El árbol (`arbol.py`) permite edición de celdas (clave, descripción, unidad, cant, precio)
-- La edición dispara recálculo de subtotales bottom-up
+- La edición dispara recálculo de totales bottom-up
 - `insumos.py` y `apu` detail permanecen solo lectura
 - Cuando se habilite la edición total, el primer paso es implementar el Historial
 

@@ -31,20 +31,33 @@ def _emoji_icon(char, size=20):
 
 # ── Roles de datos ────────────────────────────────────────────────
 
-WBS_ROLE     = Qt.ItemDataRole.UserRole
-ID_ROLE      = Qt.ItemDataRole.UserRole + 1  # id de estructura_presupuesto
+WBS_ROLE       = Qt.ItemDataRole.UserRole
+ID_ROLE        = Qt.ItemDataRole.UserRole + 1   # id de estructura_presupuesto
+INSUMO_ID_ROLE = Qt.ItemDataRole.UserRole + 11  # insumo_id del insumo vinculado
 
 # ── Configuración de columnas ─────────────────────────────────────
 
-# Subtotal se fusionó en Total (col 6): conceptos → importe, capítulos → subtotal.
-# El índice que ocupaba Subtotal (7) se eliminó; columnas posteriores corrieron -1.
-COLUMNAS     = [
-    "Estructura", "Nivel", "Tipo", "Descripción", "Unid", "Cant", "P.U.", "Total",
-    "Desc. Corta", "Estado", "Notas", "Creado", "Modificado",
+# Col  0: Estructura  (ícono)
+# Col  1: Nivel       (wbs display)
+# Col  2: Tipo
+# Col  3: Clave       (clave_opus — referencial, oculta por defecto)
+# Col  4: Descripción
+# Col  5: Unidad      (desde insumos)
+# Col  6: Cant
+# Col  7: P.U.        (precio_unitario desde insumos.costo_final)
+# Col  8: Total
+# Col  9: Estado
+# Col 10: Notas
+# Col 11: Creado
+# Col 12: Modificado
+COLUMNAS = [
+    "Estructura", "Nivel", "Tipo", "Clave", "Descripción",
+    "Unidad", "Cant", "P.U.", "Total",
+    "Estado", "Notas", "Creado", "Modificado",
 ]
-_VISIBLE    = {0, 1, 2, 3, 4, 5, 6, 7}
-EDITABLE    = frozenset({3, 4, 5, 6})
-_AGRUP_COLS = {0, 1, 3, 7}
+_VISIBLE    = {0, 1, 4, 5, 6, 7, 8}   # Clave y Tipo ocultas por defecto
+EDITABLE    = frozenset({4, 6})        # Descripción (solo capítulos) y Cant (solo conceptos)
+_AGRUP_COLS = {0, 1, 4, 8}
 
 # ── Colores por nivel jerárquico ─────────────────────────────────
 
@@ -89,17 +102,15 @@ class TablaArbol(TreeTableWidget):
         super().__init__(COLUMNAS, EDITABLE, parent=parent)
         self.set_column_modes({
             c: (QHeaderView.ResizeMode.Interactive, w)
-            for c, w in enumerate([120, 100, 80, 250, 45, 60, 80, 90,
-                                   120, 70, 100, 130, 130])
+            for c, w in enumerate([80, 80, 70, 90, 250, 55, 65, 90, 90,
+                                   70, 100, 130, 130])
         })
         self.header().setMaximumSectionSize(400)
         self._restore_header_state()
-        # enforce _VISIBLE después del restore (el estado guardado puede tener columnas visibles)
         for c in range(len(COLUMNAS)):
             if c not in _VISIBLE:
                 self.setColumnHidden(c, True)
-        # búsqueda por defecto: Nivel, Tipo, Descripción
-        self._search_cols = {1, 2, 3}
+        self._search_cols = {4}  # búsqueda por Descripción
 
 
 
@@ -145,17 +156,16 @@ class TablaArbol(TreeTableWidget):
     def _celdas(n, wbs):
         """Construye la lista de valores para todas las columnas desde el dict del nodo."""
         return [
-            "",                                            # 0 Estructura (icon via setIcon)
-            wbs,                                           # 1 Nivel
-            {"capitulo": "Capítulo", "concepto": "Concepto"}.get(n.get("tipo"), n.get("tipo", "")),  # 2 Tipo
-            n.get("descripcion", ""),                      # 3 Descripción
-            n.get("unidad", ""),                           # 4 Unid
-            _num(n.get("cantidad")),                       # 5 Cant
-            _fmt(n.get("precio_unitario")),                # 6 P.U.
-            # Total: conceptos muestran importe directo, capítulos muestran subtotal acumulado
-            _fmt(n.get("importe") if n.get("tipo") == "concepto" else n.get("subtotal")),  # 7 Total
-            n.get("descripcion_corta", ""),                # 8 Desc. Corta
-            n.get("estado_nombre", ""),                    # 9 Estado
+            "",                                            # 0  Estructura (icon via setIcon)
+            wbs,                                           # 1  Nivel (wbs display)
+            {"capitulo": "Capítulo", "concepto": "Concepto"}.get(n.get("tipo"), n.get("tipo", "")),  # 2  Tipo
+            n.get("clave_opus") or "",                     # 3  Clave (referencial, oculta)
+            n.get("descripcion", ""),                      # 4  Descripción
+            n.get("unidad") or "",                         # 5  Unidad (desde insumos)
+            _num(n.get("cantidad")),                       # 6  Cant
+            _fmt(n.get("precio_unitario")),                # 7  P.U.
+            _fmt(n.get("total")),                          # 8  Total
+            n.get("estado_nombre", ""),                    # 9  Estado
             n.get("notas_rapidas", ""),                    # 10 Notas
             str(n.get("creado_en", "") or ""),             # 11 Creado
             str(n.get("modificado_en", "") or ""),         # 12 Modificado
@@ -164,7 +174,9 @@ class TablaArbol(TreeTableWidget):
     # ── Inserción de agrupadores ──────────────────────────────────
 
     def add_agrupador(self, n, parent=None, expanded=True):
-        """Agrega nodo agrupador (capítulo) con color por nivel, negritas y expandido opcional."""
+        """Agrega nodo agrupador (capítulo).
+        El delegado inteligente permite editar col 4 (Descripción) para capítulos.
+        """
         parent = parent or self
         nivel = 0
         p = parent
@@ -174,8 +186,9 @@ class TablaArbol(TreeTableWidget):
         wbs  = n.get("wbs", "")
         fmt  = self._calc_wbs(wbs, parent)
         data = self._celdas(n, fmt)
-        item = self.add_row(data, parent, editable=False)
+        item = self.add_row(data, parent, editable=True)
         item.setData(0, WBS_ROLE, wbs)
+        item.setData(0, ID_ROLE, n.get("id"))
         item.setIcon(0, _emoji_icon("\U0001F4C2", 20))  # 📂 folder
         color = COLORES_NIVEL[min(nivel, len(COLORES_NIVEL) - 1)]
         brush = QBrush(QColor(color))
@@ -187,13 +200,15 @@ class TablaArbol(TreeTableWidget):
         item.setExpanded(expanded)
         return item
 
-    # ── Inserción de registros hoja ───────────────────────────────
-
     def add_registro(self, n, parent=None):
-        """Agrega nodo hoja (concepto) editable, almacenando su ID de DB en un rol personalizado."""
+        """Agrega nodo hoja (concepto).
+        El delegado inteligente permite editar col 6 (Cant) para conceptos.
+        Descripción (col 4) no es editable — refleja insumos.descripcion via JOIN.
+        """
         data = self._celdas(n, "")
         item = self.add_row(data, parent, editable=True)
         item.setData(0, ID_ROLE, n.get("id"))
+        item.setData(0, INSUMO_ID_ROLE, n.get("insumo_id"))
         item.setIcon(0, _emoji_icon("\U0001F4C4", 20))  # 📄 leaf
         return item
 

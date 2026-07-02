@@ -430,6 +430,8 @@ class ToolbarMixin:
             btn.clicked.connect(self._on_pantalla_completa)
         elif tip == "Filtro":
             pass  # pendiente de implementar
+        elif tip == "Recalcular":
+            btn.clicked.connect(self._on_recalcular)
         elif tip == "Auditoría":
             btn.clicked.connect(self._on_depurar_catalogos)
         elif tip == "Parámetros proyecto":

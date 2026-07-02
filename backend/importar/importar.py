@@ -12,7 +12,7 @@ Reglas:
   2. La jerarquía se reconstruye por PRE_WBS (truncado de derecha a izquierda).
      Ver SCHEMA.md sección "Decisiones de diseño — jerarquía por WBS".
   3. Los importes (PRE_VOL × PRE_PRE) se materializan al insertar.
-  4. Los subtotales de capítulos se calculan bottom-up al final.
+   4. Los totales de capítulos se calculan bottom-up al final.
   5. Toda referencia a catálogos también filtra _deleted=False.
   6. PRE_IDPAD del *1.DBF NO se usa para resolver padres (pertenece a otra
      tabla de OPUS y sus valores coinciden con PRE_ID solo por azar).
@@ -432,33 +432,64 @@ def importar(
 
     # ── Árbol ─────────────────────────────────────────────────────────────
     if formato == "numerico":
-        nodo_id_sqlite = _arbol_numerico(
+        nodo_id_sqlite, clave_a_conceptos = _arbol_numerico(
             con, cur, proyecto_id, regs_1, regs_a, regs_p)
     else:
-        nodo_id_sqlite = _arbol_clasico(
+        nodo_id_sqlite, clave_a_conceptos = _arbol_clasico(
             con, cur, proyecto_id, regs_f, regs_p)
 
     con.commit()
     print(f"  → estructura_presupuesto: {len(nodo_id_sqlite)}")
 
+    # ── Vincular insumo_id en estructura_presupuesto ──────────────────────
+    # clave_a_conceptos mapea clave_opus → [ep_id, ...]. Para cada concepto
+    # del árbol se busca el insumo correspondiente por clave_opus y se escribe
+    # insumo_id en la fila de estructura_presupuesto.
+    n_vinculados   = 0
+    n_sin_insumo   = 0
+    for clave_opus, ep_ids in clave_a_conceptos.items():
+        insumo_id = insumo_id_por_clave.get(clave_opus)
+        if not insumo_id:
+            n_sin_insumo += len(ep_ids)
+            continue
+        for ep_id in ep_ids:
+            cur.execute("""
+                UPDATE estructura_presupuesto
+                SET insumo_id = ?
+                WHERE id = ?
+            """, (insumo_id, ep_id))
+            n_vinculados += 1
+    con.commit()
+    msg = f"  → insumo_id vinculados: {n_vinculados}"
+    if n_sin_insumo:
+        msg += f"  |  {n_sin_insumo} sin insumo en catálogo"
+    print(msg)
+
+    # Recalcular total de conceptos usando precio real del insumo (costo_final)
+    # PRE_PRE del DBF puede ser un valor desactualizado; el precio vigente vive
+    # en insumos.costo_final y ahora está accesible vía el insumo_id vinculado.
+    cur.execute("""
+        UPDATE estructura_presupuesto
+        SET total = (
+            SELECT COALESCE(estructura_presupuesto.cantidad, 0) * COALESCE(i.costo_final, 0)
+            FROM insumos i
+            WHERE i.id = estructura_presupuesto.insumo_id
+        ),
+        modificado_en = datetime('now')
+        WHERE proyecto_id = ?
+          AND tipo = 'concepto'
+          AND activo = 1
+          AND insumo_id IS NOT NULL
+    """, (proyecto_id,))
+    con.commit()
+    print(f"  → totales de conceptos recalculados con precio real del insumo")
+
     # ── APU NODOS (sintéticos para insumos compuestos fuera del árbol) ─────
     insumo_por_clave = {_s(r.get("NOMBRE")): r for r in regs_p if _s(r.get("NOMBRE"))}
-
-    cur.execute("SELECT clave FROM estructura_presupuesto WHERE proyecto_id = ? AND clave IS NOT NULL",
-                (proyecto_id,))
-    claves_existentes = {r["clave"] for r in cur.fetchall()}
 
     # apu_auxiliares eliminado — insumos compuestos ya están en insumos (es_compuesto=1)
 
     # ── APU matrices (componentes del APU) ──────────────────────────────
-    # Lookup de conceptos del árbol por clave
-    cur.execute("""
-        SELECT clave, id FROM estructura_presupuesto
-        WHERE proyecto_id = ? AND clave IS NOT NULL
-    """, (proyecto_id,))
-    clave_a_conceptos: dict[str, list[int]] = {}
-    for r in cur.fetchall():
-        clave_a_conceptos.setdefault(r["clave"], []).append(r["id"])
 
     # Lookup de insumos compuestos por clave (es_compuesto=1)
     # Reemplaza el lookup de apu_auxiliares que fue eliminado.
@@ -545,13 +576,13 @@ def importar(
     if n_skip_tot: msg += f"  |  {n_skip_tot} sin concepto"
     print(msg)
 
-    # ── Subtotales bottom-up ──────────────────────────────────────────────
-    print("  → Recalculando subtotales...")
-    _recalcular_subtotales(con, proyecto_id)
+    # ── Totales bottom-up ──────────────────────────────────────────
+    print("  → Recalculando totales...")
+    _recalcular_totales(con, proyecto_id)
 
     cur.execute("""
         UPDATE proyectos SET total_obra = (
-            SELECT COALESCE(SUM(subtotal), 0) FROM estructura_presupuesto
+            SELECT COALESCE(SUM(total), 0) FROM estructura_presupuesto
             WHERE proyecto_id = ? AND padre_id IS NULL AND activo = 1
         ) WHERE id = ?
     """, (proyecto_id, proyecto_id))
@@ -601,6 +632,7 @@ def _arbol_numerico(con, cur, proyecto_id, regs_1, regs_a, regs_p) -> dict:
 
     nodo_id_sqlite: dict[int, int] = {}
     wbs_a_sqlite:   dict[str, int] = {}
+    clave_nodo_ids: dict[str, list[int]] = {}
     stats = {"wbs": 0, "sin_resolver": 0}
 
     for r in nodos_ord:
@@ -610,6 +642,12 @@ def _arbol_numerico(con, cur, proyecto_id, regs_1, regs_a, regs_p) -> dict:
         nivel     = int(r.get("PRE_NIVEL") or 0)
         pre_com   = _s(r.get("PRE_COM"))
         pre_iduni = int(r.get("PRE_IDUNI") or -1)
+
+        # El primer registro de *1.DBF es un nodo raíz interno de OPUS (nivel=0,
+        # sin PRE_COM, sin descripción real) que no corresponde a ningún capítulo
+        # del presupuesto. Se omite para no generar una fila vacía en la UI.
+        if nivel == 0 and not pre_com:
+            continue
 
         # Resolver padre — WBS truncation is the only reliable method.
         # PRE_IDPAD values come from a different OPUS table and are NOT
@@ -638,27 +676,31 @@ def _arbol_numerico(con, cur, proyecto_id, regs_1, regs_a, regs_p) -> dict:
             desc_corta = _s(rec.get("DESCCORTA") or rec.get("DESC"))
             unidad = cantidad = pu = None
 
+        total = cantidad * pu if es_concepto and cantidad and pu else 0
         cur.execute("""
             INSERT INTO estructura_presupuesto
                 (proyecto_id, padre_id, wbs, nivel, orden, tipo,
-                 clave, descripcion, descripcion_corta, unidad,
-                 cantidad, precio_unitario, subtotal, estado, creado_por)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, 1)
+                 insumo_id, descripcion, cantidad, total, estado, creado_por)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)
         """, (proyecto_id, padre_id, wbs, nivel,
               int(wbs[-2:]) if len(wbs) >= 2 else 0,
               "concepto" if es_concepto else "capitulo",
-              pre_com if es_concepto else None,
-              desc, desc_corta, unidad, cantidad, pu))
+              None,  # insumo_id: se vincula posteriormente
+              desc,
+              cantidad,
+              total))
 
         sid = cur.lastrowid
         nodo_id_sqlite[pre_id] = sid
+        if es_concepto and pre_com:
+            clave_nodo_ids.setdefault(pre_com, []).append(sid)
         if wbs:
             wbs_a_sqlite[wbs] = sid
 
     print(f"    WBS: {stats['wbs']}  |  "
           f"Sin resolver: {stats['sin_resolver']}")
     con.commit()
-    return nodo_id_sqlite
+    return nodo_id_sqlite, clave_nodo_ids
 
 
 # =============================================================================
@@ -685,42 +727,41 @@ def _arbol_clasico(con, cur, proyecto_id, regs_f, regs_p) -> dict:
         cur.execute("""
             INSERT INTO estructura_presupuesto
                 (proyecto_id, padre_id, wbs, nivel, orden, tipo,
-                 clave, descripcion, descripcion_corta, subtotal, estado, creado_por)
-            VALUES (?, NULL, ?, 1, ?, 'capitulo', ?, ?, ?, 0, 1, 1)
-        """, (proyecto_id, wbs_cap, orden_cap, str(cap),
-              f"Capítulo {cap}" if cap else "Generales",
-              f"Cap. {cap}"))
+                 descripcion, total, estado, creado_por)
+            VALUES (?, NULL, ?, 1, ?, 'capitulo', ?, 0, 1, 1)
+        """, (proyecto_id, wbs_cap, orden_cap,
+              f"Capítulo {cap}" if cap else "Generales"))
         cap_id = cur.lastrowid
         nodo_id_sqlite[f"cap_{cap}"] = cap_id
 
         for i, r in enumerate(caps[cap], start=1):
             clave = _s(r.get("NOMBRE"))
             rec   = egp.get(clave, {})
+            cantidad = _f(r.get("NOELE"))
+            pu       = _f(r.get("COSTO"))
+            total    = cantidad * pu if cantidad and pu else 0
             cur.execute("""
                 INSERT INTO estructura_presupuesto
                     (proyecto_id, padre_id, wbs, nivel, orden, tipo,
-                     clave, descripcion, descripcion_corta,
-                     unidad, cantidad, precio_unitario,
-                     subtotal, estado, creado_por)
-                VALUES (?, ?, ?, 2, ?, 'concepto', ?, ?, ?, ?, ?, ?, 0, 1, 1)
-            """, (proyecto_id, cap_id, f"{wbs_cap}{i:02d}", i, clave,
+                     insumo_id, descripcion, cantidad, total, estado, creado_por)
+                VALUES (?, ?, ?, 2, ?, 'concepto', ?, ?, ?, ?, 1, 1)
+            """, (proyecto_id, cap_id, f"{wbs_cap}{i:02d}", i,
+                  None,  # insumo_id
                   _s(rec.get("DESCRIPCIO") or rec.get("DESCCORTA")),
-                  _s(rec.get("DESCCORTA")),
-                  _s(rec.get("UNIDAD")),
-                  _f(r.get("NOELE")), _f(r.get("COSTO"))))
+                  cantidad, total))
             nodo_id_sqlite[clave] = cur.lastrowid
 
     con.commit()
-    return nodo_id_sqlite
+    return nodo_id_sqlite, nodo_id_sqlite
 
 
 # =============================================================================
 # SUBTOTALES BOTTOM-UP
 # =============================================================================
 
-# ── recalcular subtotales de capítulos desde hojas hacia raíz ──
-def _recalcular_subtotales(con, proyecto_id: int):
-    """Recalcula subtotales de capítulos bottom-up desde el nivel más profundo hacia la raíz."""
+# ── recalcular totales de capítulos desde hojas hacia raíz ──
+def _recalcular_totales(con, proyecto_id: int):
+    """Recalcula totales de capítulos bottom-up desde el nivel más profundo hacia la raíz."""
     cur = con.cursor()
     cur.execute("""
         SELECT MAX(nivel) FROM estructura_presupuesto WHERE proyecto_id = ? AND activo = 1
@@ -730,13 +771,8 @@ def _recalcular_subtotales(con, proyecto_id: int):
     for nivel in range(max_nivel, -1, -1):
         cur.execute("""
             UPDATE estructura_presupuesto SET
-                subtotal = (
-                    SELECT COALESCE(SUM(
-                        CASE WHEN tipo = 'concepto'
-                             THEN COALESCE(importe, 0)
-                             ELSE COALESCE(subtotal, 0)
-                        END
-                    ), 0)
+                total = (
+                    SELECT COALESCE(SUM(COALESCE(total, 0)), 0)
                     FROM estructura_presupuesto h
                     WHERE h.padre_id = estructura_presupuesto.id AND h.activo = 1
                 ),

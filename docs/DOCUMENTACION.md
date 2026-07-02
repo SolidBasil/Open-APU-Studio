@@ -460,10 +460,11 @@ estructura_presupuesto (
     id, proyecto_id, padre_id,
     wbs, nivel, orden,          -- jerarquía
     tipo,                        -- 'capitulo' | 'concepto'
-    clave, descripcion, descripcion_corta,
-    unidad, cantidad, precio_unitario,
-    importe GENERATED ALWAYS AS (cantidad * precio_unitario) STORED,
-    subtotal,                    -- actualizado por Python
+    insumo_id,                   -- REFERENCES insumos(id) — solo conceptos
+    descripcion,
+    cantidad,
+    formula,                     -- expresión opcional para cantidad
+    total,                       -- unificado: conceptos=cant×precio, capítulos=SUM(hijos)
     estado INTEGER,              -- 0=sin revisar, 1=en revisión, 2=verificado, 3=cuestionado
     notas_rapidas,
     activo, creado_por, creado_en, modificado_por, modificado_en
@@ -546,12 +547,14 @@ schema_version (version, aplicado_en, descripcion)
 
 ```sql
 -- Presupuesto completo ordenado por WBS
-SELECT n.id, n.wbs, n.nivel, n.tipo, n.clave, n.descripcion,
-       n.unidad, n.cantidad, n.precio_unitario, n.importe, n.subtotal,
+SELECT n.id, n.wbs, n.nivel, n.tipo, n.insumo_id,
+       COALESCE(i.descripcion, n.descripcion) AS descripcion,
+       n.cantidad, n.total,
        CASE n.estado WHEN 0 THEN 'Sin revisar' WHEN 1 THEN 'En revisión'
                      WHEN 2 THEN 'Verificado' WHEN 3 THEN 'Cuestionado'
        END AS estado_nombre
 FROM estructura_presupuesto n
+LEFT JOIN insumos i ON i.id = n.insumo_id
 WHERE n.proyecto_id = ? AND n.activo = 1
 ORDER BY n.wbs;
 

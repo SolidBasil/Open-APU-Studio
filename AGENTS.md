@@ -71,8 +71,8 @@ docs/
 - **Temas:** Sistema modo × acento: `frontend/temas/temas.py` carga modo-*.qss + acento-*.qss en runtime
 - **OPUS import:** `dbfread` con `encoding='cp850'`, sistema de bits para tipos de insumo — `backend/importar.py`
 - **Esquema:** Single `schema.sql` aplicado por `db.py`. Si hay cambios futuros: migraciones numeradas en SQL (ver `docs/SCHEMA.md` sección migraciones)
-- **Recálculo:** Bottom-up en Python desde `backend/core.py::recalcular_subtotales()` — no se almacenan totales de partida/presupuesto, se calculan con SUM()
-- **Importe:** No es GENERATED en `apu_matrices` ni `estructura_presupuesto` — se calcula en Python con operador `*` o `/` según `CAMPOREND` (ver `docs/planes/PLAN_INSUMOS.md`)
+- **Recálculo:** Bottom-up en Python desde `backend/repos.py::actualizar_total()` — `capítulos.total = SUM(hijos.total)`, sin bifurcación `importe`/`subtotal`
+- **Total:** Columna unificada en `estructura_presupuesto` — reemplaza la antigua dualidad `importe` (GENERATED) + `subtotal`. Para conceptos se calcula como `cantidad × precio` (precio desde insumo o APU); para capítulos es `SUM(hijos.total)`.
 - **FSR:** Dos modos: calculado desde `insumos.catfsr → factores_fsr` o manual (`insumos.factor_fsr`). `salario_real = salario_nominal × COALESCE(factor_fsr, 1.0)`
 - **Fórmulas:** `simpleeval` vendereado como `backend/formulas.py`. Evaluación recursiva de variables desde `variables_formula`. Aplica en `apu_matrices.formula` y `estructura_presupuesto.formula`.
 

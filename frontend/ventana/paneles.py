@@ -107,6 +107,7 @@ class PanelesMixin:
             print(f"Error cargando presupuesto: {e}")
 
         tree.setEditTriggers(QAbstractItemView.EditTrigger.EditKeyPressed)
+        tree.itemChanged.connect(self._on_concepto_editado)
         tree.itemDoubleClicked.connect(self._on_item_dblclick)
         self._arbol_presupuesto = tree   # referencia para explosión de insumos
         return tree
@@ -193,7 +194,7 @@ class PanelesMixin:
         detail.header().setMaximumSectionSize(400)
 
         if self._api:
-            resultado = self._api.apu(clave=clave) if matriz_id > 0 else self._api.apu(insumo_id=-matriz_id)
+            resultado = self._api.apu(nodo_id=matriz_id) if matriz_id > 0 else self._api.apu(insumo_id=-matriz_id)
             if resultado:
                 for r in resultado["detalle"]:
                     tid = r["tipo_id"]
@@ -228,8 +229,60 @@ class PanelesMixin:
 
     def _on_item_dblclick(self, item, column):
         """Doble clic en presupuesto/insumos → abre APU del concepto."""
+        from frontend.ventana.widgets.arbol import ID_ROLE
         if self._es_pu(item, column):
-            self._abrir_apu(item.text(0).strip() or item.text(1).strip())
+            nodo_id = item.data(0, ID_ROLE)
+            if nodo_id:
+                self._abrir_apu_por_id(nodo_id)
+            else:
+                # fallback: usar texto del item (para insumos)
+                self._abrir_apu(item.text(1).strip() or item.text(0).strip())
+
+    def _abrir_apu_por_id(self, nodo_id: int):
+        """Abre APU por ID de estructura_presupuesto."""
+        if not nodo_id or not self._api:
+            return
+        resultado = self._api.apu(nodo_id=nodo_id)
+        if not resultado:
+            self._sb.showMessage(f"Concepto #{nodo_id} no tiene matriz relacionada", 4000)
+            return
+        descripcion = resultado.get("descripcion", "")
+        title = f"APU: {descripcion[:30]}" if descripcion else f"APU: #{nodo_id}"
+        for i in range(self._tabs.count()):
+            if self._tabs.tabText(i) == title:
+                self._tabs.setCurrentIndex(i)
+                return
+        idx = self._tabs.addTab(self._build_apu_tab(str(nodo_id), resultado["matriz_id"], descripcion), title)
+        self._tabs.setCurrentIndex(idx)
+
+    def _on_concepto_editado(self, item, column):
+        """itemChanged del árbol del presupuesto — persiste edición inline.
+
+        Col 4 = Descripción (solo capítulos — conceptos la heredan del insumo)
+        Col 6 = Cant        (solo conceptos)
+        """
+        from frontend.ventana.widgets.arbol import ID_ROLE
+        nodo_id = item.data(0, ID_ROLE)
+        if nodo_id is None:
+            return
+        if column == 6:  # Cant
+            try:
+                texto = item.text(column).strip().replace("$", "")
+                # Soportar tanto punto como coma decimal, y comas de miles
+                if texto.count(",") == 1 and texto.count(".") == 0:
+                    texto = texto.replace(",", ".")   # coma decimal europea
+                else:
+                    texto = texto.replace(",", "")    # coma de miles
+                cantidad = float(texto)
+            except ValueError:
+                return
+            self._api.concepto_actualizar_cantidad(nodo_id, cantidad)
+            self._refrescar_tab_activa()
+        elif column == 4:  # Descripción (solo capítulos)
+            tipo = item.text(2)
+            if tipo == "Capítulo":
+                self._api.agrupador_actualizar_descripcion(nodo_id, item.text(column))
+                self._refrescar_tab_activa()
 
     @staticmethod
     def _es_pu(item, column) -> bool:
@@ -454,17 +507,18 @@ class PanelesMixin:
         self._refrescar_tab_activa()
 
     def _refrescar_tab_activa(self):
-        """Recarga la pestaña activa si es una tabla de insumos."""
+        """Recarga la pestaña activa si es una tabla de insumos o el árbol del presupuesto."""
         from frontend.ventana.widgets.insumos import TablaInsumos
         w = self._tabs.currentWidget()
         tabla = w if isinstance(w, TablaInsumos) else w.findChild(TablaInsumos) if w else None
-        if tabla is None:
-            return
-        # Repoblar con los datos frescos manteniendo el tipo activo
-        if self._api:
+        if tabla is not None and self._api:
             ids = self._api.insumo_ids_con_apu()
             insumos = self._api.insumos()
             tabla.poblar(insumos, ids)
+
+        if self._arbol_presupuesto is not None and self._api:
+            nodos = self._api.presupuesto_arbol()
+            self._arbol_presupuesto.poblar(nodos)
 
     # ── Conceptos ─────────────────────────────────────────────────────────
     # Vista plana de todos los nodos de tipo 'concepto' en el presupuesto.
@@ -475,23 +529,21 @@ class PanelesMixin:
         from frontend.ventana.widgets.base import TreeTableWidget
 
         t = TreeTableWidget(
-            ["Clave", "Descripción", "Unidad", "Cant", "P.U.", "Total"],
+            ["Descripción", "Cant", "Total"],
             flat=True,
         )
         t.set_column_modes({
             c: (QHeaderView.ResizeMode.Interactive, w)
-            for c, w in enumerate([80, 250, 50, 80, 100, 110])
+            for c, w in enumerate([250, 80, 110])
         })
         t.header().setMaximumSectionSize(400)
         if self._api:
             for c in self._api.conceptos_planos():
                 t.add_row([
-                    c.get("clave", ""),
+                    "",
                     c.get("descripcion", "") or "",
-                    c.get("unidad", "") or "",
                     f"{c.get('cantidad', 0):,.2f}",
-                    f"${c.get('precio_unitario', 0):,.2f}",
-                    f"${c.get('importe', 0):,.2f}",
+                    f"${c.get('total', 0):,.2f}",
                 ], editable=False)
         t.itemDoubleClicked.connect(self._on_item_dblclick)
         return t
@@ -631,14 +683,17 @@ class PanelesMixin:
         total_conceptos = 0
         for cid in concepto_ids:
             cur.execute("""
-                SELECT clave, descripcion, wbs
-                FROM estructura_presupuesto WHERE id = ? AND activo = 1
+                SELECT ep.wbs, ep.descripcion,
+                       COALESCE(i.clave_opus, '') AS clave_opus
+                FROM estructura_presupuesto ep
+                LEFT JOIN insumos i ON i.id = ep.insumo_id
+                WHERE ep.id = ? AND ep.activo = 1
             """, [cid])
             row = cur.fetchone()
             if not row:
                 continue
             raiz = QTreeWidgetItem(tree, [
-                row["wbs"] or "", row["clave"], row["descripcion"],
+                row["wbs"] or "", row["clave_opus"], row["descripcion"],
                 "", "", "", "", "",
             ])
             color = QBrush(QColor(COLORES_NIVEL[0]))
@@ -670,7 +725,7 @@ class PanelesMixin:
                 if insumo_id is None:
                     return
                 depth = item.data(0, _DEPTH_ROLE) or 0
-                apu = get_apu(db_path, insumo_id)
+                apu = get_apu(db_path, -insumo_id)
                 for comp in apu["detalle"]:
                     sub = self._add_comp_row(item, comp, "", depth + 1, _DEPTH_ROLE)
                     if comp["insumo_es_compuesto"]:
@@ -735,4 +790,3 @@ class PanelesMixin:
             subprocess.Popen(["open", str(carpeta)])
         else:
             subprocess.Popen(["xdg-open", str(carpeta)])
-

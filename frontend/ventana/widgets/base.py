@@ -89,17 +89,122 @@ def draw_tree_connectors(tree, painter, rect, index, line_color=LINE_COLOR):
 
 # ── Delegado de edición ───────────────────────────────────────────
 
+# ── Delegado de edición ───────────────────────────────────────────
+
 class _Delegate(QStyledItemDelegate):
+    """Delegado que controla qué celda es editable según columna Y tipo de nodo.
+
+    Comportamiento tipo Excel:
+    - La celda ya seleccionada se edita con un clic adicional (SelectedClicked)
+      o con F2 / cualquier tecla alfanumérica.
+    - Al confirmar con Enter o Tab, el foco avanza a la siguiente celda editable
+      del mismo item o del item siguiente. El árbol emite commitData para que
+      paneles.py persista el valor antes de mover el foco.
+    """
+
+    # Columnas editables por tipo de nodo
+    _EDITABLE_POR_TIPO = {
+        "capitulo": {4},    # Descripción
+        "concepto": {6},    # Cant
+    }
+
     def __init__(self, parent, editable_cols):
-        """Delegado que solo permite edición en columnas indicadas."""
         super().__init__(parent)
-        self._editable_cols = editable_cols
+        self._editable_cols = editable_cols  # fallback genérico (no se usa en el árbol)
+
+    def _tipo_nodo(self, index) -> str | None:
+        """Devuelve 'capitulo' o 'concepto' leyendo col 2 (Tipo) del item."""
+        item = self.parent().itemFromIndex(index)
+        if item is None:
+            return None
+        tipo_txt = item.text(2).lower()
+        if "cap" in tipo_txt:
+            return "capitulo"
+        if "con" in tipo_txt:
+            return "concepto"
+        return None
+
+    def _es_editable(self, index) -> bool:
+        tipo = self._tipo_nodo(index)
+        if tipo is None:
+            return index.column() in self._editable_cols
+        return index.column() in self._EDITABLE_POR_TIPO.get(tipo, set())
 
     def createEditor(self, parent, option, index):
-        """Crea editor solo si la columna es editable; si no, retorna None."""
-        if index.column() in self._editable_cols:
-            return super().createEditor(parent, option, index)
+        """Crea editor solo si la celda es editable para ese tipo de nodo."""
+        if self._es_editable(index):
+            editor = super().createEditor(parent, option, index)
+            if editor:
+                # Seleccionar todo el texto al abrir el editor (como Excel)
+                from PySide6.QtWidgets import QLineEdit
+                if isinstance(editor, QLineEdit):
+                    editor.selectAll()
+            return editor
         return None
+
+    def setEditorData(self, editor, index):
+        """Limpia el formato ($, comas) para editar el valor numérico en bruto."""
+        from PySide6.QtWidgets import QLineEdit
+        if isinstance(editor, QLineEdit):
+            texto = index.data(Qt.ItemDataRole.DisplayRole) or ""
+            # Quitar prefijo $ y separadores de miles para editar número limpio
+            texto = texto.replace("$", "").replace(",", "").strip()
+            editor.setText(texto)
+        else:
+            super().setEditorData(editor, index)
+
+    def commitAndMove(self, editor, hint):
+        """Confirma el editor y mueve el foco a la siguiente celda editable."""
+        self.commitData.emit(editor)
+        self.closeEditor.emit(editor, QStyledItemDelegate.EndEditHint.NoHint)
+        tw = self.parent()
+        if not isinstance(tw, QTreeWidget):
+            return
+        current = tw.currentIndex()
+        tipo = self._tipo_nodo(current)
+        if tipo is None:
+            return
+        editable_cols = sorted(self._EDITABLE_POR_TIPO.get(tipo, set()))
+        # Buscar la siguiente columna editable en el mismo item
+        next_col = next((c for c in editable_cols if c > current.column()), None)
+        if next_col is not None:
+            tw.setCurrentIndex(tw.model().index(current.row(), next_col, current.parent()))
+            tw.edit(tw.currentIndex())
+            return
+        # Si no hay más columnas en este item, ir al siguiente item en la primera col editable
+        if not editable_cols:
+            return
+        item     = tw.itemFromIndex(current)
+        next_item = tw.itemBelow(item) if hint == QStyledItemDelegate.EndEditHint.EditNextItem \
+                    else tw.itemAbove(item)
+        if next_item:
+            next_tipo = "capitulo" if "cap" in next_item.text(2).lower() else "concepto"
+            next_editable = sorted(self._EDITABLE_POR_TIPO.get(next_tipo, set()))
+            if next_editable:
+                idx = tw.indexFromItem(next_item, next_editable[0])
+                tw.setCurrentIndex(idx)
+                tw.scrollToItem(next_item)
+                tw.edit(idx)
+
+    def eventFilter(self, editor, event):
+        """Intercepta Enter y Tab para confirmar y mover foco."""
+        from PySide6.QtCore import QEvent
+        from PySide6.QtGui import QKeyEvent
+        if event.type() == QEvent.Type.KeyPress:
+            key = event.key()
+            if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                self.commitAndMove(editor, QStyledItemDelegate.EndEditHint.EditNextItem)
+                return True
+            if key == Qt.Key.Key_Tab:
+                self.commitAndMove(editor, QStyledItemDelegate.EndEditHint.EditNextItem)
+                return True
+            if key == Qt.Key.Key_Backtab:
+                self.commitAndMove(editor, QStyledItemDelegate.EndEditHint.EditPreviousItem)
+                return True
+            if key == Qt.Key.Key_Escape:
+                self.closeEditor.emit(editor, QStyledItemDelegate.EndEditHint.RevertModelData)
+                return True
+        return super().eventFilter(editor, event)
 
 
 # ── Widget tabla base ─────────────────────────────────────────────
@@ -127,8 +232,9 @@ class TreeTableWidget(QTreeWidget):
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.setMouseTracking(True)
         self.setEditTriggers(
-            QAbstractItemView.EditTrigger.DoubleClicked
-            | QAbstractItemView.EditTrigger.EditKeyPressed
+            QAbstractItemView.EditTrigger.SelectedClicked   # clic en celda ya seleccionada
+            | QAbstractItemView.EditTrigger.EditKeyPressed  # F2
+            | QAbstractItemView.EditTrigger.AnyKeyPressed   # cualquier tecla alfanumérica
         )
         self.setItemDelegate(_Delegate(self, editable_cols))
 

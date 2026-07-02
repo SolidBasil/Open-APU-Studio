@@ -200,7 +200,8 @@ CREATE INDEX IF NOT EXISTS idx_sobrecostos_proyecto ON sobrecostos(proyecto_id);
 -- BLOQUE 5: ESTRUCTURA DEL PRESUPUESTO
 -- Fuente de verdad jerárquica: campo wbs (PRE_WBS en OPUS).
 -- El importador filtra _deleted=True antes de insertar.
--- Los subtotales se recalculan en Python bottom-up al editar.
+-- Los totales se recalculan en Python bottom-up al editar.
+-- El precio se resuelve desde insumos.costo_final o apu_matrices via insumo_id.
 --
 -- Campo estado (semáforo de confiabilidad):
 --   0 = Sin revisar  (#808080 gris)
@@ -224,25 +225,20 @@ CREATE TABLE IF NOT EXISTS estructura_presupuesto (
     tipo            TEXT    NOT NULL DEFAULT 'capitulo'
                     CHECK(tipo IN ('capitulo', 'concepto')),
 
-    -- Identificación
-    clave           TEXT,
+    -- Vínculo al catálogo de insumos (solo conceptos)
+    insumo_id       INTEGER REFERENCES insumos(id),
+
+    -- Nombre del nodo: para agrupadores es el nombre del capítulo;
+    -- para conceptos se resuelve via JOIN a insumos.descripcion
     descripcion     TEXT    NOT NULL DEFAULT '',
-    descripcion_corta TEXT,
 
     -- Medición (solo conceptos hoja)
-    unidad          TEXT,
     cantidad        REAL,
-    precio_unitario REAL,
-    importe         REAL GENERATED ALWAYS AS (
-                        CASE
-                            WHEN cantidad IS NOT NULL AND precio_unitario IS NOT NULL
-                            THEN ROUND(cantidad * precio_unitario, 6)
-                            ELSE NULL
-                        END
-                    ) STORED,
+    formula         TEXT,   -- expresión opcional para calcular cantidad
 
-    -- Acumulado de hijos (actualizado por Python)
-    subtotal        REAL    NOT NULL DEFAULT 0.0,
+    -- Única columna de valor monetario: para conceptos = cantidad × precio (desde APU o insumo),
+    -- para capítulos = suma de hijos
+    total           REAL    NOT NULL DEFAULT 0.0,
 
     -- Semáforo de confiabilidad: 0=sin revisar, 1=en revisión, 2=verificado, 3=cuestionado
     estado          INTEGER NOT NULL DEFAULT 0,

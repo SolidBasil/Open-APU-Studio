@@ -100,19 +100,19 @@ def build_budget_tree(db_path: str | None = None, proyecto_id: int = 1) -> list[
             "wbs":              str,        # "1", "11", "111", "11101"
             "nivel":            int,        # 0=raíz, 1=capítulo...
             "tipo":             str,        # "capitulo" | "concepto"
-            "clave":            str | None, # código OPUS, solo en conceptos
-            "descripcion":      str,
-            "descripcion_corta": str | None,
-            "unidad":           str | None,
+            "insumo_id":        int | None, # solo conceptos
+            "descripcion":      str,        # conceptos: COALESCE(i.descripcion, n.descripcion)
+                                            # capítulos: n.descripcion
+            "unidad":           str | None, # desde insumos.unidad (solo conceptos)
+            "clave_opus":       str | None, # desde insumos.clave_opus (referencial)
+            "precio_unitario":  float | None, # desde insumos.costo_final (solo conceptos)
             "cantidad":         float | None,
-            "precio_unitario":  float | None,
-            "importe":          float | None,  # columna GENERATED: cant × pu
-            "subtotal":         float,          # acumulado de hijos
+            "total":            float,      # unificado: conceptos=importe, capítulos=subtotal
             "notas_rapidas":    str | None,
             "modificado_en":    str | None,
             "creado_en":        str | None,
-            "estado":           int,            # 0=sin revisar, 1=en revisión, 2=verificado, 3=cuestionado
-            "hijos":            list[dict],     # recursivo
+            "estado":           int,        # 0=sin revisar, 1=en revisión, 2=verificado, 3=cuestionado
+            "hijos":            list[dict], # recursivo
         }
 
     Args:
@@ -131,19 +131,22 @@ def build_budget_tree(db_path: str | None = None, proyecto_id: int = 1) -> list[
             n.wbs,
             n.nivel,
             n.tipo,
-            n.clave,
-            n.descripcion,
-            n.descripcion_corta,
-            n.unidad,
+            n.insumo_id,
+            CASE WHEN n.tipo = 'concepto'
+                 THEN COALESCE(i.descripcion, n.descripcion)
+                 ELSE n.descripcion
+            END AS descripcion,
+            i.unidad                AS unidad,
+            i.clave_opus            AS clave_opus,
+            i.costo_final           AS precio_unitario,
             n.cantidad,
-            n.precio_unitario,
-            n.importe,
-            n.subtotal,
+            n.total,
             n.notas_rapidas,
             n.modificado_en,
             n.creado_en,
             n.estado
         FROM estructura_presupuesto n
+        LEFT JOIN insumos i ON i.id = n.insumo_id
         WHERE n.proyecto_id = ? AND n.activo = 1
         ORDER BY n.wbs
     """, (proyecto_id,))
@@ -260,8 +263,8 @@ def count_concepts(nodes: list[dict]) -> int:
 
 # ── suma de subtotales de nodos raíz ──
 def total_obra(nodes: list[dict]) -> float:
-    """Suma los subtotales de los nodos raíz."""
-    return sum(n.get("subtotal") or n.get("importe") or 0 for n in nodes)
+    """Suma los totales de los nodos raíz."""
+    return sum(n.get("total", 0) for n in nodes)
 
 
 # ── aplanar árbol a lista secuencial ──
@@ -337,31 +340,26 @@ def validar(db_path: str | None = None, proyecto_id: int = 1) -> dict:
     if huerfanos:
         advertencias.append(f"{huerfanos} nodos con padre_id inválido")
 
-    # Verificar subtotales (diff > $1 = posible desincronización)
+    # Verificar totales (diff > $1 = posible desincronización)
     cur.execute("""
         SELECT COUNT(*) FROM estructura_presupuesto n
         WHERE n.proyecto_id = ? AND n.tipo = 'capitulo' AND n.activo = 1
-          AND ABS(n.subtotal - (
-              SELECT COALESCE(SUM(
-                  CASE WHEN tipo='concepto'
-                       THEN COALESCE(importe, 0)
-                       ELSE COALESCE(subtotal, 0)
-                  END
-              ), 0)
+          AND ABS(n.total - (
+              SELECT COALESCE(SUM(COALESCE(total, 0)), 0)
               FROM estructura_presupuesto WHERE padre_id = n.id AND activo = 1
           )) > 1.0
     """, (proyecto_id,))
-    subtotales_mal = cur.fetchone()[0]
-    subtotales_ok = subtotales_mal == 0
-    if not subtotales_ok:
+    totales_mal = cur.fetchone()[0]
+    totales_ok = totales_mal == 0
+    if not totales_ok:
         advertencias.append(
-            f"{subtotales_mal} capítulos con subtotales desincronizados"
+            f"{totales_mal} capítulos con totales desincronizados"
         )
 
     return {
         "total_nodos":       total_nodos,
         "total_conceptos":   total_conceptos,
         "conceptos_sin_apu": sin_apu,
-        "subtotales_ok":     subtotales_ok,
+        "totales_ok":        totales_ok,
         "advertencias":      advertencias,
     }

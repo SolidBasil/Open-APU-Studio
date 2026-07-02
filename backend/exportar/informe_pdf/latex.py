@@ -131,7 +131,7 @@ def _nodos_a_partidas(nodos_raiz: list[dict]) -> tuple[list[dict], float]:
         conceptos: list[dict] = []
         _extraer_conceptos(raiz.get("hijos", []), conceptos)
 
-        subtotal = raiz.get("subtotal") or 0.0
+        subtotal = raiz.get("total") or 0.0
         gran_total += subtotal
 
         partidas.append({
@@ -156,14 +156,14 @@ def _extraer_conceptos(hijos: list[dict], acum: list[dict], _depth: int = 1) -> 
             cant = hijo.get("cantidad")
             acum.append({
                 "nivel":       _fmt_wbs(hijo.get("wbs") or str(hijo.get("nivel") or "")),
-                "clave":       hijo.get("clave") or "",
+                "clave":       hijo.get("clave_opus") or "",
                 "descripcion": hijo.get("descripcion") or hijo.get("descripcion_corta") or "",
                 "unidad":      hijo.get("unidad") or "",
                 "cantidad":    (
                     f"{float(cant):,.4f}".rstrip("0").rstrip(".")
                     if cant not in (None, "") else ""
                 ),
-                "importe":     _fmt_moneda(hijo.get("importe")),
+                "importe":     _fmt_moneda(hijo.get("total")),
             })
         elif hijo.get("tipo") == "capitulo":
             sub_desc = hijo.get("descripcion") or hijo.get("descripcion_corta") or ""
@@ -248,11 +248,11 @@ def _build_conceptos(partidas: list[dict]) -> str:
             lines.append(
                 rf"\Concepto"
                 rf"{{{escape_tex(c.get('nivel', ''))}}}"
-                rf"{{{escape_tex(c.get('clave', ''))}}}"
+                rf"{{{escape_tex(c.get('clave_opus', ''))}}}"
                 rf"{{{desc}}}"
                 rf"{{{escape_tex(c.get('unidad', ''))}}}"
                 rf"{{{escape_tex(c.get('cantidad', ''))}}}"
-                rf"{{{c.get('importe', '')}}}"   # ya formateado con \$
+                rf"{{{c.get('total', '')}}}"
             )
 
         if "subtotal" in partida and partida["subtotal"]:
@@ -423,9 +423,8 @@ class ReportePresupuesto:
         # Leer nodos planos y convertir a árbol
         cur = conn.cursor()
         nodos_planos = [dict(r) for r in cur.execute("""
-            SELECT id, padre_id, tipo, nivel, wbs, clave,
-                   descripcion, descripcion_corta, unidad,
-                   cantidad, precio_unitario, importe, subtotal
+            SELECT id, padre_id, tipo, nivel, wbs,
+                   descripcion, cantidad, total
             FROM estructura_presupuesto
             WHERE proyecto_id = ? AND activo = 1
             ORDER BY wbs

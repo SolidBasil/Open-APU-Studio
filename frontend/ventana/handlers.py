@@ -606,6 +606,26 @@ class HandlersMixin:
 
     # ── Depurar catálogos ──────────────────────────────────────────────────
 
+    def _on_recalcular(self):
+        """Recalcula en cascada todo el presupuesto: costo de insumos
+        compuestos → totales de conceptos → totales de capítulos.
+        """
+        from PySide6.QtWidgets import QMessageBox
+
+        if not self._db or not self._api:
+            QMessageBox.information(self, "Sin proyecto", "Abre un proyecto primero.")
+            return
+
+        try:
+            resultado = self._api.recalcular_proyecto()
+        except Exception as e:
+            QMessageBox.critical(self, "Error al recalcular", str(e))
+            return
+
+        self._reload_presupuesto()
+        n_iter = resultado.get("iteraciones_compuestos", 0)
+        self._sb.showMessage(f"Presupuesto recalculado ({n_iter} iteración(es))", 4000)
+
     def _on_depurar_catalogos(self):
         from PySide6.QtWidgets import QMessageBox, QWidget, QVBoxLayout, QLabel, QAbstractItemView, QHeaderView
         from frontend.ventana.widgets.base import TreeTableWidget
@@ -651,11 +671,11 @@ class HandlersMixin:
 
         # Conceptos sin APU
         filas = conn.execute("""
-            SELECT ep.id, ep.clave, ep.descripcion
+            SELECT ep.id, CAST(ep.id AS TEXT) AS clave, ep.descripcion
             FROM estructura_presupuesto ep
             WHERE ep.proyecto_id = 1 AND ep.tipo = 'concepto' AND ep.activo = 1
               AND NOT EXISTS (SELECT 1 FROM apu_matrices am WHERE am.matriz_id = ep.id)
-            ORDER BY ep.clave
+            ORDER BY ep.wbs
         """).fetchall()
         for r in filas:
             _ins(r["id"], r["clave"], r["descripcion"],
@@ -698,7 +718,7 @@ class HandlersMixin:
             WHERE i.proyecto_id = 1 AND i.activo = 1
               AND (i.descripcion IS NULL OR i.descripcion = '')
             UNION ALL
-            SELECT ep.id, ep.clave, NULL, 'concepto'
+            SELECT ep.id, CAST(ep.id AS TEXT), NULL, 'concepto'
             FROM estructura_presupuesto ep
             WHERE ep.proyecto_id = 1 AND ep.activo = 1 AND ep.tipo = 'concepto'
               AND (ep.descripcion IS NULL OR ep.descripcion = '')

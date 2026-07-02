@@ -103,41 +103,33 @@ WITH RECURSIVE ruta AS (
 SELECT * FROM ruta ORDER BY nivel;
 ```
 
-### 2. `importe` como columna computada `GENERATED ALWAYS`
+### 2. `total` columna unificada de valor monetario
 
-En `estructura_presupuesto` y `apu_matrices`, el importe (`cantidad × precio`) es una columna
-computada — SQLite la actualiza automáticamente al cambiar `cantidad` o
-`precio_unitario`. No se puede olvidar actualizarla.
+En `estructura_presupuesto` el campo `total` reemplaza la antigua dualidad
+`importe` (GENERATED) + `subtotal` (calculado en Python). Ahora:
+- **conceptos**: `total = cantidad × precio` — el precio se resuelve desde
+  `insumos.costo_final` o `apu_matrices` vía `insumo_id`
+- **capítulos**: `total = SUM(hijos.total)` — calculado bottom-up en Python
 
-`subtotal` en `estructura_presupuesto` **no** es computada porque requiere sumar hijos, lo que
-SQLite no permite en columnas generadas. Python lo recalcula bottom-up.
-
-En la UI, la columna "Total" del árbol de presupuesto unifica ambos:
-**conceptos** muestran `importe`, **capítulos** muestran `subtotal`.
-La columna "Subtotal" se eliminó de la interfaz (no del esquema).
-
-```sql
--- La columna Total en arbol.py usa esta lógica:
--- _fmt(n.get("importe") if n.get("tipo") == "concepto" else n.get("subtotal"))
-```
+La UI ya no bifurca por tipo — lee `total` directamente.
 
 Python lo recalcula así:
 
 ```python
-def recalcular_subtotales(con, nodo_id):
+def actualizar_total(nodo_id):
     cur = con.cursor()
     while nodo_id is not None:
         cur.execute("""
             UPDATE estructura_presupuesto SET
-                subtotal = (
-                    SELECT COALESCE(SUM(COALESCE(importe, subtotal, 0)), 0)
+                total = (
+                    SELECT COALESCE(SUM(COALESCE(total, 0)), 0)
                     FROM estructura_presupuesto WHERE padre_id = ? AND activo = 1
                 ),
                 modificado_en = datetime('now')
             WHERE id = ?
         """, (nodo_id, nodo_id))
-        row = cur.execute("SELECT padre_id FROM estructura_presupuesto WHERE id = ?", (nodo_id,)).fetchone()
-        nodo_id = row[0] if row else None
+        nodo_id = cur.execute("SELECT padre_id FROM estructura_presupuesto WHERE id = ?", (nodo_id,)).fetchone()
+        nodo_id = nodo_id[0] if nodo_id else None
     con.commit()
 ```
 
@@ -231,9 +223,9 @@ Todos los cambios futuros van como migraciones en `db.py`.
 ```sql
 -- Presupuesto completo de un proyecto ordenado por WBS
 SELECT
-    n.id, n.wbs, n.nivel, n.tipo, n.clave,
-    n.descripcion, n.unidad, n.cantidad,
-    n.precio_unitario, n.importe, n.subtotal,
+    n.id, n.wbs, n.nivel, n.tipo, n.insumo_id,
+    COALESCE(i.descripcion, n.descripcion) AS descripcion,
+    n.cantidad, n.total,
     CASE n.estado
         WHEN 0 THEN 'Sin revisar'
         WHEN 1 THEN 'En revisión'
@@ -241,6 +233,7 @@ SELECT
         WHEN 3 THEN 'Cuestionado'
     END AS estado_nombre
 FROM estructura_presupuesto n
+LEFT JOIN insumos i ON i.id = n.insumo_id
 WHERE n.proyecto_id = ? AND n.activo = 1
 ORDER BY n.wbs;
 

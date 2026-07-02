@@ -19,7 +19,7 @@ Uso típico desde ventana.py:
     from frontend.api import Api
     api = Api(self._db.conn, self._db.db_path, proyecto_id=1)
     arbol   = api.presupuesto_arbol()
-    apu     = api.apu(clave="0202002")  # concepto del árbol
+    apu     = api.apu(nodo_id=17)         # concepto del árbol (id en estructura_presupuesto)
     apu2    = api.apu(insumo_id=42)      # insumo compuesto
     filas,t = api.explotar(concepto_ids=[5,23], nivel="basico", tipos_ids=[1,2,4])
 """
@@ -57,6 +57,20 @@ class Api:
         from backend.database.core import build_budget_tree
         return build_budget_tree(self._db_path)
 
+    def concepto_actualizar_cantidad(self, concepto_id: int, cantidad: float) -> None:
+        """Actualiza la cantidad de un concepto y recalcula totales."""
+        from backend.database.repos import NodoRepo
+        NodoRepo(self._conn).actualizar_cantidad(concepto_id, cantidad)
+
+    def agrupador_actualizar_descripcion(self, nodo_id: int, descripcion: str) -> None:
+        """Actualiza la descripción de un agrupador (capítulo)."""
+        self._conn.execute("""
+            UPDATE estructura_presupuesto SET
+                descripcion = ?, modificado_en = datetime('now')
+            WHERE id = ? AND tipo = 'capitulo'
+        """, (descripcion, nodo_id))
+        self._conn.commit()
+
     def todos_concepto_ids(self) -> list[int]:
         """Devuelve los ids de todos los conceptos activos del proyecto."""
         rows = self._conn.execute("""
@@ -67,15 +81,15 @@ class Api:
 
     def conceptos_planos(self) -> list[dict]:
         """Lista plana de todos los conceptos con clave, descripción, unidad, cantidad, precio, importe."""
-        from backend.database.repos import ConceptoRepo
-        return ConceptoRepo(self._conn).todos(self._pid)
+        from backend.database.repos import NodoRepo
+        return NodoRepo(self._conn).todos(self._pid, tipo="concepto")
 
     # =========================================================================
     # APU
     # =========================================================================
 
-    def apu(self, clave: str | None = None, insumo_id: int | None = None) -> dict | None:
-        """Devuelve el APU de un concepto del árbol (por clave) o de un insumo
+    def apu(self, nodo_id: int | None = None, insumo_id: int | None = None) -> dict | None:
+        """Devuelve el APU de un concepto del árbol (por nodo_id) o de un insumo
         compuesto (por insumo_id). Pasa exactamente uno de los dos.
 
         Retorna:
@@ -95,22 +109,15 @@ class Api:
         from backend.database.core   import get_apu
 
         # 1. Resolver matriz_id
-        matriz_id, descripcion = self._resolver_matriz(clave=clave, insumo_id=insumo_id)
+        matriz_id, descripcion = self._resolver_matriz(nodo_id=nodo_id, insumo_id=insumo_id)
         if matriz_id is None:
             return None
 
         # 2. Obtener detalle
         data = get_apu(self._db_path, matriz_id)
 
-        # 3. Fallback: APU negativo vacío → buscar APU positivo del árbol (solo aplica a conceptos)
-        if not data.get("detalle") and matriz_id < 0 and clave:
-            ep = self._conn.execute("""
-                SELECT id FROM estructura_presupuesto
-                WHERE clave = ? AND proyecto_id = ? AND tipo = 'concepto'
-                LIMIT 1
-            """, (clave, self._pid)).fetchone()
-            if ep:
-                data = get_apu(self._db_path, ep[0])
+        # 3. Fallback: APU negativo vacío → no aplica con el nuevo modelo basado en id.
+        # El resolver ya usa insumo_id directamente; si no hay detalle, no hay APU.
 
         if not data.get("detalle"):
             return None
@@ -162,16 +169,13 @@ class Api:
         )
         return {r[0] for r in cur.fetchall()}
 
-    def claves_con_apu(self) -> set[str]:
-        """Conjunto de claves (estructura_presupuesto) de conceptos con APU en el árbol.
-        Nota: esto solo cubre conceptos del árbol, no insumos compuestos —
-        para eso usar insumo_ids_con_apu().
-        """
+    def ids_con_apu(self) -> set[int]:
+        """Conjunto de IDs de conceptos del árbol que tienen APU."""
         cur = self._conn.cursor()
         cur.execute("""
-            SELECT DISTINCT ep.clave FROM estructura_presupuesto ep
+            SELECT DISTINCT ep.id FROM estructura_presupuesto ep
             JOIN apu_matrices am ON am.matriz_id = ep.id
-            WHERE ep.proyecto_id = ? AND ep.clave IS NOT NULL
+            WHERE ep.proyecto_id = ?
         """, (self._pid,))
         return {r[0] for r in cur.fetchall()}
 
@@ -191,6 +195,14 @@ class Api:
         """Como insumos() pero filtra solo los que aparecen en al menos un APU."""
         ids = self.insumo_ids_con_apu()
         return [i for i in self.insumos(tipo_clave) if i.get("id") in ids]
+
+    def recalcular_proyecto(self) -> dict:
+        """Recalcula en cascada todo el presupuesto del proyecto abierto:
+        costo de insumos compuestos → totales de conceptos → totales de
+        capítulos. Útil tras editar precios o cantidades a mano.
+        """
+        from backend.database.repos import RecalculoRepo
+        return RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
 
     def rastrear_insumo(self, insumo_id: int) -> list[dict]:
         """Devuelve las matrices (conceptos o compuestos) donde aparece un insumo.
@@ -340,23 +352,23 @@ class Api:
     # =========================================================================
 
     def _resolver_matriz(
-        self, clave: str | None = None, insumo_id: int | None = None
+        self, nodo_id: int | None = None, insumo_id: int | None = None
     ) -> tuple[int | None, str]:
         """Resuelve a un (matriz_id, descripcion).
 
         Pasa exactamente uno de los dos:
-            clave      — busca un concepto en el árbol del presupuesto (matriz_id positivo)
+            nodo_id    — id del concepto en estructura_presupuesto (matriz_id positivo)
             insumo_id  — busca un insumo compuesto directamente por id (matriz_id negativo)
 
         Devuelve (None, '') si no existe o no tiene APU.
         """
         from backend.database.repos import NodoRepo, InsumoRepo, ApuMatricesRepo
 
-        if clave is not None:
-            nodo = NodoRepo(self._conn).buscar_por_clave(clave, proyecto_id=self._pid)
-            if nodo:
+        if nodo_id is not None:
+            nodo = NodoRepo(self._conn).buscar(nodo_id)
+            if nodo and nodo.get("proyecto_id") == self._pid:
                 matriz_id   = nodo["id"]
-                descripcion = nodo.get("descripcion") or nodo.get("descripcion_corta") or clave
+                descripcion = nodo.get("descripcion") or ""
                 if ApuMatricesRepo(self._conn).por_matriz(matriz_id):
                     return matriz_id, descripcion
             return None, ""
