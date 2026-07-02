@@ -1,5 +1,18 @@
 # Open APU Studio — AGENTS.md
 
+## Regla .md: fecha de modificación
+Todo archivo .md generado debe incluir la fecha y hora de su última modificación
+(ISO 8601, hora local) para que sea posible detectar cuándo el contenido está
+desactualizado. Ejemplo al inicio o al final:
+```
+Actualizado: 2026-07-01 14:30 (hora local)
+```
+
+## Regla pre-commit
+Antes de subir a GitHub: actualizar `docs/` (SCHEMA.md, DOCUMENTACION.md, planes/)
+y revisar que comentarios en el código no referencien columnas o tablas eliminadas.
+El docstring o comentario que miente es peor que ningún comentario.
+
 ## Stack
 - Python 3.11+ / PySide6 (Qt6) / SQLite+FTS5 / dbfread (import OPUS) / PyInstaller (dist)
 - Targets: Windows (principal) + Linux (nativo desde inicio)
@@ -95,11 +108,21 @@ Delimitación exacta en `docs/DECISIONES_PENDIENTES.md` y `docs/SCHEMA.md` secci
 - Persistencia: `tema_modo` + `tema_acento` en `config.json`
 - Migración automática desde configs legacy con clave única `tema`
 
+## Regla beta: sin migraciones
+El proyecto está en beta. **Cualquier cambio en schema.sql rompe proyectos anteriores.**
+No se escriben migraciones en `db.py`. Si se agrega una columna, se edita `schema.sql` directamente
+y los proyectos viejos se consideran incompatibles (el usuario crea uno nuevo o eventualmente
+se añade una herramienta de migración manual). Esto libera al agente de mantener compatibilidad
+hacia atrás durante el desarrollo temprano.
+
 ## Ausencias conocidas (el agente no debe perder tiempo buscándolas)
 - No hay `requirements.txt` — necesita PySide6, dbfread como mínimo
 - No hay testing framework definido — decidir pytest u otro
 - No hay licencia — decidir cuál
 - No hay CI configurado
+- **Exportación (`backend/exportar/`):** rota/incompleta tras cambios de schema.
+  `exportar.py` se conserva como referencia para cuando se quiera restaurar, pero
+  no se invoca desde la UI y no se mantiene activamente.
 
 ## UI / Diseño
 - Layout principal: sidebar (árbol) | contenido (tab + detalle) — ver `frontend/ventana.py`

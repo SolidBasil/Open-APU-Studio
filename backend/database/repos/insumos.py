@@ -77,7 +77,8 @@ class InsumoRepo(RepoBase):
     def uso_en_proyecto(self, insumo_id):
         """Devuelve el número de apariciones y el importe total de un insumo en APUs."""
         return self._uno("""
-            SELECT COUNT(ac.id) AS apariciones, SUM(ac.cantidad * ac.precio) AS importe_total
+            SELECT COUNT(ac.id) AS apariciones,
+                   SUM(CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END) AS importe_total
             FROM apu_matrices ac
             WHERE ac.insumo_id = ?
         """, [insumo_id])
@@ -87,9 +88,10 @@ class InsumoRepo(RepoBase):
         return self._lista("""
             SELECT
                 am.matriz_id,
-                am.cantidad,
+                am.valor,
+                am.operador,
                 am.precio,
-                am.cantidad * am.precio                           AS importe,
+                CASE WHEN am.operador='*' THEN am.valor*am.precio ELSE am.precio/am.valor END AS importe,
                 CASE WHEN am.matriz_id > 0
                      THEN 'concepto' ELSE 'compuesto' END         AS tipo_origen,
                 COALESCE(CAST(ep.id AS TEXT),  CAST(ic.id AS TEXT))  AS matriz_clave,
@@ -106,13 +108,13 @@ class InsumoRepo(RepoBase):
         """, [insumo_id])
 
     def actualizar_precio(self, insumo_id, precio, usuario_id=1):
-        """Actualiza el costo_mn y costo_final de un insumo."""
+        """Actualiza costo_mn, costo_directo y costo_final de un insumo."""
         self._ejecutar("""
             UPDATE insumos SET
-                costo_mn = ?, costo_final = ?,
+                costo_mn = ?, costo_directo = ?, costo_final = ?,
                 modificado_por = ?, modificado_en = datetime('now')
             WHERE id = ?
-        """, [precio, precio, usuario_id, insumo_id])
+        """, [precio, precio, precio, usuario_id, insumo_id])
 
 
 
@@ -163,10 +165,12 @@ class InsumoRepo(RepoBase):
         return self._ejecutar("""
             INSERT INTO insumos
                 (proyecto_id, tipo_id, descripcion, descripcion_corta,
-                 unidad, costo_mn, costo_final, es_compuesto, hash, clave_opus, creado_por)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 unidad, costo_mn, costo_directo, costo_final, es_compuesto,
+                 hash, clave_opus, creado_por)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, [proyecto_id, tipo_id, descripcion, descripcion_corta,
-               unidad, costo, costo, es_compuesto, nuevo_hash, clave_opus, usuario_id])
+               unidad, costo, costo, costo, es_compuesto,
+               nuevo_hash, clave_opus, usuario_id])
 
     def tipos_disponibles(self):
         """Devuelve todos los tipos de insumo ordenados."""

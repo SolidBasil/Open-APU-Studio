@@ -105,15 +105,15 @@ class RecalculoRepo(RepoBase):
         proyecto (conceptos del árbol e insumos compuestos).
 
         Herramienta es un caso especial: en apu_matrices su columna
-        `cantidad` no es una cantidad física, es un PORCENTAJE. Su importe
+        `valor` no es una cantidad física, es un PORCENTAJE. Su importe
         real es ese % multiplicado por el subtotal de mano de obra de esa
-        misma matriz — no cantidad × precio como el resto de los tipos
+        misma matriz — no `valor` × `precio` como el resto de los tipos
         (ver ExplosionRepo, que ya calcula herramienta de esta forma).
         """
         cur.execute("""
             WITH mo AS (
                 SELECT ac.matriz_id AS matriz_id,
-                       COALESCE(SUM(ac.cantidad * ac.precio), 0) AS subtotal
+                       COALESCE(SUM(CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END), 0) AS subtotal
                 FROM apu_matrices ac
                 JOIN insumos i      ON i.id = ac.insumo_id
                 JOIN tipos_insumo t ON t.id = i.tipo_id
@@ -131,16 +131,24 @@ class RecalculoRepo(RepoBase):
                  modificado_en)
             SELECT
                 ac.matriz_id,
-                COALESCE(SUM(CASE WHEN t.clave='material'    THEN ac.cantidad*ac.precio ELSE 0 END),0),
-                COALESCE(SUM(CASE WHEN t.clave='mano_obra'   THEN ac.cantidad*ac.precio ELSE 0 END),0),
-                COALESCE(SUM(CASE WHEN t.clave='herramienta' THEN ac.cantidad ELSE 0 END),0) * COALESCE(mo.subtotal, 0),
-                COALESCE(SUM(CASE WHEN t.clave='equipo'      THEN ac.cantidad*ac.precio ELSE 0 END),0),
-                COALESCE(SUM(CASE WHEN t.clave='auxiliar'    THEN ac.cantidad*ac.precio ELSE 0 END),0),
-                COALESCE(SUM(CASE WHEN t.clave='concepto'    THEN ac.cantidad*ac.precio ELSE 0 END),0),
-                COALESCE(SUM(CASE WHEN t.clave='flete'       THEN ac.cantidad*ac.precio ELSE 0 END),0),
-                COALESCE(SUM(CASE WHEN t.clave='trabajo'     THEN ac.cantidad*ac.precio ELSE 0 END),0),
-                COALESCE(SUM(CASE WHEN t.clave<>'herramienta' THEN ac.cantidad*ac.precio ELSE 0 END),0)
-                    + COALESCE(SUM(CASE WHEN t.clave='herramienta' THEN ac.cantidad ELSE 0 END),0) * COALESCE(mo.subtotal, 0),
+                COALESCE(SUM(CASE WHEN t.clave='material'    THEN
+                  CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END ELSE 0 END),0),
+                COALESCE(SUM(CASE WHEN t.clave='mano_obra'   THEN
+                  CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END ELSE 0 END),0),
+                COALESCE(SUM(CASE WHEN t.clave='herramienta' THEN ac.valor ELSE 0 END),0) * COALESCE(mo.subtotal, 0),
+                COALESCE(SUM(CASE WHEN t.clave='equipo'      THEN
+                  CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END ELSE 0 END),0),
+                COALESCE(SUM(CASE WHEN t.clave='auxiliar'    THEN
+                  CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END ELSE 0 END),0),
+                COALESCE(SUM(CASE WHEN t.clave='concepto'    THEN
+                  CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END ELSE 0 END),0),
+                COALESCE(SUM(CASE WHEN t.clave='flete'       THEN
+                  CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END ELSE 0 END),0),
+                COALESCE(SUM(CASE WHEN t.clave='trabajo'     THEN
+                  CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END ELSE 0 END),0),
+                COALESCE(SUM(CASE WHEN t.clave<>'herramienta' THEN
+                  CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END ELSE 0 END),0)
+                    + COALESCE(SUM(CASE WHEN t.clave='herramienta' THEN ac.valor ELSE 0 END),0) * COALESCE(mo.subtotal, 0),
                 datetime('now')
             FROM apu_matrices ac
             JOIN insumos i      ON i.id = ac.insumo_id

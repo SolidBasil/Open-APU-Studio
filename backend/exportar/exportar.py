@@ -110,7 +110,7 @@ _CDX_TAGS = {
         {'key_expr': 'NOMBRE',                           'key_len': 40},
         {'key_expr': 'STR(PREFIJO,5,0)+NOMBRE',          'key_len': 45},
         {'key_expr': 'MARCA1',                           'key_len':  1},
-        {'key_expr': 'MARCA2+BASICO',                    'key_len':  2},
+        {'key_expr': 'MARCA2',                           'key_len':  1},
         {'key_expr': 'MARCA3',                           'key_len':  1},
         {'key_expr': 'FSR_MINIMO',                       'key_len':  1},
         {'key_expr': 'MARCA4',                           'key_len':  1},
@@ -166,8 +166,8 @@ class Exportador:
         insumos = InsumoRepo(conn).todos(proyecto_id)
         hojas      = [n for n in nodos if n['tipo'] == 'concepto']
         capitulos  = [n for n in nodos if n['tipo'] == 'capitulo']
-        basicos    = [i for i in insumos if i['es_basico']]
-        compuestos = [i for i in insumos if i.get('es_compuesto') and not i['es_basico']]
+        basicos    = [i for i in insumos if not i.get('es_compuesto')]
+        compuestos = [i for i in insumos if i.get('es_compuesto')]
         conn.close()
         return {
             'nombre':     proy['nombre'] if proy else '(sin proyecto)',
@@ -486,7 +486,7 @@ class Exportador:
                 'PREFIJO':    prefijo,
                 'NOMBRE':     clave[:20],
                 'UNIDAD':     unidad[:8],
-                'BASICO':     'S' if ins.get('es_basico') else '',
+                'BASICO':     '',
                 'FSR_MINIMO': '',
                 'PRECIO':     costo,
                 'FSR':        1.0,
@@ -671,10 +671,10 @@ class Exportador:
                     continue
                 clave_ins  = (ins.get('clave_opus') or '')[:20]
                 prefcomp   = int(ins.get('tipo_id') or 1)
-                cantidad   = float(comp.get('cantidad') or 0)
-                rendto     = float(comp.get('rendimiento') or 1) or 1.0
-                precio     = float(comp.get('precio') or 0)
-                importe    = cantidad * precio
+                is_div   = comp.get('operador', '*') == '/'
+                valor    = float(comp.get('valor') or 0)
+                precio   = float(comp.get('precio') or 0)
+                importe  = precio / (valor or 1.0) if is_div else valor * precio
                 registros_f.append({
                     'PREF':       pref_parent,
                     'NOMBRE':     nombre_parent[:20],
@@ -682,9 +682,9 @@ class Exportador:
                     'COMPONENTE': clave_ins,
                     'CLAVENUM':   orden * 100,
                     'NOELE':      1.0,
-                    'RENDTO':     rendto,
-                    'CANTIDAD':   cantidad,
-                    'EXPRESION':  str(comp.get('formula') or cantidad),
+                    'RENDTO':     (valor or 1.0) if is_div else 1.0,
+                    'CANTIDAD':   1.0 if is_div else valor,
+                    'EXPRESION':  str(comp.get('formula') or (1.0 if is_div else valor)),
                     'COSTO':      precio,
                     'TOTALMN':    importe,
                     'TOTALME':    0.0,
@@ -781,22 +781,22 @@ class Exportador:
                 ins_comp = insumos.get(comp['insumo_id'])
                 if not ins_comp:
                     continue
-                rendto   = float(comp.get('rendimiento') or 1) or 1.0
-                cantidad = float(comp.get('cantidad') or 0)
+                valor    = float(comp.get('valor') or 0)
                 precio   = float(ins_comp.get('costo_final') or 0)
+                importe  = valor * precio
                 registros_5.append({
                     'PREFIJO':  int(ins_parent.get('tipo_id') or 1),
                     'NOMBRE':   (ins_parent.get('clave_opus') or '')[:20],
                     'PREFCOMP': int(ins_comp.get('tipo_id') or 1),
                     'COMPONE':  (ins_comp.get('clave_opus') or '')[:20],
                     'UNIPOR':   0,
-                    'CANTIDAD': cantidad,
+                    'CANTIDAD': valor,
                     'PRECIO':   precio,
-                    'MONTO':    cantidad * precio,
-                    'CANCONC':  cantidad,
+                    'MONTO':    importe,
+                    'CANCONC':  valor,
                     'PRECIOMN': precio,
                     'PRECIOME': 0.0,
-                    'MONTOMN':  cantidad * precio,
+                    'MONTOMN':  importe,
                     'MONTOME':  0.0,
                 })
         self._crear_tabla(self._ruta('5'), '5', registros_5, cdx_sufijo='5')
@@ -810,7 +810,9 @@ class Exportador:
                 ins = insumos.get(comp['insumo_id'])
                 if not ins:
                     continue
-                cantidad = float(comp.get('cantidad') or 0) * cant_nodo
+                is_div   = comp.get('operador', '*') == '/'
+                valor    = float(comp.get('valor') or 0)
+                cantidad = (1.0 if is_div else valor) * cant_nodo
                 precio   = float(ins.get('costo_final') or 0)
                 registros_x.append({
                     'PREFIJO':    int(ins.get('tipo_id') or 1),

@@ -80,7 +80,7 @@ class Api:
         return [r[0] for r in rows]
 
     def conceptos_planos(self) -> list[dict]:
-        """Lista plana de todos los conceptos con clave, descripción, unidad, cantidad, precio, importe."""
+        """Lista plana de todos los conceptos con clave, descripción, unidad, cantidad, total."""
         from backend.database.repos import NodoRepo
         return NodoRepo(self._conn).todos(self._pid, tipo="concepto")
 
@@ -103,7 +103,8 @@ class Api:
 
         Cada fila de detalle incluye:
             tipo_emoji, tipo_nombre, tipo_id, insumo_id, descripcion,
-            insumo_unidad, cantidad, precio, importe, es_compuesto, tiene_sub_apu
+            insumo_unidad, cantidad (desde valor/operador), precio,
+            importe, es_compuesto, tiene_sub_apu
         """
         from backend.database.repos  import NodoRepo, InsumoRepo, ApuMatricesRepo
         from backend.database.core   import get_apu
@@ -131,6 +132,8 @@ class Api:
             tid   = r.get("tipo_id", 0)
             desc  = r.get("insumo_descripcion") or r.get("insumo_desc_corta") or ""
             tiene_sub = r.get("insumo_id") in ids_con_apu
+            v = r.get("valor", 0) or 0
+            op = r.get("operador", "*")
             detalle.append({
                 "tipo_emoji":   _EMOJI.get(tid, ""),
                 "tipo_nombre":  r.get("tipo_nombre", ""),
@@ -138,7 +141,9 @@ class Api:
                 "insumo_id":    r.get("insumo_id"),
                 "descripcion":  f"▶ {desc}" if tiene_sub else desc,
                 "insumo_unidad": r.get("insumo_unidad", ""),
-                "cantidad":     r.get("cantidad", 0),
+                "valor":        v,
+                "operador":     op,
+                "cantidad":     v if op == "*" else (1.0 / v if v else 0.0),
                 "precio":       r.get("precio", 0),
                 "importe":      r.get("importe", 0),
                 "es_compuesto": r.get("insumo_es_compuesto", 0),

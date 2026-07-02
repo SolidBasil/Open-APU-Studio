@@ -13,11 +13,22 @@ class ExplosionRepo(RepoBase):
         'compuesto'    — solo insumos compuestos del APU directo
         'primer_nivel' — todos los insumos del APU directo (sin bajar)
 
-    Herramienta: usa am.importe (% × subtotal_MO del APU), no cantidad × costo_final.
+    Herramienta: su importe es % × subtotal_MO del APU, no valor × costo_final.
     """
 
     TIPO_ID_HERRAMIENTA = 4
     TIPO_ID_MO          = 2
+
+    @staticmethod
+    def _ef_qty(row: dict) -> float:
+        """Cantidad efectiva desde una fila de apu_matrices.
+
+        Si operador='*' → la cantidad es valor (ej: 2 bolsas de cemento).
+        Si operador='/' → la cantidad efectiva es 1/valor (ej: rendimiento 10m²/día
+        significa que por cada unidad se necesita 0.1 días).
+        """
+        v = row.get("valor") or 0
+        return v if row.get("operador", "*") == "*" else (1.0 / v if v else 0.0)
 
     # ── Helpers internos ─────────────────────────────────────────────────
 
@@ -95,7 +106,7 @@ class ExplosionRepo(RepoBase):
 
         # ── 3. All APU matrices (reverse index) ──
         matrices = self._lista(f"""
-            SELECT am.matriz_id, am.insumo_id, am.cantidad, am.precio
+            SELECT am.matriz_id, am.insumo_id, am.valor, am.operador, am.precio
             FROM apu_matrices am
             JOIN insumos i ON i.id = am.insumo_id
             WHERE i.proyecto_id = ? AND i.activo = 1
@@ -139,7 +150,7 @@ class ExplosionRepo(RepoBase):
                 try:
                     total = 0.0
                     for p in reverse.get(ins_id, []):
-                        total += (p["cantidad"] or 0) * _calc_mult(p["matriz_id"])
+                        total += self._ef_qty(p) * _calc_mult(p["matriz_id"])
                 finally:
                     _visitando.discard(matriz_id)
                 _mult_cache[matriz_id] = total
@@ -150,7 +161,7 @@ class ExplosionRepo(RepoBase):
             try:
                 total = 0.0
                 for p in reverse.get(-matriz_id, []):
-                    total += (p["cantidad"] or 0) * _calc_mult(p["matriz_id"])
+                    total += self._ef_qty(p) * _calc_mult(p["matriz_id"])
             finally:
                 _visitando.discard(matriz_id)
             _mult_cache[matriz_id] = total
@@ -181,9 +192,9 @@ class ExplosionRepo(RepoBase):
                 if mult == 0.0:
                     continue
                 if is_herr:
-                    herr_importe += rd((p["cantidad"] or 0) * (p["precio"] or 0) * mult)
+                    herr_importe += rd(self._ef_qty(p) * (p["precio"] or 0) * mult)
                 else:
-                    qty_total += rd((p["cantidad"] or 0) * mult)
+                    qty_total += rd(self._ef_qty(p) * mult)
 
             pu = info.get("costo_final") or 0
             if is_herr:
@@ -249,8 +260,8 @@ class ExplosionRepo(RepoBase):
                     COALESCE(i.descripcion, i.descripcion_corta, '') AS descripcion,
                     i.unidad,
                     i.costo_final       AS pu,
-                    SUM(am.cantidad * ep.cantidad) AS cantidad_total,
-                    SUM(am.cantidad * ep.cantidad) * i.costo_final AS total
+                    SUM(CASE WHEN am.operador='*' THEN am.valor*ep.cantidad ELSE ep.cantidad/am.valor END) AS cantidad_total,
+                    SUM(CASE WHEN am.operador='*' THEN am.valor*ep.cantidad ELSE ep.cantidad/am.valor END) * i.costo_final AS total
                 FROM estructura_presupuesto ep
                 JOIN apu_matrices am ON am.matriz_id = ep.id
                 JOIN insumos i       ON i.id = am.insumo_id
@@ -277,8 +288,8 @@ class ExplosionRepo(RepoBase):
                     i.clave_opus        AS clave,
                     COALESCE(i.descripcion, i.descripcion_corta, '') AS descripcion,
                     i.unidad,
-                    SUM(am.cantidad * am.precio * ep.cantidad) AS total,
-                    SUM(am.cantidad * am.precio * ep.cantidad) /
+                    SUM(am.valor * am.precio * ep.cantidad) AS total,
+                    SUM(am.valor * am.precio * ep.cantidad) /
                     NULLIF(SUM(am.precio * ep.cantidad), 0) AS pct_mo
                 FROM estructura_presupuesto ep
                 JOIN apu_matrices am ON am.matriz_id = ep.id

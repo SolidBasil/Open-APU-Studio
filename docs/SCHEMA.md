@@ -1,6 +1,6 @@
 # Esquema de base de datos — Open APU Studio
 
-Versión del esquema: **3** (`schema.sql` — v2+v3 migradas automáticamente en `db.py`)
+Versión del esquema: **4** (cambios acumulativos en `schema.sql` — beta, sin migraciones)
 
 Este documento explica el diseño de la base de datos SQLite, las decisiones
 de arquitectura y qué falta implementar en versiones futuras.
@@ -105,8 +105,7 @@ SELECT * FROM ruta ORDER BY nivel;
 
 ### 2. `total` columna unificada de valor monetario
 
-En `estructura_presupuesto` el campo `total` reemplaza la antigua dualidad
-`importe` (GENERATED) + `subtotal` (calculado en Python). Ahora:
+El campo `total` en `estructura_presupuesto` es la columna unificada de valor monetario:
 - **conceptos**: `total = cantidad × precio` — el precio se resuelve desde
   `insumos.costo_final` o `apu_matrices` vía `insumo_id`
 - **capítulos**: `total = SUM(hijos.total)` — calculado bottom-up en Python
@@ -133,7 +132,16 @@ def actualizar_total(nodo_id):
     con.commit()
 ```
 
-### 3. `apu_matrices` ligado por `matriz_id`, no por clave texto
+### 3. `apu_matrices` — columnas `valor` / `operador`
+
+Cada fila representa un insumo dentro de un APU. El `importe` se calcula según
+el operador:
+- `operador = '*'` → `importe = valor × precio` (materiales, equipo, etc.)
+- `operador = '/'` → `importe = precio / valor` (mano de obra, donde `valor` = rendimiento)
+
+Esto reemplaza las antiguas columnas `cantidad` + `rendimiento` de v3.
+
+### 4. `apu_matrices` ligado por `matriz_id`, no por clave texto
 
 En OPUS la relación APU↔concepto se hacía por `NOMBRE` (texto). Aquí es por
 `matriz_id` (entero). Un mismo id puede referenciar un nodo del árbol
@@ -143,12 +151,12 @@ El contexto de la llamada sabe cuál es — no se necesita columna discriminador
 Ventajas: joins más rápidos, sin duplicación de columnas (concepto_id /
 insumo_compuesto_id como en v1), consultas unificadas.
 
-### 4. `historial` genérico
+### 5. `historial` genérico
 
 Una sola tabla para auditar cualquier cambio en cualquier tabla.
 `sesion` (UUID) agrupa cambios de una misma operación.
 
-### 5. Familias y subfamilias — lookup en queries de insumos
+### 6. Familias y subfamilias — lookup en queries de insumos
 
 Las familias se importan desde el campo `ELE_GRUPO` o `ELE_FAM` del archivo `*P.DBF`.
 Subfamilias desde `ELE_SFAM` (ausente en muchos proyectos).
@@ -167,7 +175,7 @@ WHERE i.proyecto_id = ? AND i.activo = 1;
 
 ---
 
-### 6. Borrado lógico (`activo = 1`)
+### 7. Borrado lógico (`activo = 1`)
 
 Ninguna tabla borra físicamente registros — usan `activo = 0`. Esto permite
 deshacer eliminaciones y mantener el historial íntegro. **Toda query de negocio
@@ -208,10 +216,11 @@ El schema completo vive en `backend/schema.sql`. Las migraciones v2→v3 se apli
 automáticamente vía `ALTER TABLE` en `Database._aplicar_schema()`.
 
 | Versión | Cambios clave |
-|---|---|
+|---|---|---|
 | 1 | Esquema inicial con `nodos`, `apu_detalle`, `estados_nodo`, roles |
 | 2 | Renombres (`nodos`→`estructura_presupuesto`, etc.), eliminar tablas no usadas (roles, estados_nodo, tipos_* extra), agregar subfamilias, tipo trabajo/flete, estado como entero |
 | 3 | `concepto_id` + `insumo_compuesto_id` → `matriz_id` único, `es_compuesto` por presencia en `*F.DBF` |
+| 4 | `apu_matrices.cantidad`+`rendimiento` → `valor`+`operador`; `importe` pasa de GENERATED a REAL; columnas eliminadas de `insumos`: `rendimiento`, `cantidad`, `costo_base`, `es_basico`, `marca`, `pais_origen`; se agrega `insumos.costo_directo` |
 
 **Regla:** nunca modificar `schema.sql` en formas que rompan migraciones existentes.
 Todos los cambios futuros van como migraciones en `db.py`.
@@ -241,7 +250,7 @@ ORDER BY n.wbs;
 SELECT
     am.orden, i.clave, i.descripcion, i.unidad,
     ti.nombre AS tipo,
-    am.rendimiento, am.cantidad, am.precio, am.importe
+    am.valor, am.operador, am.precio, am.importe
 FROM apu_matrices am
 JOIN insumos i  ON i.id = am.insumo_id
 JOIN tipos_insumo ti ON ti.id = i.tipo_id
@@ -279,4 +288,8 @@ WHERE n.proyecto_id = ?
   AND n.estado IN (0, 3)
   AND n.activo = 1
 ORDER BY n.wbs;
+```
+
+```
+Actualizado: 2026-07-01 (hora local)
 ```

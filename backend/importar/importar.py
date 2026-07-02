@@ -322,7 +322,8 @@ def importar(
     #                    fecha, es_compuesto, fsr (salario_real para MO),
     #                    clave_usuario, peso_kg, familia_id, subfamilia_id
     #                    comentarios → tabla notas
-    insumo_id_por_clave: dict[str, int] = {}
+    insumo_id_por_clave:   dict[str, int] = {}
+    insumo_tipo_por_clave: dict[str, int] = {}  # tipo_id para decidir operador en apu_matrices
     notas_insumos: list[tuple] = []  # (insumo_id, texto) — se insertan al final
     n_compuestos = 0
 
@@ -364,20 +365,21 @@ def importar(
         # dentro de un mismo archivo OPUS es única.
         if _hash is not None:
             cur.execute("""
-                SELECT id FROM insumos WHERE proyecto_id = ? AND hash = ?
+                SELECT id, tipo_id FROM insumos WHERE proyecto_id = ? AND hash = ?
             """, (proyecto_id, _hash))
         else:
             cur.execute("""
-                SELECT id FROM insumos
+                SELECT id, tipo_id FROM insumos
                 WHERE proyecto_id = ? AND hash IS NULL AND clave_opus = ?
             """, (proyecto_id, clave))
         ya_existe = cur.fetchone()
 
         if not ya_existe:
+            tipo_id = _tipo_id(prefijo)
             cur.execute("""
                 INSERT INTO insumos
                     (proyecto_id, clave_opus, tipo_id, descripcion, descripcion_corta,
-                     unidad, costo_mn, costo_final, es_basico, es_compuesto,
+                     unidad, costo_mn, costo_directo, costo_final, es_compuesto,
                      fecha_precio, clave_usuario, peso_kg,
                      familia_id, subfamilia_id,
                      salario_real, hash, creado_por)
@@ -385,13 +387,13 @@ def importar(
             """, (
                 proyecto_id,
                 clave,
-                _tipo_id(prefijo),
+                tipo_id,
                 _desc,
                 _s(r.get("DESCCORTA")),
                 _s(r.get("UNIDAD")),
                 _f(r.get("PRECIO")),
                 _f(r.get("PRECIO")),
-                1 if _s(r.get("BASICO")).upper() == "S" else 0,
+                _f(r.get("PRECIO")),
                 es_compuesto,
                 _s(r.get("FECHA")),
                 _s(r.get("CLAVE_USU") or r.get("CLVUSUARIO") or r.get("CLV_USU")),
@@ -401,6 +403,8 @@ def importar(
                 salario_real,
                 _hash,
             ))
+        else:
+            tipo_id = ya_existe["tipo_id"]
 
         cur.execute("""
             SELECT id FROM insumos
@@ -410,7 +414,8 @@ def importar(
         row = cur.fetchone()
         if row:
             insumo_id = row["id"]
-            insumo_id_por_clave[clave] = insumo_id
+            insumo_id_por_clave[clave]   = insumo_id
+            insumo_tipo_por_clave[clave] = tipo_id
             if comentario:
                 notas_insumos.append((insumo_id, comentario))
 
@@ -530,14 +535,18 @@ def importar(
             continue
 
         for pid, es_comp in todos_padres:
-            mid = -pid if es_comp else pid
+            mid     = -pid if es_comp else pid
+            es_mo   = insumo_tipo_por_clave.get(insumo_clave, 0) == 2
+            operador = '/' if es_mo else '*'
+            valor = _f(r.get("RENDTO")) if es_mo else _f(r.get("CANTIDAD"))
             cur.execute("""
                 INSERT INTO apu_matrices
-                    (matriz_id, insumo_id, rendimiento, cantidad,
+                    (matriz_id, insumo_id, valor, operador,
                      precio, formula, orden, creado_por)
                 VALUES (?, ?, ?, ?, ?, ?, ?, 1)
             """, (mid, insumo_id,
-                  _f(r.get("RENDTO")), _f(r.get("CANTIDAD")),
+                  valor,
+                  operador,
                   _f(r.get("COSTO")),
                   _s(r.get("EXPRESION") or r.get("MEMOCAD")),
                   int(_f(r.get("CLAVENUM")))))

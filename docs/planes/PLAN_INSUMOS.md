@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS insumos (
     proveedor_id        INTEGER REFERENCES proveedores(id),
     costo_mn            REAL    NOT NULL DEFAULT 0.0,
     costo_me            REAL    NOT NULL DEFAULT 0.0,
+    costo_directo       REAL    NOT NULL DEFAULT 0.0,  -- 🆕 sin factores de sobrecosto
     costo_final         REAL    NOT NULL DEFAULT 0.0,
     salario_nominal     REAL,
     salario_real        REAL,
@@ -123,38 +124,62 @@ CREATE TABLE IF NOT EXISTS apu_matrices (
 
 ## 4. DDL destino: `estructura_presupuesto`
 
-Se agrega `formula` para calcular `cantidad` de forma opcional.
+**Sin cambios en `estructura_presupuesto`** — la unificación `importe/subtotal → total`
+y la columna `formula` ya están implementadas vía `PLAN_PRESUPUESTO.md`.
+El DDL actual en `schema.sql` (Bloque 5) es el correcto y no se modifica en este plan.
+
+## 5. Tabla nueva: `factores_sobrecosto`
+
+Factores fijos por proyecto para la cascada de sobrecostos sobre `costo_directo`.
 
 ```sql
-CREATE TABLE IF NOT EXISTS estructura_presupuesto (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    proyecto_id     INTEGER NOT NULL REFERENCES proyectos(id) ON DELETE CASCADE,
-    padre_id        INTEGER REFERENCES estructura_presupuesto(id) ON DELETE CASCADE,
-    wbs             TEXT    NOT NULL,
-    nivel           INTEGER NOT NULL,
-    orden           INTEGER NOT NULL DEFAULT 0,
-    tipo            TEXT    NOT NULL DEFAULT 'capitulo'
-                    CHECK(tipo IN ('capitulo', 'concepto')),
-    clave           TEXT,
-    descripcion     TEXT    NOT NULL DEFAULT '',
-    descripcion_corta TEXT,
-    unidad          TEXT,
-    cantidad        REAL,                         -- valor fijo O resultado de formula
-    formula         TEXT,                          -- 🆕 expresion opcional para cantidad
-    precio_unitario REAL,
-    importe         REAL,                          -- 🆕 calculado en Python (antes GENERATED)
-    subtotal        REAL    NOT NULL DEFAULT 0.0,
-    estado          INTEGER NOT NULL DEFAULT 0,
-    notas_rapidas   TEXT,
-    activo          INTEGER NOT NULL DEFAULT 1,
-    creado_por      INTEGER NOT NULL DEFAULT 1 REFERENCES usuarios(id),
-    creado_en       TEXT    NOT NULL DEFAULT (datetime('now')),
-    modificado_por  INTEGER REFERENCES usuarios(id),
-    modificado_en   TEXT    NOT NULL DEFAULT (datetime('now'))
+CREATE TABLE IF NOT EXISTS factores_sobrecosto (
+    proyecto_id             INTEGER PRIMARY KEY REFERENCES proyectos(id) ON DELETE CASCADE,
+    pct_indirectos_campo    REAL NOT NULL DEFAULT 0.0,
+    pct_indirectos_oficina  REAL NOT NULL DEFAULT 0.0,
+    pct_financiamiento      REAL NOT NULL DEFAULT 0.0,
+    pct_utilidad            REAL NOT NULL DEFAULT 0.0,
+    pct_cargos_adicionales  REAL NOT NULL DEFAULT 0.0
 );
 ```
 
-## 5. Tabla nueva: `variables_formula`
+Cascada de cálculo:
+
+```
+costo_directo              → CD
+indirectos_campo   = CD · pct_indirectos_campo / 100
+indirectos_oficina = CD · pct_indirectos_oficina / 100
+subtotal1          = CD + indirectos_campo + indirectos_oficina
+financiamiento     = subtotal1 · pct_financiamiento / 100
+subtotal2          = subtotal1 + financiamiento
+utilidad           = subtotal2 · pct_utilidad / 100
+subtotal3          = subtotal2 + utilidad
+cargos_adicionales = subtotal3 · pct_cargos_adicionales / 100
+costo_final        = subtotal3 + cargos_adicionales
+```
+
+### 5.1 Interacción con FSR (ver `PLAN_FSR.md`)
+
+Para insumos MO, `costo_directo` NO es el precio de compra — es `salario_real`
+(que ya incorpora el Factor de Salario Real vía `factores_fsr`):
+
+```
+salario_nominal → FSR → salario_real → costo_directo → cascada → costo_final
+```
+
+**Orden completo para MO:**
+1. `salario_nominal` (base diaria)
+2. × `factor_fsr` de `factores_fsr` → `salario_real`
+3. `costo_directo = salario_real`
+4. Cascada de `factores_sobrecosto` → `costo_final`
+
+Para el resto de tipos (material, equipo, etc.), `costo_directo` = precio de
+compra/mercado.
+
+Ambos planes (`factores_sobrecosto` y `factores_fsr`) modifican `costos_directo`
+pero en etapas distintas y son independientes — no se solapan ni compiten.
+
+## 6. Tabla nueva: `variables_formula`
 
 Almacena variables nombradas que pueden referenciarse desde cualquier `formula`
 en `apu_matrices`, `estructura_presupuesto`, o desde otras variables.
@@ -173,11 +198,11 @@ CREATE TABLE IF NOT EXISTS variables_formula (
 );
 ```
 
-## 6. Evaluador (`backend/formulas.py`)
+## 7. Evaluador (`backend/formulas.py`)
 
 Se vendea **simpleeval** como `backend/formulas.py` (archivo único, MIT, ~400 líneas).
 
-### 6.1 Función pública
+### 7.1 Función pública
 
 ```python
 def evaluar(expresion: str, variables: dict[str, float]) -> float:
@@ -185,7 +210,7 @@ def evaluar(expresion: str, variables: dict[str, float]) -> float:
     variables: dict con nombres → valor (ya resueltos)"""
 ```
 
-### 6.2 Resolución recursiva de variables
+### 7.2 Resolución recursiva de variables
 
 ```python
 def resolver(
@@ -198,11 +223,11 @@ def resolver(
     Detecta ciclos y levanta ValueError."""
 ```
 
-### 6.3 Operadores soportados
+### 7.3 Operadores soportados
 
 `+` `-` `*` `/` `()` `**` `and` `or` `not` `==` `!=` `<` `>` `<=` `>=`
 
-### 6.4 Flujo de evaluación en fórmulas
+### 7.4 Flujo de evaluación en fórmulas
 
 Cuando una celda tiene `formula` no NULL:
 
@@ -214,9 +239,9 @@ Cuando una celda tiene `formula` no NULL:
 5. Se escribe el resultado en la columna `valor` (o `cantidad`)
 ```
 
-## 7. Operaciones sobre `insumos`
+## 8. Operaciones sobre `insumos`
 
-### 7.1 DROP (4 columnas)
+### 8.1 DROP (4 columnas)
 
 | Columna | Motivo |
 |---------|--------|
@@ -225,59 +250,86 @@ Cuando una celda tiene `formula` no NULL:
 | `pais_origen` | Sin campo en ningún DBF de OPUS |
 | `es_basico` | Redundante con `es_compuesto` |
 
-### 7.2 ADD (3 columnas)
+### 8.2 ADD (4 columnas)
 
-| Columna | Tipo | Default | OPUS |
-|---------|------|---------|------|
-| `catfsr` | TEXT | NULL | `CATFSR` |
-| `factor_fsr` | REAL | NULL | `FSR` |
-| `fsr_minimo` | INTEGER | 0 | `FSR_MINIMO` |
+| Columna | Tipo | Default | Origen |
+|---------|------|---------|--------|
+| `catfsr` | TEXT | NULL | `CATFSR` en *P.DBF |
+| `factor_fsr` | REAL | NULL | `FSR` en *P.DBF |
+| `fsr_minimo` | INTEGER | 0 | `FSR_MINIMO` en *P.DBF |
+| `costo_directo` | REAL | 0.0 | Calculado, sin factores de sobrecosto |
 
-## 8. Cambios en código
+## 9. Cambios en código
 
-### 8.1 `backend/schema.sql`
+### 9.1 `backend/schema.sql`
 
-- `insumos`: DROP 4 columnas, ADD 3 columnas FSR
+- `insumos`: DROP 4 columnas, ADD 4 columnas (FSR + costo_directo)
 - `apu_matrices`: DROP `rendimiento`, `cantidad`, `importe` GENERATED; ADD `valor`, `operador`, `importe` REAL
-- `estructura_presupuesto`: ADD `formula TEXT`, cambiar `importe` de GENERATED a REAL
+- `estructura_presupuesto`: Sin cambios — `formula` y `total` unificado ya están (vía `PLAN_PRESUPUESTO.md`)
+- Nueva tabla: `factores_sobrecosto`
 - Nueva tabla: `variables_formula`
 
-### 8.2 `backend/formulas.py`
+### 9.2 `backend/formulas.py`
 
 Nuevo archivo. Vendereo de simpleeval + función `resolver()`.
 
-### 8.3 `backend/repos.py`
+### 9.3 `backend/repos.py`
 
-- Nuevo `VariableFormulaRepo`
+Nuevos repos:
+- `FactoresSobrecostoRepo`
+- `VariableFormulaRepo`
 
-### 8.4 `backend/core.py`
+### 9.4 `backend/core.py`
 
-- Nueva función `resolver_formulas()`: recibe lista de variables/expresiones modificadas, recorre dependencias, recalcula `valor`/`cantidad`/`importe` afectados
+- Nueva función `resolver_formulas()`: recorre dependencias de `variables_formula` y recalcula `valor`/`cantidad`/`importe`
+- Nueva función `aplicar_cascada_sobrecosto()`: recibe `costo_directo` + `factores_sobrecosto`, devuelve `costo_final`
 
-### 8.5 `backend/importar.py`
+### 9.5 `backend/recalculo.py`
+
+- Nueva etapa en `recalcular_proyecto()`: aplicar cascada de `factores_sobrecosto` a todos los insumos no-compuestos
+
+### 9.6 `backend/importar.py`
 
 - Quitar mapeo `BASICO` → `es_basico`
 - Leer `COMENTARIO` → `insumos.comentarios`
 - Leer `CATFSR`, `FSR`, `FSR_MINIMO`
 - Leer `EXPRESION` → `apu_matrices.formula`
+- `costo_directo` = `PRECIO` (mismo valor que `costo_mn`)
 - Leer formulas de concepto desde `*O.DBF` → pendiente de definir
 
-### 8.6 `backend/exportar.py`
+#### Mapeo `apu_matrices.valor` / `apu_matrices.operador` desde OPUS
+
+| Tipo insumo | Campo OPUS | `valor` | `operador` |
+|-------------|------------|---------|------------|
+| MO (tipo_id=2) | `RENDTO` | `RENDTO` | `'/'` |
+| Resto | `CANTIDAD` | `CANTIDAD` | `'*'` |
+
+Razón: en OPUS la MO se calcula como `(CANTIDAD / RENDTO) × PRECIO`, pero `CANTIDAD`
+suele ser 1.0 (una hora/día). Con `operador='/'` y `valor=RENDTO` se obtiene
+`importe = PRECIO / RENDTO`, equivalente. El resto sigue siendo `CANTIDAD × PRECIO`.
+
+### 9.7 `backend/exportar.py`
 
 - Quitar escritura `BASICO`
 - Escribir `CATFSR`, `FSR`, `FSR_MINIMO`
 - Escribir `EXPRESION` desde `apu_matrices.formula`
 
-## 9. Resumen de tablas afectadas
+### 9.8 Frontend
+
+- `widgets/insumos.py`: columna "C. Directo" (oculta por defecto)
+- `ajustes.py`: sección nueva "Factores de sobrecosto" con 5 spinboxes para los porcentajes
+
+## 10. Resumen de tablas afectadas
 
 | Tabla | Cambio |
 |-------|--------|
-| `insumos` | 4 DROP + 3 ADD = 39 columnas finales |
+| `insumos` | 4 DROP + 4 ADD = 40 columnas finales |
 | `apu_matrices` | `cantidad`+`rendimiento` → `valor`+`operador`; `importe` no GENERATED; `formula` se queda |
-| `estructura_presupuesto` | +`formula`; `importe` pasa a calculado en Python |
+| `estructura_presupuesto` | Sin cambios — unificación `total` ya implementada (vía `PLAN_PRESUPUESTO.md`) |
+| `factores_sobrecosto` | 🆕 tabla nueva |
 | `variables_formula` | 🆕 tabla nueva |
 
-## 10. Pendientes futuros
+## 11. Pendientes futuros
 
 | Columna | Campo OPUS | DBF | Depende de |
 |---------|------------|-----|-----------|
@@ -287,7 +339,7 @@ Nuevo archivo. Vendereo de simpleeval + función `resolver()`.
 | `indice_1..6` | `A`-`F` | `*P.DBF` | Módulo fórmulas OPUS |
 | Dimensiones concepto | LARGO, ANCHO... | `*O.DBF` | Integración variables_formula |
 
-## 11. Sin migración
+## 12. Sin migración
 
 Beta — schema se edita en caliente. Bases `.presup` existentes incompatibles.
 Regenerar desde cero con importador OPUS actualizado.

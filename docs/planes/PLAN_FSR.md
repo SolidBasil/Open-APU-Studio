@@ -437,7 +437,7 @@ FSR. Se genera desde `exportar_plantillas.py:FSR_9_ROWS` — no cambia.
 | `backend/importar.py` | Leer `*8.DBF`, mapear `FASAR` como clave, calcular salario_real | 40 |
 | `backend/exportar.py` | Escribir `*8.DBF` desde datos reales, escribir `FASAR` en insumos | 30 |
 | `docs/SCHEMA.md` | Documentar nueva tabla | 20 |
-| `.opencode/plans/PLAN_INSUMOS.md` | Actualizar: `usar_hoja_fasar` eliminado, `fsr_config_id` agregado | 5 |
+| `docs/planes/PLAN_INSUMOS.md` | Actualizar: `costo_directo` + cascada `factores_sobrecosto` | 5 |
 
 ---
 

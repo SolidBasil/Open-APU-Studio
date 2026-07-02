@@ -175,6 +175,64 @@ CREATE TABLE IF NOT EXISTS configuracion_proyecto (
     unidad_cantidad_agrup   INTEGER NOT NULL DEFAULT 0
 );
 
+-- Factores de sobrecosto para cascada sobre insumos (indirectos, utilidad, etc.)
+CREATE TABLE IF NOT EXISTS factores_sobrecosto (
+    proyecto_id             INTEGER PRIMARY KEY REFERENCES proyectos(id) ON DELETE CASCADE,
+    pct_indirectos_campo    REAL NOT NULL DEFAULT 0.0,
+    pct_indirectos_oficina  REAL NOT NULL DEFAULT 0.0,
+    pct_financiamiento      REAL NOT NULL DEFAULT 0.0,
+    pct_utilidad            REAL NOT NULL DEFAULT 0.0,
+    pct_cargos_adicionales  REAL NOT NULL DEFAULT 0.0
+);
+
+-- Factores FSR — configuraciones de Factor de Salario Real para mano de obra
+CREATE TABLE IF NOT EXISTS factores_fsr (
+    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+    proyecto_id             INTEGER NOT NULL REFERENCES proyectos(id) ON DELETE CASCADE,
+    clave                   TEXT    NOT NULL,
+    nombre                  TEXT    NOT NULL DEFAULT '',
+    modo_calculo            INTEGER NOT NULL DEFAULT 1,
+    anio                    INTEGER NOT NULL DEFAULT 2010,
+    semestre                INTEGER NOT NULL DEFAULT 1,
+    tipo_jornada            INTEGER NOT NULL DEFAULT 0,
+    horas_jornada           REAL    NOT NULL DEFAULT 8.0,
+    salario_minimo          REAL    NOT NULL DEFAULT 57.46,
+    salario_nominal_base    REAL    NOT NULL DEFAULT 100.0,
+    dias_calendario         REAL    NOT NULL DEFAULT 365.25,
+    dias_aguinaldo          REAL    NOT NULL DEFAULT 15.0,
+    dias_vacaciones         REAL    NOT NULL DEFAULT 6.0,
+    prima_vacacional        REAL    NOT NULL DEFAULT 25.0,
+    dias_dominical          REAL    NOT NULL DEFAULT 0.0,
+    prima_dominical         REAL    NOT NULL DEFAULT 0.0,
+    dias_otros_pagados      REAL    NOT NULL DEFAULT 0.0,
+    dias_descanso           REAL    NOT NULL DEFAULT 52.18,
+    dias_festivos           REAL    NOT NULL DEFAULT 7.17,
+    dias_contrato           REAL    NOT NULL DEFAULT 0.0,
+    dias_sindicato          REAL    NOT NULL DEFAULT 1.0,
+    dias_enfermedad         REAL    NOT NULL DEFAULT 0.45,
+    dias_clima              REAL    NOT NULL DEFAULT 3.85,
+    dias_arrastre           REAL    NOT NULL DEFAULT 0.0,
+    dias_guardia            REAL    NOT NULL DEFAULT 0.0,
+    dias_otros_no_lab       REAL    NOT NULL DEFAULT 5.0,
+    imss_guarderias         REAL    NOT NULL DEFAULT 1.0,
+    imss_retiro             REAL    NOT NULL DEFAULT 2.0,
+    imss_riesgos            REAL    NOT NULL DEFAULT 7.58875,
+    imss_invalidez          REAL    NOT NULL DEFAULT 1.75,
+    imss_cesantia           REAL    NOT NULL DEFAULT 3.15,
+    imss_enfermedad         REAL    NOT NULL DEFAULT 5.35365,
+    infonavit               REAL    NOT NULL DEFAULT 5.0,
+    impuesto_nomina         REAL    NOT NULL DEFAULT 0.0,
+    otros_impuestos         REAL    NOT NULL DEFAULT 0.0,
+    factor_fsr_calculado    REAL,
+    fecha_calculo           TEXT,
+    activo                  INTEGER NOT NULL DEFAULT 1,
+    creado_por              INTEGER NOT NULL DEFAULT 1 REFERENCES usuarios(id),
+    creado_en               TEXT    NOT NULL DEFAULT (datetime('now')),
+    modificado_por          INTEGER REFERENCES usuarios(id),
+    modificado_en           TEXT    NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(proyecto_id, clave)
+);
+
 -- Sobrecostos / indirectos — renglones del pie de precios unitarios
 CREATE TABLE IF NOT EXISTS sobrecostos (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -298,17 +356,16 @@ CREATE TABLE IF NOT EXISTS insumos (
     -- Costos
     costo_mn            REAL    NOT NULL DEFAULT 0.0,
     costo_me            REAL    NOT NULL DEFAULT 0.0,
-    costo_base          REAL    NOT NULL DEFAULT 0.0,
+    costo_directo       REAL    NOT NULL DEFAULT 0.0,
     costo_final         REAL    NOT NULL DEFAULT 0.0,
 
     -- Mano de obra
     salario_nominal     REAL,
     salario_real        REAL,
     usar_hoja_fasar     INTEGER NOT NULL DEFAULT 0,
-
-    -- Material
-    marca               TEXT,
-    pais_origen         TEXT,
+    catfsr              TEXT,
+    factor_fsr          REAL,
+    fsr_minimo          INTEGER NOT NULL DEFAULT 0,
 
     -- Trabajo (tipo_id = 128)
     -- 'subcontrato' incluye todos los recursos
@@ -336,7 +393,6 @@ CREATE TABLE IF NOT EXISTS insumos (
 
     -- Auditoría
     activo              INTEGER NOT NULL DEFAULT 1,
-    es_basico           INTEGER NOT NULL DEFAULT 0,
     creado_por          INTEGER NOT NULL DEFAULT 1 REFERENCES usuarios(id),
     creado_en           TEXT    NOT NULL DEFAULT (datetime('now')),
     modificado_por      INTEGER REFERENCES usuarios(id),
@@ -368,10 +424,10 @@ CREATE TABLE IF NOT EXISTS apu_matrices (
     matriz_id           INTEGER NOT NULL,
     insumo_id           INTEGER NOT NULL REFERENCES insumos(id),
 
-    rendimiento         REAL    NOT NULL DEFAULT 0.0,
-    cantidad            REAL    NOT NULL DEFAULT 0.0,
+    valor               REAL    NOT NULL DEFAULT 0.0,
+    operador            TEXT    NOT NULL DEFAULT '*' CHECK(operador IN ('*', '/')),
     precio              REAL    NOT NULL DEFAULT 0.0,
-    importe             REAL GENERATED ALWAYS AS (ROUND(cantidad * precio, 6)) STORED,
+    importe             REAL    NOT NULL DEFAULT 0.0,
 
     formula             TEXT,
     orden               INTEGER NOT NULL DEFAULT 0,
@@ -407,13 +463,27 @@ CREATE TABLE IF NOT EXISTS apu_resumen_totales (
     modificado_en       TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
--- NOTA: la tabla auxiliares (*EGX.DBF en OPUS) fue eliminada.
--- Los insumos compuestos simples se identifican con es_compuesto=1 en la tabla insumos.
--- Sus componentes internos se almacenan en apu_matrices con insumo_compuesto_id.
+-- =============================================================================
+-- BLOQUE 8: FÓRMULAS Y VARIABLES
+-- variables nombradas que pueden referenciarse desde formulas en apu_matrices o
+-- estructura_presupuesto. Soporte recursivo con detección de ciclos.
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS variables_formula (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    proyecto_id     INTEGER NOT NULL REFERENCES proyectos(id) ON DELETE CASCADE,
+    nombre          TEXT    NOT NULL,
+    expresion       TEXT,
+    valor           REAL,
+    descripcion     TEXT,
+    UNIQUE(proyecto_id, nombre)
+);
+
+CREATE INDEX IF NOT EXISTS idx_varf_proyecto ON variables_formula(proyecto_id);
 
 
 -- =============================================================================
--- BLOQUE 8: COLABORACIÓN
+-- BLOQUE 9: COLABORACIÓN
 -- historial: base para Ctrl+Z colaborativo — ver DECISIONES_PENDIENTES.md FE-02
 -- notas: comentarios inline por nodo del presupuesto
 -- =============================================================================
@@ -451,7 +521,7 @@ CREATE INDEX IF NOT EXISTS idx_historial_usuario  ON historial(usuario_id);
 
 
 -- =============================================================================
--- BLOQUE 9: VERSIÓN DEL ESQUEMA
+-- BLOQUE 10: VERSIÓN DEL ESQUEMA
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -461,4 +531,4 @@ CREATE TABLE IF NOT EXISTS schema_version (
 );
 
 INSERT OR IGNORE INTO schema_version (version, descripcion) VALUES
-    (3, 'v3: esquema actual — hash en insumos, clave_opus referencial, id como llave de navegación');
+    (4, 'v4: costo_directo + FSR en insumos, apu_matrices con valor/operador, factores_sobrecosto, factores_fsr, variables_formula');

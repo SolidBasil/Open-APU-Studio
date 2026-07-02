@@ -184,12 +184,12 @@ class PanelesMixin:
         layout.addSpacing(2)
 
         detail = TreeTableWidget(
-            ["Tipo", "Clave", "Descripción", "Unidad", "Cant", "P.U.", "Importe"],
+            ["Tipo", "Clave", "Descripción", "Unidad", "P.U.", "Op", "Valor", "Importe"],
             flat=True,
         )
         detail.set_column_modes({
             c: (QHeaderView.ResizeMode.Interactive, w)
-            for c, w in enumerate([110, 90, 250, 50, 80, 100, 110])
+            for c, w in enumerate([110, 90, 250, 50, 100, 40, 80, 110])
         })
         detail.header().setMaximumSectionSize(400)
 
@@ -204,8 +204,9 @@ class PanelesMixin:
                         "",  # columna Clave: ya no se usa para navegación, el insumo_id va en UserRole
                         r["descripcion"],
                         r["insumo_unidad"],
-                        f"{r['cantidad']:,.3f}",
                         f"${r['precio']:,.2f}",
+                        r["operador"],
+                        f"{r['valor']:,.4f}",
                         f"${r['importe']:,.2f}",
                     ], editable=False)
                     row_item.setData(0, Qt.ItemDataRole.UserRole, r.get("insumo_id"))
@@ -664,7 +665,7 @@ class PanelesMixin:
         conn = self._db.conn
         cur = conn.cursor()
 
-        cols = ["Nivel", "Clave", "Descripción", "Unidad", "Cantidad", "P.U.", "Importe", "Tipo"]
+        cols = ["Nivel", "Clave", "Descripción", "Unidad", "P.U.", "Op", "Valor", "Importe", "Tipo"]
         tree = TreeTableWidget(cols)
         tree.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         tree.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -675,26 +676,28 @@ class PanelesMixin:
             2: (QHeaderView.ResizeMode.Stretch, 250),
             3: (QHeaderView.ResizeMode.Interactive, 55),
             4: (QHeaderView.ResizeMode.Interactive, 80),
-            5: (QHeaderView.ResizeMode.Interactive, 80),
-            6: (QHeaderView.ResizeMode.Interactive, 95),
-            7: (QHeaderView.ResizeMode.Interactive, 110),
+            5: (QHeaderView.ResizeMode.Interactive, 40),
+            6: (QHeaderView.ResizeMode.Interactive, 80),
+            7: (QHeaderView.ResizeMode.Interactive, 95),
+            8: (QHeaderView.ResizeMode.Interactive, 110),
         })
 
         total_conceptos = 0
         for cid in concepto_ids:
             cur.execute("""
-                SELECT ep.wbs, ep.descripcion,
-                       COALESCE(i.clave_opus, '') AS clave_opus
+                SELECT ep.descripcion, ep.total
                 FROM estructura_presupuesto ep
-                LEFT JOIN insumos i ON i.id = ep.insumo_id
                 WHERE ep.id = ? AND ep.activo = 1
             """, [cid])
             row = cur.fetchone()
             if not row:
                 continue
+            total = row["total"] or 0
             raiz = QTreeWidgetItem(tree, [
-                row["wbs"] or "", row["clave_opus"], row["descripcion"],
-                "", "", "", "", "",
+                "", "", row["descripcion"],
+                "", "", "", "",
+                f"{total:,.2f}",
+                "",
             ])
             color = QBrush(QColor(COLORES_NIVEL[0]))
             f = QFont()
@@ -710,6 +713,9 @@ class PanelesMixin:
                     QTreeWidgetItem(item, [""] * len(cols))
                 total_conceptos += 1
             raiz.setExpanded(True)
+
+            # Separador entre APUs
+            QTreeWidgetItem(tree, [""] * len(cols))
 
         if total_conceptos == 0:
             QMessageBox.information(self, "Sin APU",
@@ -749,15 +755,19 @@ class PanelesMixin:
         """Agrega una fila de componente APU al árbol y guarda insumo_id como ID_ROLE."""
         from frontend.ventana.widgets.arbol import ID_ROLE, COLORES_NIVEL
         from PySide6.QtGui import QBrush, QColor
+        v  = comp.get("valor", 0) or 0
+        op = comp.get("operador", "*")
         pu = comp.get("precio") or comp.get("costo_final", 0)
-        importe = comp.get("importe", 0) or (pu * comp.get("cantidad", 0))
+        qty = v if op == "*" else (1.0 / v if v else 0.0)
+        importe = comp.get("importe", 0) or (pu * qty)
         item = QTreeWidgetItem(parent, [
             str(nivel) if nivel else "",
             "",  # columna Clave: ya no aplica, navegación usa insumo_id vía ID_ROLE
             comp.get("insumo_descripcion", comp.get("insumo_desc_corta", "")),
             comp.get("insumo_unidad", ""),
-            f"{comp['cantidad']:.4f}" if comp.get("cantidad") else "",
             f"{pu:.2f}" if pu else "",
+            op,                        # Operador
+            f"{v:.4f}" if v else "",  # Valor raw
             f"{importe:.2f}" if importe else "",
             comp.get("tipo_nombre", ""),
         ])

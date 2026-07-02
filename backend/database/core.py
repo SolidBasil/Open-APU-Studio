@@ -209,10 +209,10 @@ def get_apu(db_path: str | None = None, concepto_id: int = 0) -> dict:
         SELECT
             ad.id,
             ad.orden,
-            ad.rendimiento,
-            ad.cantidad,
+            ad.valor,
+            ad.operador,
             ad.precio,
-            ad.cantidad * ad.precio AS importe,
+            CASE WHEN ad.operador = '*' THEN ad.valor * ad.precio ELSE ad.precio / ad.valor END AS importe,
             ad.formula,
             i.es_compuesto      AS insumo_es_compuesto,
             i.id                AS insumo_id,
