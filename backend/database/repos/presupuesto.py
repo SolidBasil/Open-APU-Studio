@@ -23,6 +23,17 @@ class NodoRepo(RepoBase):
     El árbol viene con padre_id correctamente resuelto desde la importación.
     """
 
+    TABLA = "estructura_presupuesto"
+
+    def update(self, registro_id: int, campos: dict) -> None:
+        return self._update(self.TABLA, registro_id, campos)
+
+    def insert(self, campos: dict) -> int:
+        return self._insert(self.TABLA, campos)
+
+    def delete(self, registro_id: int) -> None:
+        return self._delete(self.TABLA, registro_id)
+
     def todos(self, proyecto_id, tipo: str | None = None):
         """Devuelve todos los nodos activos del presupuesto ordenados por wbs.
         Si tipo se especifica ('capitulo' o 'concepto'), filtra por ese tipo.
@@ -43,35 +54,12 @@ class NodoRepo(RepoBase):
             ORDER BY wbs
         """, [proyecto_id])
 
-    def hijos(self, padre_id, tipo: str | None = None):
-        """Devuelve los hijos directos de un nodo.
-        Si tipo se especifica ('capitulo' o 'concepto'), filtra por ese tipo.
-        """
-        filtro = f"AND tipo = '{tipo}'" if tipo else ""
-        return self._lista(f"""
-            SELECT * FROM estructura_presupuesto
-            WHERE padre_id = ? AND activo = 1 {filtro}
-            ORDER BY wbs
-        """, [padre_id])
-
-    def raices(self, proyecto_id):
-        """Devuelve los nodos raíz (capítulos) de un proyecto."""
-        return self._lista("""
-            SELECT * FROM estructura_presupuesto
-            WHERE proyecto_id = ? AND padre_id IS NULL AND activo = 1
-            ORDER BY wbs
-        """, [proyecto_id])
-
     def buscar(self, concepto_id):
         """Busca un nodo por su ID."""
         return self._uno("""
             SELECT * FROM estructura_presupuesto
             WHERE id = ? AND activo = 1
         """, [concepto_id])
-
-    def buscar_por_clave(self, clave, proyecto_id):
-        """Busca un nodo por su clave — columna eliminada, retorna None."""
-        return None
 
     def descendientes(self, concepto_id):
         """Devuelve todos los descendientes de un nodo mediante CTE recursiva."""
@@ -86,35 +74,21 @@ class NodoRepo(RepoBase):
             SELECT * FROM sub ORDER BY wbs
         """, [concepto_id])
 
-    def ruta(self, concepto_id):
-        """Devuelve la ruta desde un nodo hasta la raíz mediante CTE recursiva."""
-        return self._lista("""
-            WITH RECURSIVE ruta AS (
-                SELECT * FROM estructura_presupuesto WHERE id = ?
-                UNION ALL
-                SELECT n.* FROM estructura_presupuesto n
-                JOIN ruta r ON n.id = r.padre_id
-            )
-            SELECT * FROM ruta ORDER BY nivel
-        """, [concepto_id])
+    def ids_por_tipo(self, proyecto_id, tipo="concepto"):
+        """Devuelve los IDs de nodos de un tipo específico."""
+        rows = self._lista("""
+            SELECT id FROM estructura_presupuesto
+            WHERE proyecto_id = ? AND tipo = ? AND activo = 1
+        """, [proyecto_id, tipo])
+        return [r["id"] for r in rows]
 
-    def por_estado(self, proyecto_id, estado: int):
-        """Devuelve los nodos con un estado específico (semáforo)."""
-        return self._lista("""
-            SELECT * FROM estructura_presupuesto
-            WHERE proyecto_id = ? AND estado = ? AND activo = 1
-            ORDER BY wbs
-        """, [proyecto_id, estado])
-
-    def conceptos_sin_apu(self, proyecto_id):
-        """Devuelve los conceptos que no tienen APU asociado."""
-        return self._lista("""
-            SELECT ep.* FROM estructura_presupuesto ep
-            LEFT JOIN apu_matrices ac ON ac.matriz_id = ep.id
-            WHERE ep.proyecto_id = ? AND ep.tipo = 'concepto'
-              AND ep.activo = 1 AND ac.id IS NULL
-            ORDER BY ep.wbs
-        """, [proyecto_id])
+    def actualizar_descripcion_agrupador(self, nodo_id, descripcion, usuario_id=1):
+        """Actualiza la descripción de un agrupador (capítulo)."""
+        self._ejecutar("""
+            UPDATE estructura_presupuesto SET
+                descripcion = ?, modificado_por = ?, modificado_en = datetime('now')
+            WHERE id = ? AND tipo = 'capitulo'
+        """, [descripcion, usuario_id, nodo_id])
 
     def actualizar_cantidad(self, concepto_id, cantidad, usuario_id=1):
         """Actualiza la cantidad de un concepto y recalcula totales."""
@@ -134,24 +108,6 @@ class NodoRepo(RepoBase):
         """, (cantidad, concepto_id))
         self._conn.commit()
         self.actualizar_total(concepto_id)
-
-    def actualizar_descripcion(self, nodo_id, descripcion, usuario_id=1):
-        """Actualiza la descripción local de un nodo (capítulo o concepto)."""
-        self._ejecutar("""
-            UPDATE estructura_presupuesto SET
-                descripcion = ?, modificado_por = ?, modificado_en = datetime('now')
-            WHERE id = ?
-        """, [descripcion, usuario_id, nodo_id])
-
-    def actualizar_estado(self, concepto_id, estado: int, usuario_id=1):
-        """Actualiza el estado (semáforo) de un nodo."""
-        if estado not in ESTADO_COLOR:
-            return
-        self._ejecutar("""
-            UPDATE estructura_presupuesto SET
-                estado = ?, modificado_por = ?, modificado_en = datetime('now')
-            WHERE id = ?
-        """, [estado, usuario_id, concepto_id])
 
     def actualizar_total(self, concepto_id):
         """Recalcula total desde concepto_id hacia arriba hasta la raíz.
@@ -175,46 +131,6 @@ class NodoRepo(RepoBase):
             ).fetchone()
             actual = row["padre_id"] if row else None
         self._conn.commit()
-
-    def recalcular_por_insumo(self, insumo_id):
-        """Recalcula totales de todos los conceptos que usan un insumo y sus capítulos padre."""
-        cur = self._cursor
-        # Actualizar total de cada concepto que referencia este insumo
-        cur.execute("""
-            UPDATE estructura_presupuesto SET
-                total = COALESCE(cantidad, 0) * COALESCE(
-                    (SELECT costo_final FROM insumos WHERE id = ?), 0
-                ),
-                modificado_en = datetime('now')
-            WHERE insumo_id = ? AND tipo = 'concepto' AND activo = 1
-        """, (insumo_id, insumo_id))
-        # Subir por los padres
-        padres = cur.execute("""
-            SELECT DISTINCT padre_id FROM estructura_presupuesto
-            WHERE insumo_id = ? AND tipo = 'concepto' AND activo = 1 AND padre_id IS NOT NULL
-        """, (insumo_id,)).fetchall()
-        for row in padres:
-            self.actualizar_total(row["padre_id"])
-
-    def eliminar(self, concepto_id, usuario_id=1):
-        """Marca un nodo y sus descendientes como inactivos (borrado lógico)."""
-        # Leer padre_id ANTES del UPDATE — buscar() filtra activo=1,
-        # por lo que después del marcado siempre devuelve None.
-        nodo = self.buscar(concepto_id)
-        padre_id = nodo.get("padre_id") if nodo else None
-
-        desc = self.descendientes(concepto_id)
-        ids  = [d["id"] for d in desc]
-        if ids:
-            ph = ",".join("?" for _ in ids)
-            self._ejecutar(f"""
-                UPDATE estructura_presupuesto SET activo = 0,
-                    modificado_por = ?, modificado_en = datetime('now')
-                WHERE id IN ({ph})
-            """, [usuario_id] + ids)
-
-        if padre_id:
-            self.actualizar_total(padre_id)
 
 
 # =============================================================================

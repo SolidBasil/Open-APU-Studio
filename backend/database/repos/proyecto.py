@@ -5,36 +5,22 @@ from .base import RepoBase
 
 class ProyectoRepo(RepoBase):
 
-    def todos(self):
-        """Devuelve todos los proyectos activos ordenados por fecha descendente."""
-        return self._lista("""
-            SELECT * FROM proyectos WHERE activo = 1 ORDER BY creado_en DESC
-        """)
+    TABLA = "proyectos"
+
+    def update(self, registro_id: int, campos: dict) -> None:
+        return self._update(self.TABLA, registro_id, campos)
+
+    def insert(self, campos: dict) -> int:
+        return self._insert(self.TABLA, campos)
+
+    def delete(self, registro_id: int) -> None:
+        return self._delete(self.TABLA, registro_id)
 
     def buscar(self, proyecto_id):
         """Busca un proyecto por su ID."""
         return self._uno("""
             SELECT * FROM proyectos WHERE id = ? AND activo = 1
         """, [proyecto_id])
-
-    def config(self, proyecto_id):
-        """Devuelve la configuración de un proyecto."""
-        return self._uno("""
-            SELECT * FROM configuracion_proyecto WHERE proyecto_id = ?
-        """, [proyecto_id])
-
-    def actualizar_total(self, proyecto_id):
-        """Recalcula y actualiza el total_obra del proyecto desde sus raíces."""
-        self._ejecutar("""
-            UPDATE proyectos SET
-                total_obra = (
-                    SELECT COALESCE(SUM(total), 0)
-                    FROM estructura_presupuesto
-                    WHERE proyecto_id = ? AND padre_id IS NULL AND activo = 1
-                ),
-                modificado_en = datetime('now')
-            WHERE id = ?
-        """, [proyecto_id, proyecto_id])
 
 
 # =============================================================================
@@ -44,6 +30,17 @@ class ProyectoRepo(RepoBase):
 # factor_total = producto de (1 + pct/100) para los 5 factores
 
 class FactoresSobrecostoRepo(RepoBase):
+
+    TABLA = "factores_sobrecosto"
+
+    def update(self, registro_id: int, campos: dict) -> None:
+        return self._update(self.TABLA, registro_id, campos)
+
+    def insert(self, campos: dict) -> int:
+        return self._insert(self.TABLA, campos)
+
+    def delete(self, registro_id: int) -> None:
+        return self._delete(self.TABLA, registro_id)
 
     @staticmethod
     def _calcular_factor(pct_indirectos_campo=0, pct_indirectos_oficina=0,
@@ -82,12 +79,3 @@ class FactoresSobrecostoRepo(RepoBase):
         """, [proyecto_id, pct_indirectos_campo, pct_indirectos_oficina,
               pct_financiamiento, pct_utilidad, pct_cargos_adicionales, factor])
         return factor
-
-    def limpiar(self, proyecto_id):
-        """Elimina los factores de sobrecosto de un proyecto (vuelve a factor=1.0)."""
-        self._ejecutar("DELETE FROM factores_sobrecosto WHERE proyecto_id = ?", [proyecto_id])
-
-
-# =============================================================================
-# NODOS — estructura_presupuesto (capítulos y conceptos)
-# =============================================================================

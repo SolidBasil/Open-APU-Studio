@@ -269,3 +269,36 @@ class Database:
     def cerrar(cls):
         """Método de clase: cierra la conexión activa desde el singleton."""
         cls.instancia()._cerrar()
+
+    # ── Transacciones ────────────────────────────────────────────────
+
+    def transaction(self):
+        """Context manager: abre transacción, commitea al salir, rollback si falla.
+
+        Uso:
+            with db.transaction():
+                repo.update(id, campos)
+                registro = repo.buscar(id)
+            # ← COMMIT aquí. Si excepción → ROLLBACK.
+        """
+        return _TransactionContext(self._conn)
+
+
+# ── Context manager de transacciones ──────────────────────────────
+
+class _TransactionContext:
+    """Context manager para transacciones SQLite. Commitea al salir, rollback si falla."""
+
+    def __init__(self, conn: sqlite3.Connection):
+        self._conn = conn
+
+    def __enter__(self):
+        self._conn.execute("SAVEPOINT _sp_data_service")
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is not None:
+            self._conn.execute("ROLLBACK TO SAVEPOINT _sp_data_service")
+        else:
+            self._conn.execute("RELEASE SAVEPOINT _sp_data_service")
+        return False  # No suprime excepciones

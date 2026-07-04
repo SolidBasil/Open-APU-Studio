@@ -9,6 +9,17 @@ class InsumoRepo(RepoBase):
     (familia_nombre) y subfamilias (subfamilia_nombre).
     """
 
+    TABLA = "insumos"
+
+    def update(self, registro_id: int, campos: dict) -> None:
+        return self._update(self.TABLA, registro_id, campos)
+
+    def insert(self, campos: dict) -> int:
+        return self._insert(self.TABLA, campos)
+
+    def delete(self, registro_id: int) -> None:
+        return self._delete(self.TABLA, registro_id)
+
     # Base SELECT reutilizada en todos los métodos de consulta.
     # Siempre agregar WHERE después de este bloque.
     _SQL = """
@@ -46,15 +57,6 @@ class InsumoRepo(RepoBase):
             WHERE i.id = ? AND i.activo = 1
         """, [insumo_id])
 
-    def buscar_texto(self, proyecto_id, texto):
-        """Busca insumos por texto en clave, descripción o descripción corta."""
-        q = f"%{texto}%"
-        return self._lista(self._SQL + """
-            WHERE i.proyecto_id = ? AND i.activo = 1
-              AND (i.clave_opus LIKE ? OR i.descripcion LIKE ? OR i.descripcion_corta LIKE ?)
-            ORDER BY t.orden, i.id
-        """, [proyecto_id, q, q, q])
-
     def buscar_por_hash(self, hash_val, proyecto_id):
         """Busca un insumo por su hash dentro de un proyecto.
         Útil para detectar duplicados antes de insertar o renombrar.
@@ -62,26 +64,6 @@ class InsumoRepo(RepoBase):
         return self._uno(self._SQL + """
             WHERE i.hash = ? AND i.proyecto_id = ? AND i.activo = 1
         """, [hash_val, proyecto_id])
-
-        """Devuelve un resumen de cantidad y costo total agrupado por tipo de insumo."""
-        return self._lista("""
-            SELECT t.id, t.clave, t.nombre,
-                   COUNT(i.id) AS total, SUM(i.costo_final) AS costo_total
-            FROM tipos_insumo t
-            LEFT JOIN insumos i
-                ON i.tipo_id = t.id AND i.proyecto_id = ? AND i.activo = 1
-            GROUP BY t.id
-            ORDER BY t.orden
-        """, [proyecto_id])
-
-    def uso_en_proyecto(self, insumo_id):
-        """Devuelve el número de apariciones y el importe total de un insumo en APUs."""
-        return self._uno("""
-            SELECT COUNT(ac.id) AS apariciones,
-                   SUM(CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END) AS importe_total
-            FROM apu_matrices ac
-            WHERE ac.insumo_id = ?
-        """, [insumo_id])
 
     def donde_se_usa(self, insumo_id):
         """Devuelve los APU (concepto/compuesto) donde aparece un insumo."""
@@ -118,15 +100,10 @@ class InsumoRepo(RepoBase):
 
     def actualizar_campo(self, insumo_id, campo, valor, usuario_id=1):
         """Actualiza un campo simple de un insumo."""
-        campos = {'unidad', 'descripcion_corta', 'costo_final',
-                  'familia_id', 'subfamilia_id', 'proveedor_id'}
-        if campo not in campos:
-            raise ValueError(f"Campo '{campo}' no es editable")
-        self._ejecutar(f"""
-            UPDATE insumos SET {campo} = ?,
-                modificado_por = ?, modificado_en = datetime('now')
-            WHERE id = ?
-        """, [valor, usuario_id, insumo_id])
+        self._actualizar_campo("insumos", insumo_id, campo, valor,
+                               {'unidad', 'descripcion_corta', 'costo_final',
+                                'familia_id', 'subfamilia_id', 'proveedor_id'},
+                               usuario_id)
 
     def actualizar_descripcion(self, insumo_id, descripcion, proyecto_id, usuario_id=1):
         """Actualiza la descripción de un insumo y regenera su hash.
@@ -182,9 +159,13 @@ class InsumoRepo(RepoBase):
                unidad, costo, costo, costo, es_compuesto,
                nuevo_hash, clave_opus, usuario_id])
 
-    def tipos_disponibles(self):
-        """Devuelve todos los tipos de insumo ordenados."""
-        return self._lista("SELECT * FROM tipos_insumo ORDER BY orden")
+    def ids_con_apu(self, proyecto_id):
+        """Conjunto de ids de insumos compuestos (tienen APU propio)."""
+        rows = self._lista("""
+            SELECT id FROM insumos
+            WHERE es_compuesto = 1 AND proyecto_id = ? AND activo = 1
+        """, [proyecto_id])
+        return {r["id"] for r in rows}
 
 
 # =============================================================================

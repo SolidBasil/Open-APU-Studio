@@ -8,6 +8,17 @@ class ApuMatricesRepo(RepoBase):
     matriz_id unificado: positivo para nodos del árbol, negativo para insumos compuestos.
     """
 
+    TABLA = "apu_matrices"
+
+    def update(self, registro_id: int, campos: dict) -> None:
+        return self._update(self.TABLA, registro_id, campos)
+
+    def insert(self, campos: dict) -> int:
+        return self._insert(self.TABLA, campos)
+
+    def delete(self, registro_id: int) -> None:
+        return self._delete(self.TABLA, registro_id)
+
     def por_matriz(self, matriz_id):
         """Devuelve los componentes del APU de una matriz (concepto o compuesto)."""
         return self._lista("""
@@ -25,127 +36,14 @@ class ApuMatricesRepo(RepoBase):
             ORDER BY ac.orden
         """, [matriz_id])
 
-    def insertar(self, datos):
-        """Inserta un componente en la matriz APU."""
-        return self._ejecutar("""
-            INSERT INTO apu_matrices
-                (matriz_id, insumo_id, valor, operador,
-                 precio, formula, orden, creado_por)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, [
-            datos.get("matriz_id"),
-            datos.get("insumo_id"),
-            datos.get("valor", 0),
-            datos.get("operador", "*"),
-            datos.get("precio", 0),
-            datos.get("formula"),
-            datos.get("orden", 0),
-            datos.get("creado_por", 1),
-        ])
-
-    def eliminar(self, comp_id):
-        """Elimina un componente de la matriz por su ID."""
-        self._ejecutar("DELETE FROM apu_matrices WHERE id = ?", [comp_id])
-
     def actualizar_campo(self, comp_id, campo, valor, usuario_id=1):
         """Actualiza un campo de un componente APU."""
-        campos = {'valor', 'operador', 'precio', 'formula', 'orden'}
-        if campo not in campos:
-            raise ValueError(f"Campo '{campo}' no es editable en APU")
-        self._ejecutar(f"""
-            UPDATE apu_matrices SET {campo} = ?,
-                modificado_por = ?, modificado_en = datetime('now')
-            WHERE id = ?
-        """, [valor, usuario_id, comp_id])
-
-    def limpiar(self, matriz_id):
-        """Elimina todos los componentes de una matriz."""
-        self._ejecutar("DELETE FROM apu_matrices WHERE matriz_id = ?", [matriz_id])
+        self._actualizar_campo("apu_matrices", comp_id, campo, valor,
+                               {'valor', 'operador', 'precio', 'formula', 'orden'},
+                               usuario_id)
 
 
 # =============================================================================
 # APU RESUMEN (antes: apu_totales)
 # =============================================================================
-
-class ApuResumenTotalesRepo(RepoBase):
-    """Resumen de costos por tipo de insumo para cada APU.
-    Se recalcula desde apu_matrices cuando cambian precios o cantidades.
-    """
-
-    def por_matriz(self, matriz_id):
-        """Devuelve el resumen de costos de una matriz APU."""
-        return self._uno("""
-            SELECT * FROM apu_resumen_totales WHERE matriz_id = ?
-        """, [matriz_id])
-
-    def recalcular(self, matriz_id):
-        """Recalcula el resumen de costos de un APU desde apu_matrices.
-
-        Usa INSERT ... ON CONFLICT(matriz_id) DO UPDATE en lugar de
-        INSERT OR REPLACE para evitar que se destruya el id existente.
-        INSERT OR REPLACE elimina la fila y la reinsertar con un id nuevo,
-        lo que invalida cualquier referencia cacheada al id anterior.
-
-        Herramienta es un caso especial: en apu_matrices su columna
-        `valor` no es una cantidad física, es un PORCENTAJE. Su importe
-        real es ese % multiplicado por el subtotal de mano de obra de esta
-        misma matriz — no cantidad × precio como el resto de los tipos.
-        """
-        subtotal_mo = self._uno("""
-            SELECT COALESCE(SUM(CASE WHEN ac.operador = '*'
-                                     THEN ac.valor * ac.precio
-                                     ELSE ac.precio / ac.valor END), 0) AS total
-            FROM apu_matrices ac
-            JOIN insumos i      ON i.id = ac.insumo_id
-            JOIN tipos_insumo t ON t.id = i.tipo_id
-            WHERE ac.matriz_id = ? AND t.clave = 'mano_obra'
-        """, [matriz_id])["total"]
-
-        self._ejecutar("""
-            INSERT INTO apu_resumen_totales
-                (matriz_id, materiales, mano_obra, herramienta, equipo,
-                 auxiliares, subcontratos, fletes, trabajos, costo_directo,
-                 modificado_en)
-            SELECT
-                ac.matriz_id,
-                COALESCE(SUM(CASE WHEN t.clave='material'    THEN
-                  CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END ELSE 0 END),0),
-                COALESCE(SUM(CASE WHEN t.clave='mano_obra'   THEN
-                  CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END ELSE 0 END),0),
-                COALESCE(SUM(CASE WHEN t.clave='herramienta' THEN ac.valor ELSE 0 END),0) * ?,
-                COALESCE(SUM(CASE WHEN t.clave='equipo'      THEN
-                  CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END ELSE 0 END),0),
-                COALESCE(SUM(CASE WHEN t.clave='auxiliar'    THEN
-                  CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END ELSE 0 END),0),
-                COALESCE(SUM(CASE WHEN t.clave='concepto'    THEN
-                  CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END ELSE 0 END),0),
-                COALESCE(SUM(CASE WHEN t.clave='flete'       THEN
-                  CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END ELSE 0 END),0),
-                COALESCE(SUM(CASE WHEN t.clave='trabajo'     THEN
-                  CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END ELSE 0 END),0),
-                COALESCE(SUM(CASE WHEN t.clave<>'herramienta' THEN
-                  CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END ELSE 0 END),0)
-                    + COALESCE(SUM(CASE WHEN t.clave='herramienta' THEN ac.valor ELSE 0 END),0) * ?,
-                datetime('now')
-            FROM apu_matrices ac
-            JOIN insumos i      ON i.id  = ac.insumo_id
-            JOIN tipos_insumo t ON t.id  = i.tipo_id
-            WHERE ac.matriz_id = ?
-            GROUP BY ac.matriz_id
-            ON CONFLICT(matriz_id) DO UPDATE SET
-                materiales         = excluded.materiales,
-                mano_obra          = excluded.mano_obra,
-                herramienta        = excluded.herramienta,
-                equipo             = excluded.equipo,
-                auxiliares         = excluded.auxiliares,
-                subcontratos       = excluded.subcontratos,
-                fletes             = excluded.fletes,
-                trabajos           = excluded.trabajos,
-                costo_directo      = excluded.costo_directo,
-                modificado_en      = excluded.modificado_en
-        """, [subtotal_mo, subtotal_mo, matriz_id])
-
-
-# =============================================================================
-# RECÁLCULO EN CASCADA DEL PRESUPUESTO
-# =============================================================================
+# Clase eliminada — recalculo.py maneja apu_resumen_totales directamente.
