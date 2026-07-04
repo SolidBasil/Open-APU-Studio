@@ -26,8 +26,15 @@ No se busca remplazar opus si no ser una alternativa para constructoras pequeña
 
 ### Regla cardinal
 
-**SQL solo vive en `backend/repos.py`.** Si aparece SQL en UI o en
+**SQL solo vive en `backend/database/repos/`.** Si aparece SQL en UI o en
 `backend/core.py`, es error de diseño.
+
+### Arquitectura de servicios (ver `ARQUITECTURA_SERVICIOS.md`)
+
+El plan completo de migración a servicios (`UpdateService`, `EventBus`,
+`SchemaRegistry`) está documentado en `docs/ARQUITECTURA_SERVICIOS.md`.
+Este documento describe las 5 fases, las reglas arquitectónicas, y el
+checklist de revisión.
 
 ### Patrón de herencia (mixins)
 
@@ -65,35 +72,69 @@ Open APU Studio/
 │
 ├── backend/                     ← Capa de datos y negocio
 │   ├── __init__.py              ← Docstring del paquete
-│   ├── db.py                    ← 278 L — Conexión, Config, Rutas
-│   ├── schema.sql               ← 462 L — Esquema SQL completo
-│   ├── repos.py                 ← 1003 L — Repositorios CRUD
-│   ├── core.py                  ← 328 L — Lógica de negocio pura
-│   └── importar.py              ← Importador OPUS 2010
+│   ├── db.py                    ← Conexión SQLite + Config
+│   ├── schema.sql               ← Esquema SQL completo
+│   ├── core.py                  ← Lógica de negocio pura
+│   ├── database/
+│   │   └── repos/               ← Repositorios CRUD (paquete)
+│   │       ├── __init__.py      ← Re-exporta todos los repos
+│   │       ├── base.py          ← RepoBase (actualizar_campo genérico)
+│   │       ├── proyecto.py      ← ProyectoRepo, FactoresSobrecostoRepo
+│   │       ├── presupuesto.py   ← NodoRepo
+│   │       ├── insumos.py       ← InsumoRepo
+│   │       ├── apu.py           ← ApuMatricesRepo
+│   │       ├── recalculo.py     ← RecalculoRepo
+│   │       ├── catalogos.py     ← FamiliaRepo, SubfamiliaRepo, NotaRepo
+│   │       ├── explosion.py     ← ExplosionRepo
+│   │       └── diagnostico.py   ← DiagnosticoRepo
+│   ├── importar/
+│   │   ├── importar.py          ← Importador OPUS 2010
+│   │   └── schemas_opus.json    ← Esquemas OPUS por versión
+│   └── exportar/
+│       ├── exportar.py          ← Exportación (rota, no mantenida)
+│       └── informe_pdf/
+│           ├── latex.py         ← Generación de PDF vía LaTeX
+│           └── latex/templates/ ← Templates .tex
 │
 ├── frontend/                    ← Capa de presentación (PySide6)
 │   ├── __init__.py              ← Docstring del paquete
-│   ├── ventana.py               ← 103 L — Ventana principal (layout + estado)
-│   ├── toolbar.py               ← 463 L — Toolbar, temas, búsqueda
-│   ├── paneles.py               ← 514 L — Builders de pestañas
-│   ├── handlers.py              ← 506 L — Eventos y navegación
-│   ├── api.py                   ← 304 L — Fachada frontend→backend
-│   ├── temas.py                 ← 68 L — Gestor de temas QSS
-│   ├── temas/                   ← 6 archivos .qss
-│   │   ├── dark.qss
-│   │   ├── light.qss
-│   │   ├── hybrid.qss
-│   │   ├── rosa.qss
-│   │   ├── cafe.qss
-│   │   └── verde.qss
-│   └── widgets/
+│   ├── ventana.py               ← Ventana principal (ensambla mixins)
+│   ├── toolbar.py               ← ToolbarMixin
+│   ├── paneles.py               ← PanelesMixin (sidebar, presupuesto, insumos)
+│   ├── api.py                   ← Api de backend para UI
+│   ├── temas/                   ← Gestor de temas QSS
+│   │   ├── __init__.py
+│   │   ├── temas.py             ← 68 L — Gestor de temas
+│   │   ├── modo-oscuro.qss
+│   │   ├── modo-claro.qss
+│   │   ├── acento-azul.qss
+│   │   ├── acento-rosa.qss
+│   │   ├── acento-cafe.qss
+│   │   └── acento-verde.qss
+│   └── ventana/
 │       ├── __init__.py
-│       ├── base.py              ← TreeTableWidget (tabla genérica)
-│       ├── arbol.py             ← Tabla jerárquica del presupuesto
-│       ├── insumos.py           ← Catálogo plano de insumos
-│       ├── explosion.py         ← 617 L — Explosión de insumos
-│       ├── dialogs.py           ← Diálogos modales
-│       └── ajustes.py           ← Configuración de decimales
+│       ├── ventana.py           ← Ventana principal (layout + estado)
+│       ├── toolbar.py           ← Toolbar, temas, búsqueda
+│       ├── paneles.py           ← PanelesMixin
+│       ├── api.py               ← Api (fachada frontend→backend)
+│       ├── handlers/            ← Paquete de handlers
+│       │   ├── __init__.py      ← HandlersMixin (navegación, búsqueda)
+│       │   ├── gestion_proyectos.py ← GestionProyectosMixin
+│       │   ├── informes.py      ← InformesMixin
+│       │   └── diag_dialogs.py  ← DiagDialogsMixin
+│       ├── apu/                 ← Paquete de mixins APU
+│       │   ├── __init__.py      ← Re-exporta ApuMixin, RastreoMixin, ExplosionMixin
+│       │   ├── apu.py           ← ApuMixin
+│       │   ├── rastreo.py       ← RastreoMixin
+│       │   └── explosion.py     ← ExplosionMixin
+│       └── widgets/
+│           ├── __init__.py
+│           ├── base.py          ← TreeTableWidget (tabla genérica)
+│           ├── arbol.py         ← Tabla jerárquica del presupuesto
+│           ├── insumos.py       ← Catálogo plano de insumos
+│           ├── explosion.py     ← Explosión de insumos
+│           ├── dialogs.py       ← Diálogos modales
+│           └── ajustes.py       ← Configuración de decimales
 │
 └── docs/
     ├── SCHEMA.md                ← Documentación del esquema (legacy)
@@ -159,9 +200,9 @@ Bloques (ver sección 6 para detalle de cada tabla):
 8. **Colaboración** — `notas`, `historial`.
 9. **Control de esquema** — `schema_version`.
 
-### 4.3 `backend/repos.py` — Repositorios
+### 4.3 `backend/database/repos/` — Repositorios
 
-**`RepoBase`** — clase base con helpers:
+**`RepoBase`** — clase base con helpers genéricos:
 
 ```python
 class RepoBase:
@@ -169,23 +210,21 @@ class RepoBase:
     def _lista(self, sql, params)    → list[dict]
     def _ejecutar(self, sql, params) → lastrowid
     def _muchos(self, sql, seq)      → None
+    def _actualizar_campo(self, tabla, id_col, id_val, campo, valor, tipo, conn)
 ```
 
 **Repositorios concretos:**
 
-| Clase | Tabla(s) | Métodos clave |
-|---|---|---|
-| `NodoRepo` | `estructura_presupuesto` | `todos()`, `hijos()`, `buscar_por_clave()`, `buscar_texto()` |
-| `InsumoRepo` | `insumos` + `familias` + `subfamilias` | `todos()`, `por_tipo()`, `buscar_por_clave()`, `buscar_texto()`, `donde_se_usa()` |
-| `ConceptoRepo` | `estructura_presupuesto` (solo conceptos) | `todos()`, `buscar_por_clave()` |
-| `ApuMatricesRepo` | `apu_matrices` | `por_matriz()`, `insertar()`, `eliminar()`, `limpiar()` |
-| `ApuResumenTotalesRepo` | `apu_resumen_totales` | `por_matriz()`, `calcular()` |
-| `ProyectoRepo` | `proyectos` + `configuracion_proyecto` | `todos()` |
-| `SobrecostosRepo` | `sobrecostos` | `por_proyecto()` |
-| `NotaRepo` | `notas` | `por_concepto()`, `agregar()`, `resolver()` |
-| `FamiliaRepo` | `familias` | `todas()` |
-| `SubfamiliaRepo` | `subfamilias` | `por_familia()` |
-| `ExplosionRepo` | Múltiples tablas | `calcular()` (3 niveles de explosión) |
+| Archivo | Clase(s) | Tabla(s) | Métodos clave |
+|---|---|---|---|
+| `presupuesto.py` | `NodoRepo` | `estructura_presupuesto` | `todos()`, `hijos()`, `buscar_por_clave()`, `buscar_texto()`, `actualizar_total()`, `actualizar_descripcion_agrupador()`, `ids_por_tipo()` |
+| `insumos.py` | `InsumoRepo` | `insumos` + `familias` + `subfamilias` | `todos()`, `por_tipo()`, `buscar_por_clave()`, `donde_se_usa()`, `actualizar_campo()`, `ids_con_apu()` |
+| `apu.py` | `ApuMatricesRepo` | `apu_matrices` | `por_matriz()`, `por_insumos()`, `actualizar_campo()` |
+| `recalculo.py` | `RecalculoRepo` | `apu_resumen_totales` | `calcular()`, `recalcular()` |
+| `proyecto.py` | `ProyectoRepo`, `FactoresSobrecostoRepo` | `proyectos`, `configuracion_proyecto`, `factores_sobrecosto` | `todos()`, `config()`, `por_proyecto()`, `guardar()` |
+| `catalogos.py` | `FamiliaRepo`, `SubfamiliaRepo`, `NotaRepo` | `familias`, `subfamilias`, `notas` | `todas()`, `por_familia()`, `por_concepto()`, `agregar()` |
+| `explosion.py` | `ExplosionRepo` | Múltiples tablas | `calcular()` (3 niveles de explosión) |
+| `diagnostico.py` | `DiagnosticoRepo` | Múltiples tablas | `insumos_hash_desactualizado()`, `aplicar_hash()`, `estadisticas()`, `conceptos_sin_familia()`, `insumos_duplicados()` |
 
 ### 4.4 `backend/core.py` — Lógica de negocio
 
@@ -307,7 +346,7 @@ Selección persiste en `config.json`.
 **Iconos:** Todos los iconos son caracteres Unicode pintados sobre QPixmap
 transparente — sin dependencia de archivos de imagen.
 
-### 5.3 `frontend/paneles.py` — PanelesMixin
+### 5.3 `frontend/ventana/paneles.py` — PanelesMixin
 
 **Sidebar:** `QTreeWidget` con secciones:
 - 📋 **Presupuesto programable** → árbol del presupuesto
@@ -321,20 +360,25 @@ transparente — sin dependencia de archivos de imagen.
 Cada builder crea un widget que se inserta en el `QTabWidget` central.
 Click simple → pestaña temporal (reemplazable). Doble click → pestaña permanente.
 
-### 5.4 `frontend/handlers.py` — HandlersMixin
+### 5.4 `frontend/ventana/handlers/` — HandlersMixin (paquete)
 
-Eventos de la toolbar:
-- Importar OPUS, Abrir/Cerrar proyecto, Duplicar/Renombrar/Eliminar proyecto
-- Copiar/Cortar/Pegar, Seleccionar todo
-- Desplegar (Primer nivel, Resumen, Todo, Nivel)
-- Abrir carpeta BD, Configuración
+| Archivo | Clase | Función |
+|---|---|---|
+| `__init__.py` | `HandlersMixin` | Navegación, búsqueda, vista, adjuntos |
+| `gestion_proyectos.py` | `GestionProyectosMixin` | Abrir/cerrar/copiar/renombrar/eliminar/importar proyecto |
+| `informes.py` | `InformesMixin` | Generar PDF, compilar, vista previa |
+| `diag_dialogs.py` | `DiagDialogsMixin` | Depurar catálogos, hash, info proyecto |
 
-Navegación:
-- Click/doble-click en sidebar
-- Ctrl+Tab / Ctrl+Shift+Tab (siguiente/anterior pestaña)
-- Búsqueda en tiempo real
+### 5.5 `frontend/ventana/apu/` — Paquete de mixins APU
 
-### 5.5 `frontend/api.py` — Api (fachada)
+| Archivo | Clase | Función |
+|---|---|---|
+| `__init__.py` | — | Re-exporta `ApuMixin`, `RastreoMixin`, `ExplosionMixin` |
+| `apu.py` | `ApuMixin` | Pestañas APU, edición inline, navegación |
+| `rastreo.py` | `RastreoMixin` | Rastreo de insumos, tabla de uso |
+| `explosion.py` | `ExplosionMixin` | Explosión de insumos/matrices, sobrecostos |
+
+### 5.6 `frontend/ventana/api.py` — Api (fachada)
 
 ```python
 class Api:
@@ -342,11 +386,14 @@ class Api:
     presupuesto_arbol()              → list[dict]
     todos_concepto_ids()             → list[int]
     conceptos_planos()               → list[dict]
+    nodo_total(nodo_id)              → float | None
+    nodoActualizarCampo(nodo_id, campo, valor, tipo)  → bool
 
     # APU
     apu(clave)                       → dict | None
     insumo_es_compuesto(clave)       → bool
     claves_con_apu()                 → set[str]
+    apu_actualizar_campo(clave, campo, valor, tipo)    → bool
 
     # Insumos
     insumos(tipo_clave=None)         → list[dict]
@@ -357,6 +404,10 @@ class Api:
     # Explosión
     explotar(concepto_ids, nivel, tipos_ids) → tuple[list[dict], float]
     resumen_tipos_explosion(tipos_ids)       → str
+
+    # Sobrecostos
+    factores_sobrecosto_por_proyecto()       → dict
+    factores_sobrecosto_guardar(...)         → bool
 
     # Proyectos
     proyectos_disponibles()          → list[str]
@@ -757,8 +808,8 @@ print(resultado)
 | 2 | Renombres (`nodos`→`estructura_presupuesto`, etc.), eliminar tablas no usadas, estado como entero, familias/subfamilias separadas |
 | 3 | `concepto_id`+`insumo_compuesto_id`→`matriz_id` único, `es_compuesto` por presencia en `*F.DBF` |
 
-Las migraciones v2→v3 se aplican automáticamente en `db.py` vía `ALTER TABLE`.
-No modificar `schema.sql` en formas que rompan migraciones existentes.
+No hay sistema de migraciones automáticas. El esquema se aplica en `schema.sql` directamente.
+No modificar `schema.sql` en formas que rompan proyectos existentes durante la beta.
 
 ---
 

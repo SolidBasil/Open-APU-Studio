@@ -368,4 +368,163 @@ PyInstaller ya está en el plan original. Considerar también
 
 ---
 
-*Última actualización: Junio 2026*
+## LIMPIEZA DE CÓDIGO (Julio 2026)
+
+### LIM-01 — Eliminación de código muerto
+**Estado:** ✓ Implementado
+
+Eliminados ~20 métodos muertos de repos (`presupuesto.py`, `insumos.py`, `apu.py`, `proyecto.py`)
+y la clase entera `ApuResumenTotalesRepo`.
+
+### LIM-02 — Eliminación de SQL raw en frontend
+**Estado:** ✓ Implementado
+
+Toda query SQL en `handlers.py` y `paneles.py` migrada a `DiagnosticoRepo` o `api.py`.
+`handlers.py` pasó de ~15 queries raw a 0. `paneles.py` eliminó imports de repos.
+
+### LIM-03 — Deduplicación de header persistence
+**Estado:** ✓ Implementado
+
+`_save_header_state`, `_restore_header_state`, `_header_context_menu` movidos de
+`arbol.py` + `insumos.py` a `TreeTableWidget` base. Subclases solo setean `_HEADER_KEY`.
+
+### LIM-04 — Deduplicación de `actualizar_campo`
+**Estado:** ✓ Implementado
+
+Patrón genérico movido a `RepoBase._actualizar_campo()`. `ApuMatricesRepo` e `InsumoRepo` delegan.
+
+### LIM-05 — División de archivos oversized
+**Estado:** ✓ Implementado
+
+`handlers.py` (~1000 líneas) → paquete `handlers/` (4 archivos, max 341 líneas).
+`paneles.py` (~1083 líneas) → `paneles.py` (302 líneas) + paquete `apu/` (3 archivos).
+
+---
+
+## ARQUITECTURA DE SERVICIOS
+
+### SVC-01 — DataService como único punto de escritura
+**Estado:** ✓ Decidido (pendiente de implementar)
+
+**Contexto:**
+Los métodos de mutación están esparcidos en `api.py` (15+ métodos), repos
+tienen lógica de negocio mezclada, y no hay validación centralizada ni
+sistema de eventos post-commit.
+
+**Opciones consideradas:**
+- Mantener现状: métodos individuales por campo
+- Tres servicios separados: UpdateService, InsertService, DeleteService
+- Un único DataService con actualizar(), insertar(), eliminar()
+
+**Decisión:**
+Un único `DataService`. Los tres comparten el 90% del flujo (transacción,
+validación, resolución de repo, eventos, manejo de errores). Separarlos
+ahora duplica infraestructura innecesaria. Cada repo tiene `TABLA = "..."`
+y un método `update(registro_id, campos)`.
+
+**Consecuencias:**
+- Agregar una tabla = registrar el repo en `RepositoryRegistry`
+- `DataService` no se modifica al agregar nuevas entidades
+- Convivencia temporal: `_ejecutar()` (deprecated) + `_update()` (nuevo, sin commit)
+
+**Ver:** `docs/ARQUITECTURA_SERVICIOS.md`
+
+### SVC-02 — EventBus con eventos semánticos
+**Estado:** ✓ Decidido (pendiente de implementar)
+
+**Contexto:**
+Los widgets recargan toda la UI tras cada edición (`_refrescar_tab_activa`).
+No hay notificación de cambios entre módulos.
+
+**Opciones consideradas:**
+- Qt signals embebidos en repos
+- EventBus simple con eventos por tabla
+- EventBus con eventos semánticos + registro completo
+
+**Decisión:**
+EventBus con eventos semánticos (`InsumoActualizado`, `ConceptoActualizado`,
+etc.). Cada evento incluye `cambios` (campos modificados) y `registro`
+(estado completo post-commit). Los eventos NO se encadenan.
+
+**Consecuencias:**
+- Widgets se suscriben y actualizan solo filas afectadas
+- Los eventos se emiten después del COMMIT (no antes)
+- `emit()` captura excepciones de cada suscriptor (widget roto no rompe la cadena)
+- Los eventos son notificación, no lógica de negocio crítica
+
+### SVC-03 — SchemaRegistry con Field types en Python
+**Estado:** ✓ Decidido (pendiente de implementar)
+
+**Contexto:**
+No hay validación centralizada de tipos de datos o reglas de negocio
+antes de persistir.
+
+**Opciones consideradas:**
+- Inspeccionar `PRAGMA table_info()` en runtime
+- SchemaRegistry con Field types definidos en Python
+- Validación distribuida en cada repo
+
+**Decisión:**
+SchemaRegistry con Field types (`FloatField(min=0)`, `StringField(choices=...)`,
+`BoolField`). Las reglas viven en Python, no dependen de SQLite.
+
+**Consecuencias:**
+- Cambiar de motor de BD (ej. PostgreSQL) no rompe la validación
+- Agregar reglas de negocio = agregar un Field type
+- No inspecciona PRAGMA — más rápido y predecible
+
+### SVC-04 — Transacciones en Database, no en RepoBase
+**Estado:** ✓ Decidido (pendiente de implementar)
+
+**Contexto:**
+Las transacciones multi-repo necesitan coordinación centralizada.
+
+**Opciones consideradas:**
+- `RepoBase.transaction()` como context manager
+- `Database.transaction()` como context manager
+- Sin transacciones explícitas (cada `_ejecutar` hace commit)
+
+**Decisión:**
+`Database.transaction()` como context manager. Las transacciones las
+abren los servicios, no los repos. Los repos ejecutan SQL dentro de
+la transacción que el servicio abre.
+
+**Consecuencias:**
+- `_update()` / `_insert()` / `_delete()` no hacen commit
+- `_ejecutar()` (legacy) sigue haciendo commit hasta completar la migración
+- El servicio controla cuándo commitea y cuándo hace rollback
+
+### SVC-05 — RepositoryRegistry no es singleton
+**Estado:** ✓ Decidido (pendiente de implementar)
+
+**Contexto:**
+El `RepositoryRegistry` mantiene instancias de repos. ¿Debe ser global
+o estar ligado a cada `DataService`/`Database`?
+
+**Opciones consideradas:**
+- Singleton global (una instancia para toda la app)
+- Instancia por proyecto (ligada al DataService)
+
+**Decisión:**
+Instancia por proyecto. Cada `DataService` tiene su propio
+`RepositoryRegistry` con repos que apuntan a su `Database`.
+
+**Consecuencias:**
+- Si en el futuro se abren dos proyectos simultáneamente, cada uno tiene
+  su propio registro de repos sin contaminar al otro
+- No hay estado global que sincronizar
+
+### SVC-06 — Regla de no encadenamiento de eventos
+**Estado:** ✓ Decidido
+
+**Contexto:**
+¿Puede un handler de evento emitir otro evento?
+
+**Decisión:**
+No. Los eventos son notificación, no lógica de negocio. La lógica que
+reacciona a un evento puede hacer cualquier cosa excepto emitir otro
+evento. Esto mantiene el flujo evidente y depurable.
+
+---
+
+*Última actualización: Julio 2026*

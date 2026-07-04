@@ -1,5 +1,7 @@
 # Open APU Studio — AGENTS.md
 
+Actualizado: 2026-07-03 19:45 (hora local)
+
 ## Regla .md: fecha de modificación
 Todo archivo .md generado debe incluir la fecha y hora de su última modificación
 (ISO 8601, hora local) para que sea posible detectar cuándo el contenido está
@@ -18,10 +20,18 @@ El docstring o comentario que miente es peor que ningún comentario.
 - Targets: Windows (principal) + Linux (nativo desde inicio)
 
 ## Arquitectura — regla cardinal
-**SQL solo vive en `backend/repos.py`**. Si SQL aparece en UI o en `core.py`, es error. Capas:
+**SQL solo vive en `backend/database/repos/`**. Si SQL aparece en UI o en `core.py`, es error. Capas:
 ```
-frontend/ (PySide6) → backend/core.py (lógica) → backend/repos.py (SQL) → backend/db.py → SQLite (.presup)
+frontend/ (PySide6) → frontend/ventana/api.py (fachada) → backend/database/repos/ (SQL) → backend/database/db.py → SQLite (.presup)
 ```
+
+### Reglas de servicios (ver `docs/ARQUITECTURA_SERVICIOS.md`)
+- **Repositorios:** Solo SQL. Sin eventos, sin validación de negocio.
+- **Servicios:** Coordinan: validar → transacción → repo → commit → evento. Sin SQL.
+- **Eventos:** Se emiten después del COMMIT, no antes. Contienen el registro completo post-update.
+- **Transacciones:** Las abre el servicio, no el repositorio. `Database.transaction()` context manager.
+- **Validación:** `SchemaRegistry` con Field types en Python. No inspecciona PRAGMA.
+- **Extensibilidad:** Agregar una tabla = registrar el repo en `RepositoryRegistry`. No se toca `UpdateService`.
 
 ## Estructura actual
 ```
@@ -31,14 +41,29 @@ backend/
   database/
     db.py                        ← Conexión SQLite + aplicar schema.sql + Config (JSON)
     schema.sql                   ← Esquema completo (single file, no migraciones numeradas)
-    repos.py                     ← Todos los repositorios (insumos, nodos, conceptos, apu, búsqueda)
     core.py                      ← Lógica de negocio: árbol, métricas, recálculo, validación
+    repos/                       ← Repositorios (paquete, SQL vive aquí)
+      __init__.py                ← Re-exporta todos los repos
+      base.py                    ← RepoBase (clase raíz, _update/_insert/_delete genéricos)
+      proyecto.py                ← ProyectoRepo, FactoresSobrecostoRepo
+      presupuesto.py             ← NodoRepo (capítulos y conceptos del árbol)
+      insumos.py                 ← InsumoRepo
+      apu.py                     ← ApuMatricesRepo
+      recalculo.py               ← RecalculoRepo
+      catalogos.py               ← FamiliaRepo, SubfamiliaRepo, NotaRepo
+      explosion.py               ← ExplosionRepo
+      diagnostico.py             ← DiagnosticoRepo (integridad del catálogo)
+    services/                    ← Servicios de aplicación (coordina, no SQL)
+      __init__.py
+      repository_registry.py     ← RepositoryRegistry (resuelve repo por nombre de entidad)
+      data_service.py            ← DataService (actualizar / insertar / eliminar — único servicio de escritura)
+    schema_registry.py           ← SchemaRegistry (Field types + reglas de validación)
+    event_bus.py                 ← EventBus + eventos semánticos
   importar/
     importar.py                  ← Importador OPUS 2010 (.DBF → SQLite)
     schemas_opus.json            ← Esquemas OPUS por versión
   exportar/
-    exportar.py                  ← Exportación a formatos estándar
-    exportar_plantillas.py       ← Plantillas de exportación
+    exportar.py                  ← Exportación a formatos estándar (rota, no mantenida)
     informe_pdf/
       latex.py                   ← Generación de PDF vía LaTeX
       latex/templates/           ← Templates .tex
@@ -54,23 +79,34 @@ frontend/
     acento-cafe.qss              ← Acento café
     acento-verde.qss             ← Acento verde
   ventana/
-    ventana.py                   ← Ventana principal con QTabWidget (mixin host)
-    toolbar.py                   ← Toolbar, temas, búsqueda
-    paneles.py                   ← Paneles de contenido
-    api.py                       ← Api de backend para UI
-    handlers.py                  ← Handlers de eventos y navegación
+    __init__.py                  ← Re-exporta VentanaPrincipal
+    ventana.py                   ← Ventana principal (ensambla mixins)
+    toolbar.py                   ← ToolbarMixin: toolbar, temas, búsqueda
+    api.py                       ← Api: fachada UI→backend (sin SQL, sin PySide6)
+    paneles.py                   ← PanelesMixin: sidebar, presupuesto, insumos, buscador
+    handlers/                    ← Paquete de handlers de eventos
+      __init__.py                ← HandlersMixin (navegación, búsqueda, vista, adjuntos)
+      gestion_proyectos.py       ← GestionProyectosMixin (abrir/cerrar/copiar/renombrar/eliminar/importar)
+      informes.py                ← InformesMixin (generar PDF, compilar, vista previa)
+      diag_dialogs.py            ← DiagDialogsMixin (depurar catálogos, hash, info proyecto)
+    apu/                         ← Paquete de mixins de APU
+      __init__.py                ← Re-exporta ApuMixin, RastreoMixin, ExplosionMixin
+      apu.py                     ← ApuMixin (pestañas APU, edición inline, navegación)
+      rastreo.py                 ← RastreoMixin (rastreo de insumos, tabla de uso)
+      explosion.py               ← ExplosionMixin (explosión de insumos/matrices, sobrecostos)
     widgets/
-      base.py                    ← TreeTableWidget reutilizable
-      arbol.py                   ← Tabla jerárquica del presupuesto
-      insumos.py                 ← Tabla plana de catálogo de insumos
+      __init__.py
+      base.py                    ← TreeTableWidget reutilizable (header persistence)
+      arbol.py                   ← TablaArbol (árbol jerárquico del presupuesto)
+      insumos.py                 ← TablaInsumos (catálogo de insumos)
       dialogs.py                 ← Diálogos reutilizables
       ajustes.py                 ← Diálogo de ajustes
-      explosion.py               ← Explosión de insumos
+      explosion.py               ← PestañaExplosion, DialogoExplosion
 docs/
   SCHEMA.md                      ← Documentación del esquema SQL
   DECISIONES_PENDIENTES.md       ← Decisiones de diseño registradas
-  GUIA_IMPLEMENTACION.md         ← Guía de integración del importador
   DOCUMENTACION.md               ← Documentación general del proyecto
+  ARQUITECTURA_SERVICIOS.md      ← Plan de arquitectura de servicios (EventBus, UpdateService, etc.)
   planes/
     PLAN_INSUMOS.md              ← Plan de transformación de insumos
     PLAN_FSR.md                  ← Plan FSR completo
@@ -84,7 +120,7 @@ docs/
 - **Temas:** Sistema modo × acento: `frontend/temas/temas.py` carga modo-*.qss + acento-*.qss en runtime
 - **OPUS import:** `dbfread` con `encoding='cp850'`, sistema de bits para tipos de insumo — `backend/importar.py`
 - **Esquema:** Single `schema.sql` aplicado por `db.py`. Si hay cambios futuros: migraciones numeradas en SQL (ver `docs/SCHEMA.md` sección migraciones)
-- **Recálculo:** Bottom-up en Python desde `backend/repos.py::actualizar_total()` — `capítulos.total = SUM(hijos.total)`, sin bifurcación `importe`/`subtotal`
+- **Recálculo:** Bottom-up en Python desde `backend/database/repos/presupuesto.py::actualizar_total()` — `capítulos.total = SUM(hijos.total)`, sin bifurcación `importe`/`subtotal`
 - **Total:** Columna unificada en `estructura_presupuesto` — reemplaza la antigua dualidad `importe` (GENERATED) + `subtotal`. Para conceptos se calcula como `cantidad × precio` (precio desde insumo o APU); para capítulos es `SUM(hijos.total)`.
 - **FSR:** Dos modos: calculado desde `insumos.catfsr → factores_fsr` o manual (`insumos.factor_fsr`). `salario_real = salario_nominal × COALESCE(factor_fsr, 1.0)`
 - **Fórmulas:** `simpleeval` vendereado como `backend/formulas.py`. Evaluación recursiva de variables desde `variables_formula`. Aplica en `apu_matrices.formula` y `estructura_presupuesto.formula`.
@@ -130,17 +166,16 @@ hacia atrás durante el desarrollo temprano.
 
 ## UI / Diseño
 - Layout principal: sidebar (árbol) | contenido (tab + detalle) — ver `frontend/ventana.py`
-- Paleta en `frontend/temas/dark.qss`
+- Paleta en `frontend/temas/modo-oscuro.qss`
 - Estilo botones/inputs/tablas siguiendo el QSS existente (editar `.qss` para cambios globales)
 - Tipografía: Segoe UI (Windows), fuente del sistema — `QFont` en `main.py:21`
 - Espaciado: escala 4-8-12-16-24-32 px, no valores arbitrarios
-- Temas: `frontend/temas.py` carga `frontend/temas/*.qss` según `QSettings`
-- Todos los widgets tabla heredan de `TreeTableWidget` en `frontend/widgets/base.py`
+- Temas: `frontend/temas/temas.py` carga `frontend/temas/*.qss` según `QSettings`
+- Todos los widgets tabla heredan de `TreeTableWidget` en `frontend/ventana/widgets/base.py`
 
 ## Referencias
 - Esquema DB completo: `docs/SCHEMA.md`
 - Decisiones de diseño registradas: `docs/DECISIONES_PENDIENTES.md`
-- Guía de implementación del importador: `docs/GUIA_IMPLEMENTACION.md`
 - Plan de transformación de insumos: `docs/planes/PLAN_INSUMOS.md`
 - Plan FSR completo: `docs/planes/PLAN_FSR.md`
 - Datos de muestra: `CASA EG/` (importar con `backend/importar.py`)
