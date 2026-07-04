@@ -34,6 +34,8 @@ def _emoji_icon(char, size=20):
 WBS_ROLE       = Qt.ItemDataRole.UserRole
 ID_ROLE        = Qt.ItemDataRole.UserRole + 1   # id de estructura_presupuesto
 INSUMO_ID_ROLE = Qt.ItemDataRole.UserRole + 11  # insumo_id del insumo vinculado
+TIPO_ROLE      = Qt.ItemDataRole.UserRole + 12  # 'capitulo' | 'concepto', seteado explícitamente
+                                                 # al crear la fila (NO se infiere leyendo texto)
 
 # ── Configuración de columnas ─────────────────────────────────────
 
@@ -56,8 +58,28 @@ COLUMNAS = [
     "Estado", "Notas", "Creado", "Modificado",
 ]
 _VISIBLE    = {0, 1, 4, 5, 6, 7, 8}   # Clave y Tipo ocultas por defecto
-EDITABLE    = frozenset({4, 6})        # Descripción (solo capítulos) y Cant (solo conceptos)
+EDITABLE    = frozenset({4, 6})        # fallback genérico (usado hoy solo por copiar/pegar)
 _AGRUP_COLS = {0, 1, 4, 8}
+
+# Columnas editables según el tipo de nodo (fila). Se usa vía editable_cols_fn
+# — el tipo se lee de TIPO_ROLE (dato explícito seteado al crear la fila),
+# nunca del texto de la columna "Tipo", que en otras tablas basadas en
+# TreeTableWidget significa otra cosa (ver base.py::_Delegate).
+_EDITABLE_POR_TIPO = {
+    "capitulo": {4},          # Descripción
+    "concepto": {4, 5, 6},    # Desc, Unidad, Cant (vía insumo ligado)
+    # P.U. (col 7) NO es editable aquí a propósito: el árbol solo tiene el
+    # insumo_id, no si es compuesto, así que no podía distinguir "básico sin
+    # APU" de "compuesto" para bloquear solo este último caso (por eso sí
+    # funcionaba el bloqueo dentro del APU pero no aquí). Precio se edita
+    # desde Insumos o desde dentro del APU — nunca desde el árbol.
+}
+
+
+def _editable_cols_arbol(item) -> set[int]:
+    """Columnas editables para una fila del árbol de presupuesto, según su tipo."""
+    tipo = item.data(0, TIPO_ROLE)
+    return _EDITABLE_POR_TIPO.get(tipo, set())
 
 # ── Colores por nivel jerárquico ─────────────────────────────────
 
@@ -99,7 +121,8 @@ class TablaArbol(TreeTableWidget):
 
     def __init__(self, parent=None):
         """Inicializa el árbol de presupuesto con columnas fijas, modo de columnas, búsqueda y restauración del header."""
-        super().__init__(COLUMNAS, EDITABLE, parent=parent)
+        super().__init__(COLUMNAS, EDITABLE, parent=parent,
+                          editable_cols_fn=_editable_cols_arbol)
         self.set_column_modes({
             c: (QHeaderView.ResizeMode.Interactive, w)
             for c, w in enumerate([80, 80, 70, 90, 250, 55, 65, 90, 90,
@@ -189,6 +212,7 @@ class TablaArbol(TreeTableWidget):
         item = self.add_row(data, parent, editable=True)
         item.setData(0, WBS_ROLE, wbs)
         item.setData(0, ID_ROLE, n.get("id"))
+        item.setData(0, TIPO_ROLE, "capitulo")
         item.setIcon(0, _emoji_icon("\U0001F4C2", 20))  # 📂 folder
         color = COLORES_NIVEL[min(nivel, len(COLORES_NIVEL) - 1)]
         brush = QBrush(QColor(color))
@@ -209,6 +233,7 @@ class TablaArbol(TreeTableWidget):
         item = self.add_row(data, parent, editable=True)
         item.setData(0, ID_ROLE, n.get("id"))
         item.setData(0, INSUMO_ID_ROLE, n.get("insumo_id"))
+        item.setData(0, TIPO_ROLE, "concepto")
         item.setIcon(0, _emoji_icon("\U0001F4C4", 20))  # 📄 leaf
         return item
 

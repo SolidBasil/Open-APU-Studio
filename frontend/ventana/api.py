@@ -66,6 +66,35 @@ class Api:
         from backend.database.repos import NodoRepo
         NodoRepo(self._conn).actualizar_cantidad(concepto_id, cantidad)
 
+    def concepto_actualizar_descripcion(self, nodo_id: int, descripcion: str) -> None:
+        """Actualiza la descripción del insumo ligado a un concepto."""
+        from backend.database.repos import NodoRepo, InsumoRepo
+        nodo = NodoRepo(self._conn).buscar(nodo_id)
+        if nodo and nodo.get("insumo_id"):
+            InsumoRepo(self._conn).actualizar_descripcion(
+                nodo["insumo_id"], descripcion, self._pid)
+
+    def concepto_actualizar_unidad(self, nodo_id: int, unidad: str) -> None:
+        """Actualiza la unidad de un concepto (escribe en insumos)."""
+        from backend.database.repos import NodoRepo, InsumoRepo
+        nodo = NodoRepo(self._conn).buscar(nodo_id)
+        if nodo and nodo.get("insumo_id"):
+            InsumoRepo(self._conn).actualizar_campo(
+                nodo["insumo_id"], "unidad", unidad)
+
+    def concepto_actualizar_pu(self, nodo_id: int, precio: float) -> None:
+        """Actualiza P.U. solo para insumos básicos (sin APU propio)."""
+        from backend.database.repos import NodoRepo, InsumoRepo
+        nodo = NodoRepo(self._conn).buscar(nodo_id)
+        if not nodo or not nodo.get("insumo_id"):
+            return
+        insumo = InsumoRepo(self._conn).buscar(nodo["insumo_id"])
+        if insumo and not insumo.get("es_compuesto"):
+            InsumoRepo(self._conn).actualizar_precio(nodo["insumo_id"], precio)
+            # Recalc total de este concepto y hacia arriba
+            NodoRepo(self._conn).actualizar_cantidad(
+                nodo_id, nodo.get("cantidad", 0))
+
     def agrupador_actualizar_descripcion(self, nodo_id: int, descripcion: str) -> None:
         """Actualiza la descripción de un agrupador (capítulo)."""
         self._conn.execute("""
@@ -168,6 +197,39 @@ class Api:
             WHERE id = ? AND proyecto_id = ? LIMIT 1
         """, (insumo_id, self._pid)).fetchone()
         return bool(row and row[0])
+
+    def apu_actualizar_operador(self, comp_id: int, operador: str) -> None:
+        """Actualiza el operador (* o /) de un componente APU y recalcula en cascada."""
+        from backend.database.repos import ApuMatricesRepo, RecalculoRepo
+        if operador not in ('*', '/'):
+            raise ValueError("Operador debe ser '*' o '/'")
+        ApuMatricesRepo(self._conn).actualizar_campo(comp_id, "operador", operador)
+        RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
+
+    def apu_actualizar_valor(self, comp_id: int, valor: float) -> None:
+        """Actualiza la cantidad (columna Valor) de un componente APU y recalcula en cascada.
+        Es un dato propio de esa combinación matriz+insumo (cuánto se usa AHÍ),
+        no del insumo en sí — a diferencia de Precio, que sí vive en el
+        catálogo (ver apu_actualizar_precio_componente / insumo_actualizar_precio).
+        """
+        from backend.database.repos import ApuMatricesRepo, RecalculoRepo
+        if valor is None or valor <= 0:
+            raise ValueError("La cantidad debe ser mayor que cero")
+        ApuMatricesRepo(self._conn).actualizar_campo(comp_id, "valor", valor)
+        RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
+
+    def apu_actualizar_precio_componente(self, insumo_id: int, precio: float) -> None:
+        """Actualiza el Precio de un componente editado desde dentro de un APU.
+
+        IMPORTANTE: esto NO escribe en apu_matrices.precio directamente.
+        RecalculoRepo._sincronizar_precios_componentes() sobreescribe ese
+        campo con insumos.costo_final en cada recálculo, así que un valor
+        puesto ahí se perdería de inmediato. El precio real vive en el
+        insumo del catálogo — igual que editarlo desde la pestaña de
+        Insumos — así que reutiliza insumo_actualizar_precio() para que el
+        cambio se propague a todo lo que use ese insumo, no solo a esta fila.
+        """
+        self.insumo_actualizar_precio(insumo_id, precio)
 
     def insumo_ids_con_apu(self) -> set[int]:
         """Conjunto de ids de insumos compuestos (tienen APU propio)."""
@@ -291,9 +353,31 @@ class Api:
     def insumo_actualizar_precio(
         self, insumo_id: int, precio: float, usuario_id: int = 1
     ) -> None:
-        """Actualiza el costo_mn y costo_final de un insumo."""
-        from backend.database.repos import InsumoRepo
+        """Actualiza el costo_mn y costo_final de un insumo y recalcula en cascada.
+
+        Antes esto solo llamaba a NodoRepo.recalcular_por_insumo(), que únicamente
+        actualiza los conceptos que usan el insumo de forma directa (básicos).
+        Si el insumo es componente de un compuesto o de la matriz de un
+        concepto (caso normal en un APU), ese cambio de precio nunca llegaba a
+        apu_resumen_totales ni al total del concepto/capítulo en el presupuesto
+        — el precio se veía actualizado en Insumos pero no en Presupuesto.
+        Se usa el mismo recálculo completo que ya usa apu_actualizar_operador().
+        """
+        from backend.database.repos import InsumoRepo, RecalculoRepo
         InsumoRepo(self._conn).actualizar_precio(insumo_id, precio, usuario_id)
+        RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
+
+    def insumo_actualizar_campo(
+        self, insumo_id: int, campo: str, valor, usuario_id: int = 1
+    ) -> None:
+        """Actualiza un campo simple de un insumo del catálogo.
+        Si el campo afecta el costo (costo_final), recalcula todo el proyecto
+        en cascada (ver nota en insumo_actualizar_precio).
+        """
+        from backend.database.repos import InsumoRepo, RecalculoRepo
+        InsumoRepo(self._conn).actualizar_campo(insumo_id, campo, valor, usuario_id)
+        if campo == "costo_final":
+            RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
 
     def insumo_insertar(
         self,

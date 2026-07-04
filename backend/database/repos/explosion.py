@@ -84,7 +84,7 @@ class ExplosionRepo(RepoBase):
         insumos = self._lista(f"""
             SELECT i.id, i.clave_opus,
                    COALESCE(i.descripcion, i.descripcion_corta, '') AS descripcion,
-                   i.unidad, i.costo_final, i.es_compuesto, i.tipo_id,
+                   i.unidad, i.costo_directo, i.es_compuesto, i.tipo_id,
                    ti.nombre AS tipo_nombre, ti.orden AS tipo_orden
             FROM insumos i
             JOIN tipos_insumo ti ON ti.id = i.tipo_id
@@ -196,10 +196,11 @@ class ExplosionRepo(RepoBase):
                 else:
                     qty_total += rd(self._ef_qty(p) * mult)
 
-            pu = info.get("costo_final") or 0
+            pu = info.get("costo_directo") or 0
             if is_herr:
                 if herr_importe:
                     acumulado[insumo_id] = {
+                        "insumo_id":      insumo_id,
                         "tipo_id":        info["tipo_id"],
                         "tipo_nombre":    info["tipo_nombre"],
                         "tipo_orden":     info["tipo_orden"],
@@ -214,6 +215,7 @@ class ExplosionRepo(RepoBase):
             else:
                 if qty_total:
                     acumulado[insumo_id] = {
+                        "insumo_id":      insumo_id,
                         "tipo_id":        info["tipo_id"],
                         "tipo_nombre":    info["tipo_nombre"],
                         "tipo_orden":     info["tipo_orden"],
@@ -253,15 +255,16 @@ class ExplosionRepo(RepoBase):
             ph_tipos = ",".join("?" * len(tipos_normales))
             sql = f"""
                 SELECT
+                    i.id                AS insumo_id,
                     i.tipo_id,
                     ti.nombre           AS tipo_nombre,
                     ti.orden            AS tipo_orden,
                     i.clave_opus        AS clave,
                     COALESCE(i.descripcion, i.descripcion_corta, '') AS descripcion,
                     i.unidad,
-                    i.costo_final       AS pu,
+                    i.costo_directo     AS pu,
                     SUM(CASE WHEN am.operador='*' THEN am.valor*ep.cantidad ELSE ep.cantidad/am.valor END) AS cantidad_total,
-                    SUM(CASE WHEN am.operador='*' THEN am.valor*ep.cantidad ELSE ep.cantidad/am.valor END) * i.costo_final AS total
+                    SUM(CASE WHEN am.operador='*' THEN am.valor*ep.cantidad ELSE ep.cantidad/am.valor END) * i.costo_directo AS total
                 FROM estructura_presupuesto ep
                 JOIN apu_matrices am ON am.matriz_id = ep.id
                 JOIN insumos i       ON i.id = am.insumo_id
@@ -282,6 +285,7 @@ class ExplosionRepo(RepoBase):
         if self.TIPO_ID_HERRAMIENTA in tipos_ids:
             sql_h = f"""
                 SELECT
+                    i.id                AS insumo_id,
                     i.tipo_id,
                     ti.nombre           AS tipo_nombre,
                     ti.orden            AS tipo_orden,

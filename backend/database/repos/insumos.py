@@ -116,7 +116,17 @@ class InsumoRepo(RepoBase):
             WHERE id = ?
         """, [precio, precio, precio, usuario_id, insumo_id])
 
-
+    def actualizar_campo(self, insumo_id, campo, valor, usuario_id=1):
+        """Actualiza un campo simple de un insumo."""
+        campos = {'unidad', 'descripcion_corta', 'costo_final',
+                  'familia_id', 'subfamilia_id', 'proveedor_id'}
+        if campo not in campos:
+            raise ValueError(f"Campo '{campo}' no es editable")
+        self._ejecutar(f"""
+            UPDATE insumos SET {campo} = ?,
+                modificado_por = ?, modificado_en = datetime('now')
+            WHERE id = ?
+        """, [valor, usuario_id, insumo_id])
 
     def actualizar_descripcion(self, insumo_id, descripcion, proyecto_id, usuario_id=1):
         """Actualiza la descripción de un insumo y regenera su hash.

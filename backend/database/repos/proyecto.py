@@ -49,9 +49,7 @@ class FactoresSobrecostoRepo(RepoBase):
     def _calcular_factor(pct_indirectos_campo=0, pct_indirectos_oficina=0,
                          pct_financiamiento=0, pct_utilidad=0,
                          pct_cargos_adicionales=0) -> float:
-        f = 1.0
-        f *= (1 + (pct_indirectos_campo or 0) / 100)
-        f *= (1 + (pct_indirectos_oficina or 0) / 100)
+        f = 1 + ((pct_indirectos_campo or 0) + (pct_indirectos_oficina or 0)) / 100
         f *= (1 + (pct_financiamiento or 0) / 100)
         f *= (1 + (pct_utilidad or 0) / 100)
         f *= (1 + (pct_cargos_adicionales or 0) / 100)

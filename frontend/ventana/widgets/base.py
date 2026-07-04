@@ -92,7 +92,8 @@ def draw_tree_connectors(tree, painter, rect, index, line_color=LINE_COLOR):
 # ── Delegado de edición ───────────────────────────────────────────
 
 class _Delegate(QStyledItemDelegate):
-    """Delegado que controla qué celda es editable según columna Y tipo de nodo.
+    """Delegado que controla qué celda es editable según columna y, opcionalmente,
+    según el tipo de nodo (fila) al que pertenece.
 
     Comportamiento tipo Excel:
     - La celda ya seleccionada se edita con un clic adicional (SelectedClicked)
@@ -100,35 +101,39 @@ class _Delegate(QStyledItemDelegate):
     - Al confirmar con Enter o Tab, el foco avanza a la siguiente celda editable
       del mismo item o del item siguiente. El árbol emite commitData para que
       paneles.py persista el valor antes de mover el foco.
+
+    IMPORTANTE: este delegado es compartido por TODAS las tablas que usan
+    TreeTableWidget (árbol de presupuesto, detalle de APU, catálogo de
+    insumos, rastreo, conceptos planos, etc.), cada una con columnas muy
+    distintas. Por eso NO debe asumir qué significa una columna en
+    particular (p. ej. "la columna 2 siempre es Tipo") — eso rompía la
+    detección en tablas donde esa misma columna es Descripción o Unidad,
+    habilitando edición donde no correspondía.
+
+    Si una tabla necesita que las columnas editables varíen según el tipo
+    de fila (como el árbol de presupuesto: capítulo vs concepto), debe
+    pasar `editable_cols_fn` al construir el TreeTableWidget: una función
+    `item -> set[int]` que la propia tabla define usando datos explícitos
+    del item (p. ej. un rol de datos), nunca texto de columnas visibles.
+    Si no se pasa, se usa el set estático `editable_cols` para todas las filas.
     """
 
-    # Columnas editables por tipo de nodo
-    _EDITABLE_POR_TIPO = {
-        "capitulo": {4},    # Descripción
-        "concepto": {6},    # Cant
-    }
-
-    def __init__(self, parent, editable_cols):
+    def __init__(self, parent, editable_cols, editable_cols_fn=None):
         super().__init__(parent)
-        self._editable_cols = editable_cols  # fallback genérico (no se usa en el árbol)
+        self._editable_cols = editable_cols
+        self._editable_cols_fn = editable_cols_fn
 
-    def _tipo_nodo(self, index) -> str | None:
-        """Devuelve 'capitulo' o 'concepto' leyendo col 2 (Tipo) del item."""
-        item = self.parent().itemFromIndex(index)
+    def _cols_for_item(self, item) -> set[int]:
+        """Devuelve el set de columnas editables para un item concreto."""
         if item is None:
-            return None
-        tipo_txt = item.text(2).lower()
-        if "cap" in tipo_txt:
-            return "capitulo"
-        if "con" in tipo_txt:
-            return "concepto"
-        return None
+            return set()
+        if self._editable_cols_fn is not None:
+            return self._editable_cols_fn(item) or set()
+        return self._editable_cols
 
     def _es_editable(self, index) -> bool:
-        tipo = self._tipo_nodo(index)
-        if tipo is None:
-            return index.column() in self._editable_cols
-        return index.column() in self._EDITABLE_POR_TIPO.get(tipo, set())
+        item = self.parent().itemFromIndex(index)
+        return index.column() in self._cols_for_item(item)
 
     def createEditor(self, parent, option, index):
         """Crea editor solo si la celda es editable para ese tipo de nodo."""
@@ -161,10 +166,10 @@ class _Delegate(QStyledItemDelegate):
         if not isinstance(tw, QTreeWidget):
             return
         current = tw.currentIndex()
-        tipo = self._tipo_nodo(current)
-        if tipo is None:
+        item = tw.itemFromIndex(current)
+        editable_cols = sorted(self._cols_for_item(item))
+        if not editable_cols:
             return
-        editable_cols = sorted(self._EDITABLE_POR_TIPO.get(tipo, set()))
         # Buscar la siguiente columna editable en el mismo item
         next_col = next((c for c in editable_cols if c > current.column()), None)
         if next_col is not None:
@@ -172,14 +177,10 @@ class _Delegate(QStyledItemDelegate):
             tw.edit(tw.currentIndex())
             return
         # Si no hay más columnas en este item, ir al siguiente item en la primera col editable
-        if not editable_cols:
-            return
-        item     = tw.itemFromIndex(current)
         next_item = tw.itemBelow(item) if hint == QStyledItemDelegate.EndEditHint.EditNextItem \
                     else tw.itemAbove(item)
         if next_item:
-            next_tipo = "capitulo" if "cap" in next_item.text(2).lower() else "concepto"
-            next_editable = sorted(self._EDITABLE_POR_TIPO.get(next_tipo, set()))
+            next_editable = sorted(self._cols_for_item(next_item))
             if next_editable:
                 idx = tw.indexFromItem(next_item, next_editable[0])
                 tw.setCurrentIndex(idx)
@@ -201,9 +202,6 @@ class _Delegate(QStyledItemDelegate):
             if key == Qt.Key.Key_Backtab:
                 self.commitAndMove(editor, QStyledItemDelegate.EndEditHint.EditPreviousItem)
                 return True
-            if key == Qt.Key.Key_Escape:
-                self.closeEditor.emit(editor, QStyledItemDelegate.EndEditHint.RevertModelData)
-                return True
         return super().eventFilter(editor, event)
 
 
@@ -214,12 +212,18 @@ class TreeTableWidget(QTreeWidget):
     # ── Constructor ───────────────────────────────────────────────
 
     def __init__(self, columns, editable_cols=frozenset(), flat=False,
-                 line_color=None, parent=None):
-        """Inicializa QTreeWidget con columnas, editabilidad, modo plano/jerárquico y cabecera."""
+                 line_color=None, parent=None, editable_cols_fn=None):
+        """Inicializa QTreeWidget con columnas, editabilidad, modo plano/jerárquico y cabecera.
+
+        editable_cols_fn: función opcional `item -> set[int]` para tablas donde
+        las columnas editables dependen del tipo de fila (ver arbol.py). Si no
+        se pasa, editable_cols aplica igual a todas las filas.
+        """
         super().__init__(parent)
         self._flat          = flat
         self._line_color    = line_color or LINE_COLOR
         self._editable_cols = editable_cols
+        self._editable_cols_fn = editable_cols_fn
         self._search_cols: set[int] | None = None  # None = buscar en todas
 
         self.setColumnCount(len(columns))
@@ -235,8 +239,9 @@ class TreeTableWidget(QTreeWidget):
             QAbstractItemView.EditTrigger.SelectedClicked   # clic en celda ya seleccionada
             | QAbstractItemView.EditTrigger.EditKeyPressed  # F2
             | QAbstractItemView.EditTrigger.AnyKeyPressed   # cualquier tecla alfanumérica
+            | QAbstractItemView.EditTrigger.DoubleClicked   # doble clic
         )
-        self.setItemDelegate(_Delegate(self, editable_cols))
+        self.setItemDelegate(_Delegate(self, editable_cols, editable_cols_fn))
 
         h = self.header()
         h.setStretchLastSection(False)
@@ -306,7 +311,9 @@ class TreeTableWidget(QTreeWidget):
         """Agrega fila al árbol con valores de data; editable=False la bloquea."""
         parent = parent or self
         item   = QTreeWidgetItem(parent, data)
-        if not editable:
+        if editable:
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
+        else:
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
         return item
 

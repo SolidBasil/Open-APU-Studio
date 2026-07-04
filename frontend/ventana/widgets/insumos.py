@@ -26,7 +26,7 @@ COLUMNAS = [
     "Clave", "Descripción", "Unidad", "Precio", "Tipo",
     "Familia", "Proveedor", "F. Precio", "Desc. Corta", "Costo MN", "Costo ME", "Hash",
 ]
-EDITABLE = frozenset()
+EDITABLE = frozenset({1, 2, 3})  # Descripción, Unidad, Precio
 
 TIPO_NOMBRE = {
     1:  "🧱 Material",
@@ -43,9 +43,7 @@ TIPO_NOMBRE = {
 class TablaInsumos(TreeTableWidget):
     """Tabla plana del catálogo de insumos (sin jerarquía)."""
     _HEADER_KEY = "insumos_header_state"
-    rastrear_insumo    = Signal(int)
-    editar_descripcion = Signal(int, str)
-    editar_precio      = Signal(int, float)
+    rastrear_insumo = Signal(int)
 
     def __init__(self, parent=None):
         super().__init__(COLUMNAS, EDITABLE, flat=True, parent=parent)
@@ -69,37 +67,14 @@ class TablaInsumos(TreeTableWidget):
         menu = QMenu(self)
         act_rastrear = menu.addAction("\U0001f50d Rastrear uso")
         act_rastrear.triggered.connect(lambda: self._emit_rastrear(item))
-        menu.addSeparator()
-        act_desc   = menu.addAction("\u270f\ufe0f Editar descripción")
-        act_precio = menu.addAction("\U0001f4b2 Editar precio")
-        act_desc.triggered.connect(lambda: self._emit_editar_descripcion(item))
-        act_precio.triggered.connect(lambda: self._emit_editar_precio(item))
         if not insumo_id:
             act_rastrear.setEnabled(False)
-            act_desc.setEnabled(False)
-            act_precio.setEnabled(False)
         menu.exec(event.globalPos())
 
     def _emit_rastrear(self, item):
         insumo_id = item.data(0, Qt.ItemDataRole.UserRole)
         if insumo_id:
             self.rastrear_insumo.emit(insumo_id)
-
-    def _emit_editar_descripcion(self, item):
-        insumo_id = item.data(0, Qt.ItemDataRole.UserRole)
-        desc = item.text(1).lstrip("\u25b6").strip()
-        if insumo_id:
-            self.editar_descripcion.emit(insumo_id, desc)
-
-    def _emit_editar_precio(self, item):
-        insumo_id = item.data(0, Qt.ItemDataRole.UserRole)
-        precio_txt = item.text(3).replace("$", "").replace(",", "").strip()
-        try:
-            precio = float(precio_txt)
-        except ValueError:
-            precio = 0.0
-        if insumo_id:
-            self.editar_precio.emit(insumo_id, precio)
 
     def _header_context_menu(self, pos):
         super()._header_context_menu(pos)
@@ -142,6 +117,6 @@ class TablaInsumos(TreeTableWidget):
                 f"${ins.get('costo_mn', 0) or 0:,.2f}",
                 f"${ins.get('costo_me', 0) or 0:,.2f}",
                 ins.get("hash") or "",
-            ], editable=False)
+            ], editable=True)
             if row_item is not None:
                 row_item.setData(0, Qt.ItemDataRole.UserRole, insumo_id)

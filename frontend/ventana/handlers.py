@@ -439,14 +439,14 @@ class HandlersMixin:
             self._tab_temp = None
 
         insumos_titles = {
-            "📚 Todos", "🧱 Materiales", "👷 Mano de obra",
+            "📚 Todos", "📐 Conceptos", "🧱 Materiales", "👷 Mano de obra",
             "🔧 Herramienta", "🚜 Equipo", "⚙️ Auxiliares",
             "🧮 Matrices", "🚛 Fletes", "🏗️ Trabajos",
         }
         if title == "📋 Presupuesto programable":
             content = self._build_presupuesto()
-        elif title == "📐 Conceptos":
-            content = self._build_conceptos()
+        elif title == "🔍 Buscar partidas":
+            content = self._build_buscador_partidas()
         elif title == "💰 Cálculo de indirectos":
             content = self._build_placeholder(title, "En desarrollo")
         elif title == "📊 Cálculo de sobrecostos":
@@ -466,6 +466,7 @@ class HandlersMixin:
 
         idx = self._tabs.addTab(content, title)
         self._tabs.setCurrentIndex(idx)
+        self._on_ajustar_columnas()
         if temporary:
             self._tab_temp = content
 

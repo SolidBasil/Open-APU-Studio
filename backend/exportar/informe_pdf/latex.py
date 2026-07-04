@@ -154,16 +154,18 @@ def _extraer_conceptos(hijos: list[dict], acum: list[dict], _depth: int = 1) -> 
     for hijo in hijos:
         if hijo.get("tipo") == "concepto":
             cant = hijo.get("cantidad")
+            pu   = hijo.get("precio_unitario")
             acum.append({
-                "nivel":       _fmt_wbs(hijo.get("wbs") or str(hijo.get("nivel") or "")),
-                "clave":       hijo.get("clave_opus") or "",
-                "descripcion": hijo.get("descripcion") or hijo.get("descripcion_corta") or "",
-                "unidad":      hijo.get("unidad") or "",
-                "cantidad":    (
+                "nivel":           _fmt_wbs(hijo.get("wbs") or str(hijo.get("nivel") or "")),
+                "clave":           hijo.get("clave_opus") or "",
+                "descripcion":     hijo.get("descripcion") or hijo.get("descripcion_corta") or "",
+                "unidad":          hijo.get("unidad") or "",
+                "cantidad":        (
                     f"{float(cant):,.4f}".rstrip("0").rstrip(".")
                     if cant not in (None, "") else ""
                 ),
-                "importe":     _fmt_moneda(hijo.get("total")),
+                "precio_unitario": _fmt_moneda(pu) if pu not in (None, "") else "",
+                "importe":         _fmt_moneda(hijo.get("total")),
             })
         elif hijo.get("tipo") == "capitulo":
             sub_desc = hijo.get("descripcion") or hijo.get("descripcion_corta") or ""
@@ -248,11 +250,12 @@ def _build_conceptos(partidas: list[dict]) -> str:
             lines.append(
                 rf"\Concepto"
                 rf"{{{escape_tex(c.get('nivel', ''))}}}"
-                rf"{{{escape_tex(c.get('clave_opus', ''))}}}"
+                rf"{{{escape_tex(c.get('clave', ''))}}}"
                 rf"{{{desc}}}"
                 rf"{{{escape_tex(c.get('unidad', ''))}}}"
                 rf"{{{escape_tex(c.get('cantidad', ''))}}}"
-                rf"{{{c.get('total', '')}}}"
+                rf"{{{c.get('precio_unitario', '')}}}"
+                rf"{{{c.get('importe', '')}}}"
             )
 
         if "subtotal" in partida and partida["subtotal"]:

@@ -26,7 +26,16 @@ class NodoRepo(RepoBase):
     def todos(self, proyecto_id, tipo: str | None = None):
         """Devuelve todos los nodos activos del presupuesto ordenados por wbs.
         Si tipo se especifica ('capitulo' o 'concepto'), filtra por ese tipo.
+        Para conceptos incluye unidad desde el catálogo de insumos.
         """
+        if tipo == "concepto":
+            return self._lista(f"""
+                SELECT ep.*, i.unidad
+                FROM estructura_presupuesto ep
+                LEFT JOIN insumos i ON i.id = ep.insumo_id
+                WHERE ep.proyecto_id = ? AND ep.activo = 1 AND ep.tipo = 'concepto'
+                ORDER BY ep.wbs
+            """, [proyecto_id])
         filtro = f"AND tipo = '{tipo}'" if tipo else ""
         return self._lista(f"""
             SELECT * FROM estructura_presupuesto
@@ -114,7 +123,25 @@ class NodoRepo(RepoBase):
                 cantidad = ?, modificado_por = ?, modificado_en = datetime('now')
             WHERE id = ?
         """, [cantidad, usuario_id, concepto_id])
+        # Recalc propio total = cant × precio del insumo vinculado
+        self._cursor.execute("""
+            UPDATE estructura_presupuesto SET
+                total = ? * COALESCE(
+                    (SELECT costo_final FROM insumos WHERE id = insumo_id), 0
+                ),
+                modificado_en = datetime('now')
+            WHERE id = ? AND tipo = 'concepto'
+        """, (cantidad, concepto_id))
+        self._conn.commit()
         self.actualizar_total(concepto_id)
+
+    def actualizar_descripcion(self, nodo_id, descripcion, usuario_id=1):
+        """Actualiza la descripción local de un nodo (capítulo o concepto)."""
+        self._ejecutar("""
+            UPDATE estructura_presupuesto SET
+                descripcion = ?, modificado_por = ?, modificado_en = datetime('now')
+            WHERE id = ?
+        """, [descripcion, usuario_id, nodo_id])
 
     def actualizar_estado(self, concepto_id, estado: int, usuario_id=1):
         """Actualiza el estado (semáforo) de un nodo."""
@@ -148,6 +175,26 @@ class NodoRepo(RepoBase):
             ).fetchone()
             actual = row["padre_id"] if row else None
         self._conn.commit()
+
+    def recalcular_por_insumo(self, insumo_id):
+        """Recalcula totales de todos los conceptos que usan un insumo y sus capítulos padre."""
+        cur = self._cursor
+        # Actualizar total de cada concepto que referencia este insumo
+        cur.execute("""
+            UPDATE estructura_presupuesto SET
+                total = COALESCE(cantidad, 0) * COALESCE(
+                    (SELECT costo_final FROM insumos WHERE id = ?), 0
+                ),
+                modificado_en = datetime('now')
+            WHERE insumo_id = ? AND tipo = 'concepto' AND activo = 1
+        """, (insumo_id, insumo_id))
+        # Subir por los padres
+        padres = cur.execute("""
+            SELECT DISTINCT padre_id FROM estructura_presupuesto
+            WHERE insumo_id = ? AND tipo = 'concepto' AND activo = 1 AND padre_id IS NOT NULL
+        """, (insumo_id,)).fetchall()
+        for row in padres:
+            self.actualizar_total(row["padre_id"])
 
     def eliminar(self, concepto_id, usuario_id=1):
         """Marca un nodo y sus descendientes como inactivos (borrado lógico)."""

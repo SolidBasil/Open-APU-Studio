@@ -47,6 +47,17 @@ class ApuMatricesRepo(RepoBase):
         """Elimina un componente de la matriz por su ID."""
         self._ejecutar("DELETE FROM apu_matrices WHERE id = ?", [comp_id])
 
+    def actualizar_campo(self, comp_id, campo, valor, usuario_id=1):
+        """Actualiza un campo de un componente APU."""
+        campos = {'valor', 'operador', 'precio', 'formula', 'orden'}
+        if campo not in campos:
+            raise ValueError(f"Campo '{campo}' no es editable en APU")
+        self._ejecutar(f"""
+            UPDATE apu_matrices SET {campo} = ?,
+                modificado_por = ?, modificado_en = datetime('now')
+            WHERE id = ?
+        """, [valor, usuario_id, comp_id])
+
     def limpiar(self, matriz_id):
         """Elimina todos los componentes de una matriz."""
         self._ejecutar("DELETE FROM apu_matrices WHERE matriz_id = ?", [matriz_id])

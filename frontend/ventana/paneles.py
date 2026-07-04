@@ -8,7 +8,7 @@ sidebar, presupuesto, APU, rastrear insumo, insumos, conceptos,
 explosión de insumos y placeholder.
 """
 
-from PySide6.QtCore    import Qt
+from PySide6.QtCore    import Qt, QTimer
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTreeWidget, QTreeWidgetItem,
     QAbstractItemView, QHeaderView, QMenu, QTabWidget,
@@ -43,13 +43,17 @@ class PanelesMixin:
 
         secciones = [
             ("📁 Propuesta", [
-                "📋 Presupuesto programable", "📐 Conceptos", "💰 Cálculo de indirectos",
-                "👷 Personal en indirectos", "📊 Cálculo de sobrecostos",
+                "📋 Presupuesto programable", "🔍 Buscar partidas",
                 "📦 Explosión de insumos", "📦 Explosión de matrices",
                 "🚚 Programa de suministros",
             ]),
+            ("📁 Sobrecostos", [
+                "💰 Cálculo de indirectos",
+                "👷 Personal en indirectos",
+                "📊 Cálculo de sobrecostos",
+            ]),
             ("📁 Insumos", [
-                "📚 Todos", "🧱 Materiales", "👷 Mano de obra", "🔧 Herramienta",
+                "📚 Todos","📐 Conceptos", "🧱 Materiales", "👷 Mano de obra", "🔧 Herramienta",
                 "🚜 Equipo", "⚙️ Auxiliares", "🧮 Matrices", "🚛 Fletes", "🏗️ Trabajos",
             ]),
             ("📁 Ejecución", [
@@ -106,10 +110,10 @@ class PanelesMixin:
         except Exception as e:
             print(f"Error cargando presupuesto: {e}")
 
-        tree.setEditTriggers(QAbstractItemView.EditTrigger.EditKeyPressed)
         tree.itemChanged.connect(self._on_concepto_editado)
         tree.itemDoubleClicked.connect(self._on_item_dblclick)
         self._arbol_presupuesto = tree   # referencia para explosión de insumos
+        QTimer.singleShot(0, self._on_ajustar_columnas)
         return tree
 
     def _build_sin_proyecto(self) -> QWidget:
@@ -160,10 +164,12 @@ class PanelesMixin:
     # Pestaña que muestra el desglose de insumos de un concepto.
     # Se abre al hacer doble clic en una celda de P.U. o Precio.
 
-    def _build_apu_tab(self, clave: str, matriz_id: int, descripcion: str = ""):
+    def _build_apu_tab(self, matriz_id: int, descripcion: str = ""):
         """Pestaña de desglose APU: componentes de un concepto o insumo compuesto.
-        Muestra tipo, clave, descripción, cant, PU e importe de cada insumo.
-        Los insumos con APU propio (▶) se pueden abrir con doble clic en P.U.
+        Muestra tipo, descripción, cant, PU e importe de cada insumo, con el
+        costo directo total en el encabezado.
+        Los insumos con APU propio (▶) se abren con doble clic (no son editables
+        inline — el doble clic navega al sub-APU, no debe abrir un editor a la vez).
         matriz_id positivo = nodo del árbol, negativo = insumo compuesto.
         """
         from frontend.ventana.widgets.base import TreeTableWidget
@@ -173,9 +179,24 @@ class PanelesMixin:
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # Header con descripción
+        resultado = None
+        if self._api:
+            resultado = self._api.apu(nodo_id=matriz_id) if matriz_id > 0 else self._api.apu(insumo_id=-matriz_id)
+
+        # Total del APU (costo_directo si ya está calculado, si no, suma de importes)
+        total = 0.0
+        if resultado:
+            totales = resultado.get("totales")
+            if totales and totales.get("costo_directo") is not None:
+                total = totales["costo_directo"]
+            else:
+                total = sum(r.get("importe", 0) or 0 for r in resultado.get("detalle", []))
+
+        # Header: antes mostraba el nombre dos veces (una en negritas, otra
+        # normal) porque "clave" terminaba siendo la misma descripción. Ahora
+        # muestra la descripción una sola vez y el total del APU.
         lbl = QLabel(
-            f"<b>{clave}</b> — {descripcion}"
+            f"<b>{descripcion or f'Matriz #{matriz_id}'}</b> — Total: ${total:,.2f}"
         )
         lbl.setTextFormat(Qt.TextFormat.RichText)
         lbl.setWordWrap(True)
@@ -183,9 +204,22 @@ class PanelesMixin:
         layout.addWidget(lbl)
         layout.addSpacing(2)
 
+        # Las filas de insumos compuestos (tienen sub-APU propio) no son
+        # editables: el doble clic sobre ellas navega al sub-APU, y si además
+        # fueran editables, ese mismo doble clic (DoubleClicked es trigger de
+        # edición) abría un editor de "Op" al mismo tiempo que la pestaña del
+        # sub-APU — confuso y no tenía sentido editar algo que en realidad
+        # se administra desde adentro de su propio APU.
+        def _editable_cols_detalle(item):
+            if item.data(0, Qt.ItemDataRole.UserRole + 1):  # es_compuesto
+                return set()
+            return {4, 5, 6}  # P.U., Op, Valor
+
         detail = TreeTableWidget(
             ["Tipo", "Clave", "Descripción", "Unidad", "P.U.", "Op", "Valor", "Importe"],
             flat=True,
+            editable_cols=frozenset({5}),  # fallback (no debería usarse, siempre hay fn)
+            editable_cols_fn=_editable_cols_detalle,
         )
         detail.set_column_modes({
             c: (QHeaderView.ResizeMode.Interactive, w)
@@ -193,23 +227,27 @@ class PanelesMixin:
         })
         detail.header().setMaximumSectionSize(400)
 
-        if self._api:
-            resultado = self._api.apu(nodo_id=matriz_id) if matriz_id > 0 else self._api.apu(insumo_id=-matriz_id)
-            if resultado:
-                for r in resultado["detalle"]:
-                    tid = r["tipo_id"]
-                    tn  = r["tipo_nombre"]
-                    row_item = detail.add_row([
-                        f"{r['tipo_emoji']} {tn}".strip() if r["tipo_emoji"] else tn,
-                        "",  # columna Clave: ya no se usa para navegación, el insumo_id va en UserRole
-                        r["descripcion"],
-                        r["insumo_unidad"],
-                        f"${r['precio']:,.2f}",
-                        r["operador"],
-                        f"{r['valor']:,.4f}",
-                        f"${r['importe']:,.2f}",
-                    ], editable=False)
-                    row_item.setData(0, Qt.ItemDataRole.UserRole, r.get("insumo_id"))
+        if resultado:
+            for r in resultado["detalle"]:
+                tid = r["tipo_id"]
+                tn  = r["tipo_nombre"]
+                es_compuesto = bool(r.get("tiene_sub_apu"))
+                row_item = detail.add_row([
+                    f"{r['tipo_emoji']} {tn}".strip() if r["tipo_emoji"] else tn,
+                    "",  # columna Clave: ya no se usa para navegación, el insumo_id va en UserRole
+                    r["descripcion"],
+                    r["insumo_unidad"],
+                    f"${r['precio']:,.2f}",
+                    r["operador"],
+                    f"{r['valor']:,.4f}",
+                    f"${r['importe']:,.2f}",
+                ], editable=not es_compuesto)
+                row_item.setData(0, Qt.ItemDataRole.UserRole, r.get("insumo_id"))
+                row_item.setData(0, Qt.ItemDataRole.UserRole + 1, es_compuesto)
+                # Guardar comp_id para edición de operador
+                row_item.setData(5, Qt.ItemDataRole.UserRole, r.get("id"))
+
+        detail.itemChanged.connect(self._on_apu_detalle_editado)
 
         # menú contextual → rastrear uso del insumo
         detail.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -218,15 +256,76 @@ class PanelesMixin:
 
         detail.itemDoubleClicked.connect(self._on_apu_detail_dblclick)
         layout.addWidget(detail)
+        # Se guarda para que _refrescar_tab_activa pueda reconstruir esta
+        # pestaña en el momento (editar Precio, Valor u Op aquí mismo cambia
+        # el total de esta misma matriz, y también puede afectar a otras
+        # pestañas de APU abiertas que compartan el mismo insumo).
+        container.setProperty("apu_matriz_id", matriz_id)
         return container
 
     def _on_apu_detail_dblclick(self, item, column):
-        """Doble clic en cualquier celda del APU → abre sub-APU si el insumo es compuesto.
-        El insumo_id se guarda en UserRole de la columna 0 al poblar la fila.
+        """Doble clic en la columna P.U. → abre sub-APU si el insumo es compuesto.
+        Antes se abría con doble clic en cualquier columna de la fila, lo que
+        además chocaba con la edición inline de Valor/Op al doble-clickear esas
+        columnas en una fila no compuesta. Ahora es exclusivo de P.U. (col 4),
+        igual que en el árbol de presupuesto (_es_pu / _on_item_dblclick).
         """
+        if column != 4:
+            return
         insumo_id = item.data(0, Qt.ItemDataRole.UserRole)
-        if insumo_id and self._api and self._api.insumo_es_compuesto(insumo_id):
+        es_compuesto = item.data(0, Qt.ItemDataRole.UserRole + 1)
+        if insumo_id and es_compuesto:
             self._abrir_apu_insumo(insumo_id)
+
+    def _on_apu_detalle_editado(self, item, column):
+        """itemChanged de la tabla de detalle del APU — persiste edición de
+        Precio (P.U., col 4), Operador (Op, col 5) o Cantidad (Valor, col 6).
+
+        Las filas de insumo compuesto nunca llegan aquí editadas: no son
+        editables (ver _editable_cols_detalle en _build_apu_tab), así que no
+        hay riesgo de chocar con la navegación al sub-APU por doble clic.
+        """
+        if column not in (4, 5, 6) or not self._api:
+            return
+        comp_id = item.data(5, Qt.ItemDataRole.UserRole)
+
+        if column == 5:  # Op
+            op = item.text(column).strip()
+            if op not in ('*', '/'):
+                item.setText(column, '*')
+                return
+            if comp_id:
+                self._api.apu_actualizar_operador(comp_id, op)
+                self._refrescar_tab_activa()
+            return
+
+        if column == 6:  # Valor (cantidad de este componente en esta matriz)
+            try:
+                texto = item.text(column).replace(",", "").strip()
+                valor = float(texto)
+            except ValueError:
+                return
+            if not comp_id:
+                return
+            from PySide6.QtWidgets import QMessageBox
+            try:
+                self._api.apu_actualizar_valor(comp_id, valor)
+            except ValueError as e:
+                QMessageBox.warning(self, "Cantidad inválida", str(e))
+            self._refrescar_tab_activa()
+            return
+
+        if column == 4:  # P.U. — vive en el insumo del catálogo, no en esta fila
+            insumo_id = item.data(0, Qt.ItemDataRole.UserRole)
+            if not insumo_id:
+                return
+            try:
+                texto = item.text(column).replace("$", "").replace(",", "").strip()
+                precio = float(texto)
+            except ValueError:
+                return
+            self._api.apu_actualizar_precio_componente(insumo_id, precio)
+            self._refrescar_tab_activa()
 
     def _on_item_dblclick(self, item, column):
         """Doble clic en presupuesto/insumos → abre APU del concepto."""
@@ -235,55 +334,68 @@ class PanelesMixin:
             nodo_id = item.data(0, ID_ROLE)
             if nodo_id:
                 self._abrir_apu_por_id(nodo_id)
-            else:
-                # fallback: usar texto del item (para insumos)
-                self._abrir_apu(item.text(1).strip() or item.text(0).strip())
 
     def _abrir_apu_por_id(self, nodo_id: int):
-        """Abre APU por ID de estructura_presupuesto."""
+        """Abre el APU de un concepto del árbol de presupuesto (por id de estructura_presupuesto)."""
         if not nodo_id or not self._api:
             return
         resultado = self._api.apu(nodo_id=nodo_id)
-        if not resultado:
-            self._sb.showMessage(f"Concepto #{nodo_id} no tiene matriz relacionada", 4000)
-            return
-        descripcion = resultado.get("descripcion", "")
-        title = f"APU: {descripcion[:30]}" if descripcion else f"APU: #{nodo_id}"
-        for i in range(self._tabs.count()):
-            if self._tabs.tabText(i) == title:
-                self._tabs.setCurrentIndex(i)
-                return
-        idx = self._tabs.addTab(self._build_apu_tab(str(nodo_id), resultado["matriz_id"], descripcion), title)
-        self._tabs.setCurrentIndex(idx)
+        self._abrir_apu_resultado(resultado, referencia=f"Concepto #{nodo_id}",
+                                   id_fallback=f"#{nodo_id}")
 
     def _on_concepto_editado(self, item, column):
         """itemChanged del árbol del presupuesto — persiste edición inline.
 
-        Col 4 = Descripción (solo capítulos — conceptos la heredan del insumo)
-        Col 6 = Cant        (solo conceptos)
+        Col 4 = Descripción (capítulos: directo; conceptos: vía insumo)
+        Col 5 = Unidad      (conceptos: vía insumo)
+        Col 6 = Cant        (conceptos)
+
+        P.U. (col 7) NO se edita desde aquí — bloqueado a propósito. El árbol
+        solo tiene insumo_id, no si el insumo es compuesto, así que no se
+        podía replicar el mismo bloqueo que ya funciona dentro del APU
+        (donde si tiene sub-APU, no se deja editar). Para cambiar un precio:
+        desde Insumos, o desde dentro del APU del concepto.
         """
         from frontend.ventana.widgets.arbol import ID_ROLE
         nodo_id = item.data(0, ID_ROLE)
         if nodo_id is None:
             return
+        tipo = item.text(2)
+
         if column == 6:  # Cant
             try:
                 texto = item.text(column).strip().replace("$", "")
-                # Soportar tanto punto como coma decimal, y comas de miles
                 if texto.count(",") == 1 and texto.count(".") == 0:
-                    texto = texto.replace(",", ".")   # coma decimal europea
+                    texto = texto.replace(",", ".")
                 else:
-                    texto = texto.replace(",", "")    # coma de miles
+                    texto = texto.replace(",", "")
                 cantidad = float(texto)
             except ValueError:
                 return
             self._api.concepto_actualizar_cantidad(nodo_id, cantidad)
-            self._refrescar_tab_activa()
-        elif column == 4:  # Descripción (solo capítulos)
-            tipo = item.text(2)
+
+        elif column == 4:  # Descripción
             if tipo == "Capítulo":
                 self._api.agrupador_actualizar_descripcion(nodo_id, item.text(column))
-                self._refrescar_tab_activa()
+            else:
+                # Descripción del concepto vive en insumos.descripcion (catálogo
+                # compartido) — puede rechazar el cambio si colisiona con otro
+                # insumo ya existente (mismo hash). Sin este try/except el error
+                # se propagaba sin avisar al usuario y la celda quedaba
+                # mostrando un texto que nunca se guardó.
+                from PySide6.QtWidgets import QMessageBox
+                try:
+                    self._api.concepto_actualizar_descripcion(nodo_id, item.text(column))
+                except ValueError as e:
+                    QMessageBox.warning(self, "Descripción duplicada", str(e))
+                    self._refrescar_tab_activa()
+                    return
+
+        elif column == 5:  # Unidad
+            if tipo == "Concepto":
+                self._api.concepto_actualizar_unidad(nodo_id, item.text(column))
+
+        self._refrescar_tab_activa()
 
     @staticmethod
     def _es_pu(item, column) -> bool:
@@ -294,47 +406,36 @@ class PanelesMixin:
         h = tw.headerItem().text(column).replace(".", "").upper()
         return "PU" in h or "PRECIO" in h
 
-    def _abrir_apu(self, clave: str):
-        """Busca un concepto del árbol por clave y abre su APU en una nueva pestaña.
-        Para insumos compuestos usar _abrir_apu_insumo (navegación por id).
-        """
-        if not clave or not self._db or not self._api:
-            return
-        resultado = self._api.apu(clave=clave)
-        if not resultado:
-            self._sb.showMessage(f"'{clave}' no tiene matriz relacionada", 4000)
-            return
-        matriz_id   = resultado["matriz_id"]
-        descripcion = resultado["descripcion"]
-
-        title = f"APU: {clave}"
-        for i in range(self._tabs.count()):
-            if self._tabs.tabText(i) == title:
-                self._tabs.setCurrentIndex(i)
-                return
-        idx = self._tabs.addTab(self._build_apu_tab(clave, matriz_id, descripcion), title)
-        self._tabs.setCurrentIndex(idx)
-
     def _abrir_apu_insumo(self, insumo_id: int):
-        """Busca un insumo compuesto por id y abre su APU en una nueva pestaña.
-        Equivalente a _abrir_apu pero para insumos del catálogo, no conceptos del árbol.
-        """
-        if not insumo_id or not self._db or not self._api:
+        """Abre el APU de un insumo compuesto del catálogo (por id de insumos)."""
+        if not insumo_id or not self._api:
             return
         resultado = self._api.apu(insumo_id=insumo_id)
+        self._abrir_apu_resultado(resultado, referencia=f"Insumo #{insumo_id}",
+                                   id_fallback=f"#{insumo_id}")
+
+    def _abrir_apu_resultado(self, resultado, *, referencia: str, id_fallback: str):
+        """Único punto que arma o enfoca la pestaña de un APU ya resuelto.
+
+        Antes _abrir_apu_por_id y _abrir_apu_insumo (y una tercera, _abrir_apu
+        por 'clave' de texto, ya eliminada) duplicaban esta lógica cada una a
+        su manera — con pequeñas diferencias (chequeo de self._db, formato de
+        título, texto de encabezado sin fallback) que hacían que el mismo APU
+        se comportara distinto según si se abría desde Presupuesto o desde
+        Insumos. Ahora todas las vías de entrada terminan aquí.
+        """
         if not resultado:
-            self._sb.showMessage(f"Insumo #{insumo_id} no tiene matriz relacionada", 4000)
+            self._sb.showMessage(f"{referencia} no tiene matriz relacionada", 4000)
             return
         matriz_id   = resultado["matriz_id"]
-        descripcion = resultado["descripcion"]
+        descripcion = resultado.get("descripcion", "") or ""
+        title = f"APU: {descripcion[:30]}" if descripcion else f"APU: {id_fallback}"
 
-        title = f"APU: {descripcion[:30]}"
         for i in range(self._tabs.count()):
             if self._tabs.tabText(i) == title:
                 self._tabs.setCurrentIndex(i)
                 return
-        # Se usa la descripción como encabezado visual ya que no hay clave que mostrar
-        idx = self._tabs.addTab(self._build_apu_tab(descripcion, matriz_id, descripcion), title)
+        idx = self._tabs.addTab(self._build_apu_tab(matriz_id, descripcion), title)
         self._tabs.setCurrentIndex(idx)
 
     # ── Rastrear insumo ──────────────────────────────────────────────────
@@ -412,14 +513,14 @@ class PanelesMixin:
         return tabla
 
     def _abrir_matriz_desde_rastreo(self, item):
-        """Abre el APU de una fila de rastreo, distinguiendo concepto (clave) de compuesto (id)."""
+        """Abre el APU de una fila de rastreo, distinguiendo concepto (id positivo,
+        matriz_id == nodo_id de estructura_presupuesto) de compuesto (id negativo,
+        matriz_id == -insumo_id)."""
         matriz_id = item.data(0, Qt.ItemDataRole.UserRole)
         if matriz_id is None:
             return
         if matriz_id > 0:
-            clave = item.text(1).strip()
-            if clave:
-                self._abrir_apu(clave)
+            self._abrir_apu_por_id(matriz_id)
         else:
             self._abrir_apu_insumo(-matriz_id)
 
@@ -452,6 +553,7 @@ class PanelesMixin:
 
         tipo_map = {
             "📚 Todos":       None,
+            "📐 Conceptos":   "concepto",     # insumos.tipo_id 32 "Concepto compuesto"
             "🧱 Materiales":  "material",
             "👷 Mano de obra": "mano_obra",
             "🔧 Herramienta": "herramienta",
@@ -461,18 +563,20 @@ class PanelesMixin:
             "🏗️ Trabajos":    "trabajo",
         }
         tabla = TablaInsumos()
+        # Guardar el filtro de tipo en el widget para que _refrescar_tab_activa lo recupere
+        tabla._insumos_tipo = tipo_map.get(title)
+        tabla._insumos_matrices = (title == "🧮 Matrices")
         ids = set()
         if self._api:
-            tipo = tipo_map.get(title)
+            tipo = tabla._insumos_tipo
             ids  = self._api.insumo_ids_con_apu()
-            if title == "🧮 Matrices":
+            if tabla._insumos_matrices:
                 insumos = self._api.insumos_con_matrices(tipo)
             else:
                 insumos = self._api.insumos(tipo)
             tabla.poblar(insumos, ids)
         tabla.rastrear_insumo.connect(self._on_rastrear_insumo)
-        tabla.editar_descripcion.connect(self._on_editar_descripcion_insumo)
-        tabla.editar_precio.connect(self._on_editar_precio_insumo)
+        tabla.itemChanged.connect(self._on_insumo_editado)
 
         # Doble clic en cualquier columna abre el APU si el insumo es compuesto
         def _on_insumo_dblclick(item, column):
@@ -483,69 +587,166 @@ class PanelesMixin:
         tabla.itemDoubleClicked.connect(_on_insumo_dblclick)
         return tabla
 
-    def _on_editar_descripcion_insumo(self, insumo_id: int, descripcion_actual: str):
-        """Abre diálogo para editar descripción; valida duplicado y actualiza."""
+    def _on_insumo_editado(self, item, column):
+        """itemChanged de la tabla de insumos — persiste edición inline."""
         from PySide6.QtWidgets import QMessageBox
-        from frontend.ventana.widgets.dialogs import EditarDescripcionDialog
-
-        dlg = EditarDescripcionDialog(descripcion_actual, parent=self)
-        if dlg.exec() != dlg.DialogCode.Accepted:
+        insumo_id = item.data(0, Qt.ItemDataRole.UserRole)
+        if not insumo_id or not self._api:
             return
-        try:
-            self._api.insumo_actualizar_descripcion(insumo_id, dlg.descripcion)
-            self._refrescar_tab_activa()
-        except ValueError as e:
-            QMessageBox.warning(self, "Descripción duplicada", str(e))
-
-    def _on_editar_precio_insumo(self, insumo_id: int, precio_actual: float):
-        """Abre diálogo para editar precio y actualiza."""
-        from frontend.ventana.widgets.dialogs import EditarPrecioDialog
-
-        dlg = EditarPrecioDialog(precio_actual, parent=self)
-        if dlg.exec() != dlg.DialogCode.Accepted:
-            return
-        self._api.insumo_actualizar_precio(insumo_id, dlg.precio)
+        if column == 1:  # Descripción
+            desc = item.text(column).lstrip("\u25b6").strip()
+            if not desc:
+                return
+            try:
+                self._api.insumo_actualizar_descripcion(insumo_id, desc)
+            except ValueError as e:
+                QMessageBox.warning(self, "Descripción duplicada", str(e))
+        elif column == 2:  # Unidad
+            self._api.insumo_actualizar_campo(insumo_id, "unidad", item.text(column))
+        elif column == 3:  # Precio
+            try:
+                txt = item.text(column).replace("$", "").replace(",", "").strip()
+                precio = float(txt)
+                self._api.insumo_actualizar_precio(insumo_id, precio)
+            except ValueError:
+                return
         self._refrescar_tab_activa()
 
+    def _refrescar_tabla_insumos(self, tabla):
+        """Recarga una tabla de insumos puntual preservando su filtro, scroll y selección.
+        Cada pestaña de Insumos (Materiales, Mano de obra, etc.) es una instancia
+        distinta con su propio _insumos_tipo/_insumos_matrices, así que hay que
+        refrescarlas una por una."""
+        scroll_y = tabla.verticalScrollBar().value()
+        current = tabla.currentItem()
+        row_key = current.data(0, Qt.ItemDataRole.UserRole) if current else None
+
+        tabla.blockSignals(True)
+        tipo = getattr(tabla, '_insumos_tipo', None)
+        ids = self._api.insumo_ids_con_apu()
+        if getattr(tabla, '_insumos_matrices', False):
+            insumos = self._api.insumos_con_matrices(tipo)
+        else:
+            insumos = self._api.insumos(tipo)
+        tabla.poblar(insumos, ids)
+        tabla.blockSignals(False)
+
+        tabla.verticalScrollBar().setValue(scroll_y)
+        if row_key is not None:
+            for i in range(tabla.topLevelItemCount()):
+                if tabla.topLevelItem(i).data(0, Qt.ItemDataRole.UserRole) == row_key:
+                    tabla.setCurrentItem(tabla.topLevelItem(i))
+                    break
+
     def _refrescar_tab_activa(self):
-        """Recarga la pestaña activa si es una tabla de insumos o el árbol del presupuesto."""
-        from frontend.ventana.widgets.insumos import TablaInsumos
-        w = self._tabs.currentWidget()
-        tabla = w if isinstance(w, TablaInsumos) else w.findChild(TablaInsumos) if w else None
-        if tabla is not None and self._api:
-            ids = self._api.insumo_ids_con_apu()
-            insumos = self._api.insumos()
-            tabla.poblar(insumos, ids)
+        """Recarga TODAS las tablas de datos abiertas (insumos y presupuesto),
+        no solo la pestaña activa — así una edición hecha desde Presupuesto se
+        refleja de inmediato en cualquier pestaña de Insumos ya abierta, y
+        viceversa, sin depender de cuál esté visible en ese momento."""
+        if getattr(self, '_refreshing', False):
+            return
+        self._refreshing = True
+        try:
+            from frontend.ventana.widgets.insumos import TablaInsumos
 
-        if self._arbol_presupuesto is not None and self._api:
-            nodos = self._api.presupuesto_arbol()
-            self._arbol_presupuesto.poblar(nodos)
+            # ── Insumos: todas las pestañas abiertas, no solo la activa ──────
+            if self._api:
+                for i in range(self._tabs.count()):
+                    w = self._tabs.widget(i)
+                    tabla = w if isinstance(w, TablaInsumos) else (w.findChild(TablaInsumos) if w else None)
+                    if tabla is not None:
+                        self._refrescar_tabla_insumos(tabla)
 
-    # ── Conceptos ─────────────────────────────────────────────────────────
-    # Vista plana de todos los nodos de tipo 'concepto' en el presupuesto.
-    # Permite navegación rápida y apertura de APU por doble clic en P.U.
+            # ── Presupuesto ─────────────────────────────────────────────────
+            if self._arbol_presupuesto is not None and self._api:
+                tree = self._arbol_presupuesto
+                scroll_y = tree.verticalScrollBar().value()
+                current = tree.currentItem()
+                row_key = (current.data(0, Qt.ItemDataRole.UserRole),
+                           current.data(1, Qt.ItemDataRole.UserRole)) if current else None
 
-    def _build_conceptos(self):
-        """Construye tabla plana de todos los conceptos del presupuesto con doble clic para APU."""
+                tree.blockSignals(True)
+                nodos = self._api.presupuesto_arbol()
+                tree.poblar(nodos)
+                tree.blockSignals(False)
+
+                tree.verticalScrollBar().setValue(scroll_y)
+                if row_key is not None:
+                    for i in range(tree.topLevelItemCount()):
+                        item = tree.topLevelItem(i)
+                        if (item.data(0, Qt.ItemDataRole.UserRole),
+                            item.data(1, Qt.ItemDataRole.UserRole)) == row_key:
+                            tree.setCurrentItem(item)
+                            break
+
+            # ── Pestañas de APU abiertas ──────────────────────────────────────
+            # Editar Precio/Valor/Op dentro de un APU cambia su propio total y,
+            # por la cascada de recálculo, puede afectar a OTRAS pestañas de
+            # APU abiertas que compartan el mismo insumo (p. ej. un compuesto
+            # usado en varios conceptos). Antes esto no se refrescaba y la
+            # propia pestaña donde acababas de editar se quedaba con el
+            # importe/total viejo hasta cerrarla y volver a abrirla.
+            if self._api:
+                idx_activo = self._tabs.currentIndex()
+                for i in range(self._tabs.count()):
+                    w = self._tabs.widget(i)
+                    matriz_id = w.property("apu_matriz_id") if w else None
+                    if matriz_id is None:
+                        continue
+                    resultado = (self._api.apu(nodo_id=matriz_id) if matriz_id > 0
+                                 else self._api.apu(insumo_id=-matriz_id))
+                    descripcion = (resultado.get("descripcion", "") or "") if resultado else ""
+                    nuevo_title = f"APU: {descripcion[:30]}" if descripcion else f"APU: #{abs(matriz_id)}"
+                    self._tabs.removeTab(i)
+                    self._tabs.insertTab(i, self._build_apu_tab(matriz_id, descripcion), nuevo_title)
+                if 0 <= idx_activo < self._tabs.count():
+                    self._tabs.setCurrentIndex(idx_activo)
+
+            # Re-aplicar filtro de búsqueda activo tras el refresh
+            if hasattr(self, '_search_input') and hasattr(self, '_on_search'):
+                self._on_search(self._search_input.text())
+        finally:
+            self._refreshing = False
+
+    # ── Buscador de partidas ─────────────────────────────────────────────
+    # Vista plana de todos los nodos de tipo 'concepto' en el presupuesto
+    # (estructura_presupuesto), no del catálogo de insumos. Permite
+    # navegación rápida y apertura de APU por doble clic.
+    # No confundir con "📐 Conceptos" en Insumos, que filtra insumos.tipo='concepto'
+    # ("Concepto compuesto", tipo_id 32) — un insumo del catálogo que a su vez
+    # es un compuesto reutilizable, no una partida del presupuesto.
+
+    def _build_buscador_partidas(self):
+        """Catálogo plano de partidas (conceptos del presupuesto) con doble clic para abrir APU."""
         from frontend.ventana.widgets.base import TreeTableWidget
+        from frontend.ventana.widgets.arbol import ID_ROLE
 
         t = TreeTableWidget(
-            ["Descripción", "Cant", "Total"],
+            ["WBS", "Descripción", "Unidad", "Cantidad", "P.U.", "Total"],
             flat=True,
         )
         t.set_column_modes({
             c: (QHeaderView.ResizeMode.Interactive, w)
-            for c, w in enumerate([250, 80, 110])
+            for c, w in enumerate([90, 250, 60, 100, 110, 120])
         })
         t.header().setMaximumSectionSize(400)
+        t._search_cols = {1}
         if self._api:
             for c in self._api.conceptos_planos():
-                t.add_row([
-                    "",
+                cant = float(c.get("cantidad") or 0)
+                total = float(c.get("total") or 0)
+                pu = total / cant if cant else 0
+                item = t.add_row([
+                    c.get("wbs", "") or "",
                     c.get("descripcion", "") or "",
-                    f"{c.get('cantidad', 0):,.2f}",
-                    f"${c.get('total', 0):,.2f}",
+                    c.get("unidad", "") or "",
+                    f"{cant:,.4f}".rstrip("0").rstrip("."),
+                    f"${pu:,.2f}",
+                    f"${total:,.2f}",
                 ], editable=False)
+                nodo_id = c.get("id")
+                if nodo_id:
+                    item.setData(0, ID_ROLE, nodo_id)
         t.itemDoubleClicked.connect(self._on_item_dblclick)
         return t
 
@@ -624,7 +825,7 @@ class PanelesMixin:
 
         return PestañaExplosion(
             filas, total_g, resumen,
-            on_apu_click=self._abrir_apu,
+            on_apu_click=self._abrir_apu_insumo,
             on_rastrear=self._on_rastrear_insumo,
         )
 
@@ -756,7 +957,7 @@ class PanelesMixin:
         5 spinboxes porcentuales, guarda y recalcula el factor_total."""
         from PySide6.QtWidgets import (
             QWidget, QVBoxLayout, QGridLayout, QLabel,
-            QDoubleSpinBox, QPushButton, QMessageBox, QGroupBox
+            QDoubleSpinBox, QPushButton, QGroupBox
         )
         from PySide6.QtCore import Qt
         from backend.database.repos import FactoresSobrecostoRepo
@@ -836,13 +1037,30 @@ class PanelesMixin:
         return container
 
     def _guardar_sobrecostos(self, repo, spinboxes, proyecto_id):
-        """Guarda los factores y lanza recálculo."""
+        """Guarda los factores, recalcula y refresca el presupuesto."""
         from backend.database.repos.recalculo import RecalculoRepo
-        valores = {k: s.value() for k, s in spinboxes.items()}
-        repo.guardar(proyecto_id, **valores)
-        RecalculoRepo(repo._conn).recalcular_proyecto(proyecto_id)
-        QMessageBox.information(self, "Guardado",
-                                "Factores guardados y presupuesto recalculado.")
+        try:
+            valores = {k: s.value() for k, s in spinboxes.items()}
+            repo.guardar(proyecto_id, **valores)
+            RecalculoRepo(repo._conn).recalcular_proyecto(proyecto_id)
+            # Refrescar pestaña del presupuesto si está abierta
+            self._refrescar_presupuesto()
+            self._sb.showMessage("Factores guardados y presupuesto recalculado.", 5000)
+        except Exception as e:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "Error", f"Error al guardar sobrecostos:\n{e}")
+
+    def _refrescar_presupuesto(self):
+        """Busca la pestaña de presupuesto y la reconstruye."""
+        for i in range(self._tabs.count()):
+            title = self._tabs.tabText(i)
+            if title == "📋 Presupuesto programable":
+                # Reemplazar el contenido con uno nuevo
+                nuevo = self._build_presupuesto()
+                self._tabs.removeTab(i)
+                self._tabs.insertTab(i, nuevo, title)
+                self._tabs.setCurrentIndex(i)
+                break
 
     def _add_comp_row(self, parent, comp, nivel, depth=0, depth_role=None):
         """Agrega una fila de componente APU al árbol y guarda insumo_id como ID_ROLE."""

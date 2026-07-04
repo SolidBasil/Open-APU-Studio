@@ -509,6 +509,7 @@ class TablaExplosion(TreeTableWidget):
                     f"${total:,.2f}",
                     f"{pct:.2f}%",
                 ], editable=False)
+                item.setData(0, Qt.ItemDataRole.UserRole, f.get("insumo_id"))
 
             # Subtotal del tipo
             sub_item = self.add_row([
@@ -569,23 +570,28 @@ class PestañaExplosion(QWidget):
                 lambda pos: self._on_context_menu(pos, on_rastrear))
 
     def _on_apu_click(self, item, on_apu_click):
-        """Doble clic en fila -> abre APU del insumo, ignorando subtotales y total."""
-        clave = item.text(1).strip()
-        if not clave or clave.startswith("Subtotal") or clave == "TOTAL GENERAL":
+        """Doble clic en fila -> abre APU del insumo, ignorando subtotales y total.
+        Usa el insumo_id guardado en UserRole (col 0), no el texto de la
+        columna Clave — antes se pasaba ese texto a una búsqueda por 'clave'
+        que en realidad buscaba conceptos del presupuesto, no insumos del
+        catálogo, así que nunca coincidía de forma confiable.
+        """
+        insumo_id = item.data(0, Qt.ItemDataRole.UserRole)
+        if not insumo_id:
             return
-        on_apu_click(clave)
+        on_apu_click(insumo_id)
 
     def _on_context_menu(self, pos, on_rastrear):
         """Menú contextual -> Rastrear uso para el insumo bajo el cursor."""
         item = self._tabla.itemAt(pos)
         if not item:
             return
-        clave = item.text(1).strip()
-        if not clave or clave.startswith("Subtotal") or clave == "TOTAL GENERAL":
+        insumo_id = item.data(0, Qt.ItemDataRole.UserRole)
+        if not insumo_id:
             return
         menu = QMenu(self)
         act = menu.addAction("🔍 Rastrear uso")
-        act.triggered.connect(lambda: on_rastrear(clave))
+        act.triggered.connect(lambda: on_rastrear(insumo_id))
         menu.exec(self._tabla.mapToGlobal(pos))
 
     def _build_header(self, resumen: dict) -> QWidget:
