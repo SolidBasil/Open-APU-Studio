@@ -35,12 +35,12 @@ class DiagDialogsMixin:
         from frontend.ventana.widgets.base import TreeTableWidget
         from backend.database.repos.diagnostico import DiagnosticoRepo
 
-        if not self._db:
+        if not self._db or not self._api:
             QMessageBox.information(self, "Sin proyecto", "Abre un proyecto primero.")
             return
 
         diag = DiagnosticoRepo(self._db.conn)
-        pid = self._db._proyecto_id
+        pid = self._api._pid
         from frontend.ventana.widgets.insumos import TIPO_NOMBRE
 
         def _tipo_str(tipo_id):
@@ -78,6 +78,11 @@ class DiagDialogsMixin:
         for r in diag.auto_referencia(pid):
             _ins(r["id"], r["clave"], r["descripcion"],
                  _tipo_str(r["tipo_id"]), "Auto-referencia (circular)")
+
+        for r in diag.unidades_no_estandar(pid):
+            _ins(r["id"], r["clave"], r["descripcion"],
+                 f'{_tipo_str(r["tipo_id"])} [{r["unidad"]}]',
+                 f'Unidad no estándar: {r["unidad"]}')
 
         total = sum(len(v) for v in grupos.values())
         if not total:
@@ -117,21 +122,150 @@ class DiagDialogsMixin:
         })
         layout.addWidget(tree)
 
+        unidadesgrupo = diag.unidades_no_estandar(pid)
+        if unidadesgrupo:
+            from PySide6.QtWidgets import QPushButton
+            btn = QPushButton(f"Estandarizar unidades ({len(unidadesgrupo)})")
+            btn.clicked.connect(lambda: self._on_estandarizar_unidades(unidadesgrupo))
+            layout.addWidget(btn)
+
+        casegrupo = diag.unidades_case(pid)
+        if casegrupo:
+            from PySide6.QtWidgets import QPushButton
+            btn = QPushButton(f"Corregir mayúsculas/minúsculas ({len(casegrupo)})")
+            btn.clicked.connect(lambda: self._on_corregir_case_unidades(casegrupo))
+            layout.addWidget(btn)
+
         title = f"🔧 Depurar catálogos ({total})"
+        for i in range(self._tabs.count()):
+            if self._tabs.tabText(i).startswith("🔧 Depurar"):
+                self._tabs.removeTab(i)
+                break
         self._tabs.addTab(w, title)
         self._tabs.setCurrentWidget(w)
+
+    def _on_estandarizar_unidades(self, items):
+        from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
+                                        QPushButton, QComboBox, QTableWidget,
+                                        QTableWidgetItem, QAbstractItemView)
+        from PySide6.QtCore import Qt
+        from frontend.ventana.widgets.base import UNIDADES
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"Estandarizar unidades ({len(items)} insumos)")
+        dlg.setMinimumSize(600, 400)
+        layout = QVBoxLayout(dlg)
+
+        lbl = QLabel("Selecciona la unidad estándar para cada unidad no estándar encontrada:")
+        lbl.setWordWrap(True)
+        layout.addWidget(lbl)
+
+        unidades_unicas = sorted(set(r["unidad"] for r in items))
+        combos = {}
+        tabla = QTableWidget(len(unidades_unicas), 2)
+        tabla.setHorizontalHeaderLabels(["Unidad actual", "Reemplazar por"])
+        tabla.verticalHeader().setVisible(False)
+        tabla.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        for i, uni in enumerate(unidades_unicas):
+            tabla.setItem(i, 0, QTableWidgetItem(uni))
+            combo = QComboBox()
+            combo.addItems(["(mantener)"] + UNIDADES)
+            combo.setCurrentText("(mantener)")
+            tabla.setCellWidget(i, 1, combo)
+            combos[uni] = combo
+        tabla.resizeColumnsToContents()
+        layout.addWidget(tabla)
+
+        row = QHBoxLayout()
+        btn_aplicar = QPushButton("Aplicar")
+        btn_cancel = QPushButton("Cancelar")
+        row.addStretch()
+        row.addWidget(btn_aplicar)
+        row.addWidget(btn_cancel)
+        layout.addLayout(row)
+
+        def aplicar():
+            cambios = []
+            for r in items:
+                combo = combos.get(r["unidad"])
+                if combo and combo.currentText() != "(mantener)":
+                    cambios.append((r["id"], combo.currentText()))
+            if cambios:
+                self._db.conn.executemany(
+                    "UPDATE insumos SET unidad = ? WHERE id = ?",
+                    [(u, id_) for id_, u in cambios]
+                )
+                self._db.conn.commit()
+                self._sb.showMessage(f"Unidades estandarizadas: {len(cambios)} insumos", 4000)
+            dlg.accept()
+            self._on_depurar_catalogos()
+
+        btn_aplicar.clicked.connect(aplicar)
+        btn_cancel.clicked.connect(dlg.reject)
+        dlg.exec()
+
+    def _on_corregir_case_unidades(self, items):
+        from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
+                                        QPushButton, QTableWidget, QTableWidgetItem,
+                                        QAbstractItemView)
+        from PySide6.QtCore import Qt
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"Corregir mayúsculas/minúsculas ({len(items)} insumos)")
+        dlg.setMinimumSize(600, 400)
+        layout = QVBoxLayout(dlg)
+
+        lbl = QLabel("Se corregirán las unidades para que coincidan con el estándar:")
+        lbl.setWordWrap(True)
+        layout.addWidget(lbl)
+
+        tabla = QTableWidget(len(items), 3)
+        tabla.setHorizontalHeaderLabels(["Clave", "Unidad actual", "Corregir a"])
+        tabla.verticalHeader().setVisible(False)
+        tabla.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        for i, r in enumerate(items):
+            tabla.setItem(i, 0, QTableWidgetItem(r["clave"]))
+            tabla.setItem(i, 1, QTableWidgetItem(r["unidad"]))
+            tabla.setItem(i, 2, QTableWidgetItem(r["canonical"]))
+        tabla.resizeColumnsToContents()
+        layout.addWidget(tabla)
+
+        row = QHBoxLayout()
+        btn_aplicar = QPushButton("Aplicar")
+        btn_cancel = QPushButton("Cancelar")
+        row.addStretch()
+        row.addWidget(btn_aplicar)
+        row.addWidget(btn_cancel)
+        layout.addLayout(row)
+
+        def aplicar():
+            cambios = [(r["canonical"], r["id"]) for r in items]
+            if not cambios:
+                return
+            self._db.conn.executemany(
+                "UPDATE insumos SET unidad = ? WHERE id = ?",
+                cambios
+            )
+            self._db.conn.commit()
+            self._sb.showMessage(f"Unidades corregidas: {len(cambios)} insumos", 4000)
+            dlg.accept()
+            self._on_depurar_catalogos()
+
+        btn_aplicar.clicked.connect(aplicar)
+        btn_cancel.clicked.connect(dlg.reject)
+        dlg.exec()
 
     def _on_homologar_hash(self):
         from PySide6.QtWidgets import QMessageBox, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget, QTableWidgetItem, QAbstractItemView
         from PySide6.QtCore import Qt
         from backend.database.repos.diagnostico import DiagnosticoRepo
 
-        if not self._db:
+        if not self._db or not self._api:
             QMessageBox.information(self, "Sin proyecto", "Abre un proyecto primero.")
             return
 
         diag = DiagnosticoRepo(self._db.conn)
-        pid = self._db._proyecto_id
+        pid = self._api._pid
         cambios = diag.insumos_hash_desactualizado(pid)
 
         if not cambios:
@@ -215,13 +349,13 @@ class DiagDialogsMixin:
         from pathlib import Path
         from backend.database.repos.diagnostico import DiagnosticoRepo
 
-        if not self._db:
+        if not self._db or not self._api:
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.information(self, "Sin proyecto", "Abre un proyecto primero.")
             return
 
         diag = DiagnosticoRepo(self._db.conn)
-        est = diag.estadisticas(self._db._proyecto_id)
+        est = diag.estadisticas(self._api._pid)
         nombre = Path(self._db.db_path).stem
 
         dlg = QDialog(self)

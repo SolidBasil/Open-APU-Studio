@@ -46,7 +46,16 @@ class TablaInsumos(TreeTableWidget):
     desglozar_insumo = Signal(int)
 
     def __init__(self, parent=None):
-        super().__init__(COLUMNAS, EDITABLE, flat=True, parent=parent)
+        def _combo_unidad(parent):
+            from PySide6.QtWidgets import QComboBox
+            from frontend.ventana.widgets.base import UNIDADES
+            combo = QComboBox(parent)
+            combo.setEditable(False)
+            combo.addItems(UNIDADES)
+            return combo
+
+        super().__init__(COLUMNAS, EDITABLE, flat=True, parent=parent,
+                         column_editors={2: _combo_unidad})
         self.set_column_modes({
             c: (QHeaderView.ResizeMode.Interactive, w)
             for c, w in enumerate([90, 250, 60, 100, 120, 120, 140, 85, 140, 95, 95, 90])

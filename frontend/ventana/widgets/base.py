@@ -8,6 +8,15 @@ Uso:
     from frontend.widgets.base import TreeTableWidget
 """
 
+UNIDADES = [
+    "Pza", "kg", "g", "t", "m", "m²", "m³", "cm", "cm²", "cm³",
+    "L", "mL", "gal", "saco", "bulto", "rollo", "hoja", "panel",
+    "placa", "tubo", "varilla", "lote", "juego", "kit", "caja",
+    "cubeta", "tambor", "viaje", "carga", "servicio",
+    "dia", "hr", "h", "jor", "jor8", "turno", "mes", "semana",
+    "(%)MAT", "(%)MO", "(%)EQ", "Eq", "HM", "HH",     "km", "km-m³", "ha", "glb", "u", "lote",
+]
+
 from PySide6.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QAbstractItemView,
     QHeaderView, QApplication, QStyledItemDelegate, QMenu,
@@ -619,7 +628,8 @@ class TreeTableWidget(QTreeWidget):
             return
         item = self.itemFromIndex(index)
         col  = index.column()
-        self.setCurrentItem(item, col)
+        if item not in self.selectedItems():
+            self.setCurrentItem(item, col)
         menu = QMenu(self)
         copy_act = menu.addAction(_menu_icon("📋"), "Copiar")
         copy_act.setShortcut(QKeySequence.StandardKey.Copy)

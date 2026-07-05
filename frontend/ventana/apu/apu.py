@@ -55,17 +55,10 @@ class ApuMixin:
 
         def _combo_unidad(parent):
             from PySide6.QtWidgets import QComboBox
+            from frontend.ventana.widgets.base import UNIDADES
             combo = QComboBox(parent)
-            combo.setEditable(True)
-            combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-            combo.completer().setCompletionMode(
-                combo.completer().CompletionMode.PopupCompletion
-            )
-            if self._api:
-                cur = self._api._conn.execute(
-                    "SELECT DISTINCT unidad FROM insumos WHERE unidad IS NOT NULL AND unidad != '' ORDER BY unidad"
-                )
-                combo.addItems([r[0] for r in cur.fetchall()])
+            combo.setEditable(False)
+            combo.addItems(UNIDADES)
             return combo
 
         detail = TreeTableWidget(

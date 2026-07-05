@@ -87,6 +87,43 @@ class DiagnosticoRepo(RepoBase):
             ORDER BY i.id
         """, [proyecto_id])
 
+    def unidades_no_estandar(self, proyecto_id):
+        """Insumos con unidad no estándar (fuera de UNIDADES)."""
+        from frontend.ventana.widgets.base import UNIDADES
+        placeholders = ",".join("?" * len(UNIDADES))
+        return self._lista(f"""
+            SELECT i.id, i.clave_opus AS clave, i.descripcion, i.tipo_id, i.unidad
+            FROM insumos i
+            WHERE i.proyecto_id = ? AND i.activo = 1
+              AND i.unidad IS NOT NULL AND i.unidad != ''
+              AND i.unidad NOT IN ({placeholders})
+            ORDER BY i.unidad, i.id
+        """, [proyecto_id] + list(UNIDADES))
+
+    def unidades_case(self, proyecto_id):
+        """Insumos cuya unidad es un alias (case o abreviatura) de una estándar."""
+        from frontend.ventana.widgets.base import UNIDADES
+        ALIASES = {
+            "m2": "m²", "m³": "m³", "m3": "m³",
+            "jgo": "juego",
+            "lt": "L", "l": "L",
+            "hor": "hr", "hr": "hr",
+        }
+        mapa = {u.lower(): u for u in UNIDADES}
+        mapa.update(ALIASES)
+        filas = self._lista("""
+            SELECT i.id, i.clave_opus AS clave, i.descripcion, i.tipo_id, i.unidad
+            FROM insumos i
+            WHERE i.proyecto_id = ? AND i.activo = 1
+              AND i.unidad IS NOT NULL AND i.unidad != ''
+            ORDER BY i.unidad, i.id
+        """, [proyecto_id])
+        return [
+            {**r, "canonical": mapa[r["unidad"].lower()]}
+            for r in filas
+            if r["unidad"].lower() in mapa and r["unidad"] != mapa[r["unidad"].lower()]
+        ]
+
     def estadisticas(self, proyecto_id):
         """Conteos básicos del proyecto para el diálogo de información."""
         n_nodos = self._uno("""

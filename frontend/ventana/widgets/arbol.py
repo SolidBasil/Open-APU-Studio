@@ -141,6 +141,8 @@ class TablaArbol(TreeTableWidget):
 
     def _context_menu_actions(self, menu):
         from frontend.ventana.widgets.base import _menu_icon
+        if len(self.selectedItems()) != 1:
+            return
         item = self.currentItem()
         if not item:
             return
