@@ -96,7 +96,7 @@ class ApuMixin:
                             r["insumo_unidad"],
                             f"${r['precio']:,.2f}",
                             r["operador"],
-                            f"{r['valor']:,.4f}",
+                            f"{r['valor']:,.8f}".rstrip("0").rstrip("."),
                             f"${r['importe']:,.2f}",
                         ], editable=True)
                         row_item.setData(0, Qt.ItemDataRole.UserRole, r.get("insumo_id"))
