@@ -19,6 +19,10 @@ class ApuMatricesRepo(RepoBase):
     def delete(self, registro_id: int) -> None:
         return self._delete(self.TABLA, registro_id)
 
+    def buscar(self, comp_id: int) -> dict | None:
+        """Busca un componente APU por su id."""
+        return super().buscar(comp_id)
+
     def por_matriz(self, matriz_id):
         """Devuelve los componentes del APU de una matriz (concepto o compuesto)."""
         return self._lista("""
@@ -36,11 +40,47 @@ class ApuMatricesRepo(RepoBase):
             ORDER BY ac.orden
         """, [matriz_id])
 
-    def actualizar_campo(self, comp_id, campo, valor, usuario_id=1):
-        """Actualiza un campo de un componente APU."""
-        self._actualizar_campo("apu_matrices", comp_id, campo, valor,
-                               {'valor', 'operador', 'precio', 'formula', 'orden'},
-                               usuario_id)
+    def con_detalle(self, matriz_id: int) -> dict:
+        """Devuelve el APU completo de una matriz (concepto o insumo compuesto):
+        componentes con su insumo enriquecido + totales por tipo.
+
+        Migrado desde core.get_apu() (Fase 4, ver ARQUITECTURA_SERVICIOS.md).
+
+        Returns:
+            {
+                "detalle":  list[dict],   # componentes con insumo completo
+                "totales":  dict | None,  # subtotales por tipo (apu_resumen_totales)
+            }
+        """
+        detalle = self._lista("""
+            SELECT
+                ad.id,
+                ad.orden,
+                ad.valor,
+                ad.operador,
+                ad.precio,
+                CASE WHEN ad.operador = '*' THEN ad.valor * ad.precio ELSE ad.precio / ad.valor END AS importe,
+                ad.formula,
+                i.es_compuesto      AS insumo_es_compuesto,
+                i.id                AS insumo_id,
+                i.descripcion       AS insumo_descripcion,
+                i.descripcion_corta AS insumo_desc_corta,
+                i.unidad            AS insumo_unidad,
+                t.clave             AS tipo_clave,
+                t.nombre            AS tipo_nombre,
+                t.id                AS tipo_id
+            FROM apu_matrices ad
+            JOIN insumos i      ON i.id  = ad.insumo_id
+            JOIN tipos_insumo t ON t.id  = i.tipo_id
+            WHERE ad.matriz_id = ?
+            ORDER BY ad.orden
+        """, [matriz_id])
+
+        totales = self._uno("""
+            SELECT * FROM apu_resumen_totales WHERE matriz_id = ?
+        """, [matriz_id])
+
+        return {"detalle": detalle, "totales": totales}
 
 
 # =============================================================================

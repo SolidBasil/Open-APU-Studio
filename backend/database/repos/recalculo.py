@@ -194,9 +194,9 @@ class RecalculoRepo(RepoBase):
             if abs(actual - nuevo) > 1e-6:
                 cambios = True
             cur.execute("""
-                UPDATE insumos SET costo_mn = ?, costo_final = ?, modificado_en = datetime('now')
+                UPDATE insumos SET costo_directo = ?, costo_mn = ?, costo_final = ?, modificado_en = datetime('now')
                 WHERE id = ?
-            """, (nuevo, nuevo, row["id"]))
+            """, (nuevo, nuevo, nuevo, row["id"]))
         return cambios
 
     def _aplicar_cascada_sobrecosto(self, cur, proyecto_id):

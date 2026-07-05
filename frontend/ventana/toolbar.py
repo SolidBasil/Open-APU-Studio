@@ -408,6 +408,10 @@ class ToolbarMixin:
             btn.clicked.connect(self._on_configuracion)
         elif tip == "Seleccionar todo":
             btn.clicked.connect(self._on_select_all_toolbar)
+        elif tip == "Modificar":
+            btn.clicked.connect(self._on_modificar_toolbar)
+        elif tip == "Desglosar":
+            btn.clicked.connect(self._on_desglozar_toolbar)
         elif tip == "Adjuntar archivo":
             btn.clicked.connect(self._on_adjuntar_archivo)
         elif tip == "Ver adjuntos":

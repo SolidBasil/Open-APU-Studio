@@ -536,41 +536,51 @@ y nunca llames a `_ejecutar()`.
 
 Al terminar cada fase, verificar:
 
-- [ ] **Fase 1:**
-  - [ ] `event_bus.py` funciona con prueba manual
-  - [ ] `schema_registry.py` rechaza valores inválidos
-  - [ ] `Database.transaction()` commitea y hace rollback en excepción
-  - [ ] `RepoBase._update()` no hace commit interno
-  - [ ] Al menos `InsumoRepo` tiene `TABLA` + `update()` funcionando
-  - [ ] `RepositoryRegistry` resuelve `InsumoRepo` desde string
-  - [ ] `DataService.actualizar()` emite evento post-commit con registro completo
-  - [ ] `api.py` expone los servicios correctamente
+- [x] **Fase 1:**
+  - [x] `event_bus.py` funciona con prueba manual
+  - [x] `schema_registry.py` rechaza valores inválidos
+  - [x] `exceptions.py` centraliza DataServiceError/ValidationError/RepositoryError/ConflictError
+        (antes vivían repartidas entre schema_registry.py y data_service.py sin heredar
+        entre sí; unificado fuera de fase, ver nota al final de este documento)
+  - [x] `Database.transaction()` commitea y hace rollback en excepción
+  - [x] `RepoBase._update()` no hace commit interno
+  - [x] Al menos `InsumoRepo` tiene `TABLA` + `update()` funcionando
+  - [x] `RepositoryRegistry` resuelve `InsumoRepo` desde string
+  - [x] `DataService.actualizar()` emite evento post-commit con registro completo
+  - [x] `api.py` expone los servicios correctamente
 
-- [ ] **Fase 2:**
-  - [ ] Ningún `_ejecutar()` nuevo (solo legacy)
-  - [ ] Todos los writes pasan por `DataService`
-  - [ ] Cada repo tiene `TABLA` + `update()` / `insert()` / `delete()`
-  - [ ] `_ejecutar()` marcado deprecated en todos los repos
+- [x] **Fase 2:**
+  - [x] Ningún `_ejecutar()` nuevo (solo legacy)
+  - [x] Todos los writes pasan por `DataService`
+  - [x] Cada repo tiene `TABLA` + `update()` / `insert()` / `delete()`
+  - [x] `_ejecutar()` marcado deprecated en todos los repos
 
-- [ ] **Fase 3:**
-  - [ ] `_refrescar_tab_activa()` eliminado o vacío
-  - [ ] Widgets se suscriben a eventos y actualizan filas in-place
-  - [ ] No hay `self._refrescar_tab_activa()` en handlers de edición
+- [x] **Fase 3:**
+  - [x] `_refrescar_tab_activa()` eliminado o vacío
+  - [x] Widgets se suscriben a eventos y actualizan filas in-place
+  - [x] No hay `self._refrescar_tab_activa()` en handlers de edición
 
-- [ ] **Fase 4:**
-  - [ ] `core.py` no tiene SQL
-  - [ ] `api.py` no tiene métodos de mutación
-  - [ ] No hay `_ejecutar()` en ningún archivo nuevo
+- [x] **Fase 4:**
+  - [x] `core.py` no tiene SQL
+  - [~] `api.py` no tiene métodos de mutación — **nota:** este ítem contradice
+        el propio diseño de Fase 2 (api.py expone las mutaciones como
+        wrappers finos sobre DataService; si no viviera ahí, no habría
+        forma de llamar a DataService desde la UI). Se interpreta como
+        aspiracional para una futura Fase 5 (Command objects/undo-redo,
+        ver §7), no como pendiente de esta fase. No se tocó.
+  - [x] No hay `_ejecutar()` en ningún archivo nuevo (se eliminó por
+        completo junto con `_muchos()`/`_actualizar_campo()`, sin uso
+        tras Fase 2)
 
-- [ ] **Reglas permanentes:**
-  - [ ] Ningún servicio conoce SQL
-  - [ ] Ningún repositorio conoce eventos
-  - [ ] Los eventos se emiten después del COMMIT
-  - [ ] Las transacciones las controlan los servicios
-  - [ ] `SchemaRegistry` no inspecciona PRAGMA
-  - [ ] UI → Api → DataService → Repos → SQL
-  - [ ] No se instancian repos desde widgets
-  - [ ] Los eventos no se encadenan
+- [x] **Reglas permanentes:**
+  - [x] Ningún servicio conoce SQL
+  - [x] Ningún repositorio conoce eventos
+  - [x] Los eventos se emiten después del COMMIT
+  - [x] Las transacciones las controlan los servicios
+  - [x] `SchemaRegistry` no inspecciona PRAGMA
+  - [x] UI → Api → DataService → Repos → SQL
+  - [x] No se instancian repos desde widgets
+  - [x] Los eventos no se encadenan
 
 ---
 

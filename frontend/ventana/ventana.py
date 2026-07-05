@@ -20,21 +20,32 @@ from frontend.temas    import Temas
 from frontend.ventana.toolbar  import ToolbarMixin
 from frontend.ventana.paneles  import PanelesMixin
 from frontend.ventana.handlers import HandlersMixin
+from frontend.ventana.handlers import GestionProyectosMixin, InformesMixin, DiagDialogsMixin
+from frontend.ventana.apu       import ApuMixin, RastreoMixin, ExplosionMixin
 
 
 # =============================================================================
 # VENTANA PRINCIPAL
 # =============================================================================
 
-class VentanaPrincipal(ToolbarMixin, PanelesMixin, HandlersMixin, QMainWindow):
+class VentanaPrincipal(
+    ToolbarMixin, PanelesMixin, HandlersMixin,
+    GestionProyectosMixin, InformesMixin, DiagDialogsMixin,
+    ApuMixin, RastreoMixin, ExplosionMixin,
+    QMainWindow,
+):
     """Ventana principal de Open APU Studio.
 
-    La lógica está distribuida en tres mixins:
-      - ToolbarMixin  (frontend/toolbar.py)  — toolbar, temas, barra de búsqueda
-      - PanelesMixin  (frontend/paneles.py)  — builders de pestañas de contenido
-      - HandlersMixin (frontend/handlers.py) — handlers de eventos y navegación
-
-    Este archivo contiene solo el estado de instancia y el ensamblaje del layout.
+    La lógica está distribuida en mixins:
+      - ToolbarMixin          — toolbar, temas, barra de búsqueda
+      - PanelesMixin          — sidebar, presupuesto, insumos, buscador
+      - HandlersMixin         — navegación, búsqueda, vista, adjuntos
+      - GestionProyectosMixin — lifecycle de proyectos
+      - InformesMixin         — generación de PDF
+      - DiagDialogsMixin      — diagnóstico y utilidades
+      - ApuMixin              — pestañas APU y edición
+      - RastreoMixin          — rastreo de insumos
+      - ExplosionMixin        — explosión de insumos/matrices y sobrecostos
     """
 
     def __init__(self):
@@ -48,6 +59,9 @@ class VentanaPrincipal(ToolbarMixin, PanelesMixin, HandlersMixin, QMainWindow):
         self._tab_temp   = None                          # pestaña temporal (click simple)
         self._db         = None                          # Database abierta o None
         self._api        = None                          # Api — se crea al abrir proyecto
+        self._data_service = None                        # DataService — se crea al abrir proyecto
+        self._registry   = None                          # RepositoryRegistry — se crea al abrir proyecto
+        self._event_bus  = None                           # EventBus — se crea al abrir proyecto
         self._arbol_presupuesto = None                   # ref al TablaArbol activo
 
         self._build_central()

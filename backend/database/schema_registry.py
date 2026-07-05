@@ -13,9 +13,9 @@ Uso:
 
 from __future__ import annotations
 
-
-class ValidationError(Exception):
-    """Validación de SchemaRegistry fallida."""
+from backend.database.exceptions import ValidationError  # noqa: F401 — re-exportado:
+# el código que hace `from backend.database.schema_registry import ValidationError`
+# sigue funcionando; la definición real vive en exceptions.py (Fase 4b).
 
 
 # ── Field types ────────────────────────────────────────────────────

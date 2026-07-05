@@ -1,7 +1,8 @@
 # Open APU Studio — AGENTS.md
 
 Actualizado: 2026-07-03 19:45 (hora local)
-
+## Regla DE DESARROLLO
+no conservar codigo viejo o migraciones de bases de datos con codigo antiguo si no funciona se rehace no se conserva nada antiguo
 ## Regla .md: fecha de modificación
 Todo archivo .md generado debe incluir la fecha y hora de su última modificación
 (ISO 8601, hora local) para que sea posible detectar cuándo el contenido está

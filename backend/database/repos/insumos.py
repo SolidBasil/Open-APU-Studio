@@ -1,7 +1,7 @@
 """insumos.py
 Repositorio del catálogo de insumos.
 """
-from .base import RepoBase, generar_hash
+from .base import RepoBase
 
 class InsumoRepo(RepoBase):
     """Catálogo de insumos del proyecto: materiales, MO, equipo, etc.
@@ -88,76 +88,6 @@ class InsumoRepo(RepoBase):
             WHERE am.insumo_id = ?
             ORDER BY matriz_wbs, matriz_clave
         """, [insumo_id])
-
-    def actualizar_precio(self, insumo_id, precio, usuario_id=1):
-        """Actualiza costo_mn, costo_directo y costo_final de un insumo."""
-        self._ejecutar("""
-            UPDATE insumos SET
-                costo_mn = ?, costo_directo = ?, costo_final = ?,
-                modificado_por = ?, modificado_en = datetime('now')
-            WHERE id = ?
-        """, [precio, precio, precio, usuario_id, insumo_id])
-
-    def actualizar_campo(self, insumo_id, campo, valor, usuario_id=1):
-        """Actualiza un campo simple de un insumo."""
-        self._actualizar_campo("insumos", insumo_id, campo, valor,
-                               {'unidad', 'descripcion_corta', 'costo_final',
-                                'familia_id', 'subfamilia_id', 'proveedor_id'},
-                               usuario_id)
-
-    def actualizar_descripcion(self, insumo_id, descripcion, proyecto_id, usuario_id=1):
-        """Actualiza la descripción de un insumo y regenera su hash.
-
-        Verifica antes de escribir que el hash nuevo no colisione con otro
-        insumo del mismo proyecto. Si hay colisión, lanza ValueError con el
-        id y descripción del insumo existente para que la UI informe al usuario.
-        """
-        nuevo_hash = generar_hash(descripcion)
-        existente  = self.buscar_por_hash(nuevo_hash, proyecto_id)
-        if existente and existente["id"] != insumo_id:
-            raise ValueError(
-                f"Ya existe un insumo con esa descripción: "
-                f"[{existente['id']}] {existente['descripcion']}"
-            )
-        self._ejecutar("""
-            UPDATE insumos SET
-                descripcion     = ?,
-                hash            = ?,
-                modificado_por  = ?,
-                modificado_en   = datetime('now')
-            WHERE id = ?
-        """, [descripcion, nuevo_hash, usuario_id, insumo_id])
-
-    def insertar(self, proyecto_id, tipo_id, descripcion,
-                 descripcion_corta=None, unidad=None, costo=0.0,
-                 es_compuesto=0, clave_opus=None, usuario_id=1):
-        """Inserta un insumo creado desde la app (no importado).
-
-        Genera el hash automáticamente desde la descripción — es la llave
-        funcional para deduplicación. clave_opus es opcional y puramente
-        referencial (queda NULL salvo que el insumo provenga de OPUS).
-        Verifica duplicados por hash antes de insertar. Si hay colisión
-        lanza ValueError igual que actualizar_descripcion.
-
-        Devuelve el id (rowid) del insumo insertado.
-        """
-        nuevo_hash = generar_hash(descripcion) if descripcion else None
-        if nuevo_hash:
-            existente = self.buscar_por_hash(nuevo_hash, proyecto_id)
-            if existente:
-                raise ValueError(
-                    f"Ya existe un insumo con esa descripción: "
-                    f"[{existente['id']}] {existente['descripcion']}"
-                )
-        return self._ejecutar("""
-            INSERT INTO insumos
-                (proyecto_id, tipo_id, descripcion, descripcion_corta,
-                 unidad, costo_mn, costo_directo, costo_final, es_compuesto,
-                 hash, clave_opus, creado_por)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, [proyecto_id, tipo_id, descripcion, descripcion_corta,
-               unidad, costo, costo, costo, es_compuesto,
-               nuevo_hash, clave_opus, usuario_id])
 
     def ids_con_apu(self, proyecto_id):
         """Conjunto de ids de insumos compuestos (tienen APU propio)."""

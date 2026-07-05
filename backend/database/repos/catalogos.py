@@ -26,8 +26,7 @@ class FamiliaRepo(RepoBase):
 
     def insertar(self, nombre):
         """Inserta una nueva familia."""
-        return self._ejecutar(
-            "INSERT INTO familias (nombre) VALUES (?)", [nombre])
+        return self._insert("familias", {"nombre": nombre})
 
 
 class SubfamiliaRepo(RepoBase):
@@ -57,9 +56,7 @@ class SubfamiliaRepo(RepoBase):
 
     def insertar(self, familia_id, nombre):
         """Inserta una nueva subfamilia dentro de una familia."""
-        return self._ejecutar(
-            "INSERT INTO subfamilias (familia_id, nombre) VALUES (?, ?)",
-            [familia_id, nombre])
+        return self._insert("subfamilias", {"familia_id": familia_id, "nombre": nombre})
 
 
 # =============================================================================
@@ -91,16 +88,15 @@ class NotaRepo(RepoBase):
 
     def insertar(self, concepto_id, texto, usuario_id=1):
         """Inserta una nota en un nodo."""
-        return self._ejecutar("""
-            INSERT INTO notas (concepto_id, usuario_id, texto) VALUES (?, ?, ?)
-        """, [concepto_id, usuario_id, texto])
+        return self._insert("notas", {
+            "concepto_id": concepto_id,
+            "usuario_id": usuario_id,
+            "texto": texto,
+        })
 
     def resolver(self, nota_id):
         """Marca una nota como resuelta."""
-        self._ejecutar("""
-            UPDATE notas SET resuelta = 1, modificado_en = datetime('now')
-            WHERE id = ?
-        """, [nota_id])
+        self._update("notas", nota_id, {"resuelta": 1})
 
     def abiertas(self, proyecto_id):
         """Devuelve las notas no resueltas de un proyecto."""

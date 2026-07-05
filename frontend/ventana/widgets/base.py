@@ -12,8 +12,8 @@ from PySide6.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QAbstractItemView,
     QHeaderView, QApplication, QStyledItemDelegate, QMenu,
 )
-from PySide6.QtCore import Qt, QByteArray
-from PySide6.QtGui import QColor, QKeySequence, QPainter, QPen
+from PySide6.QtCore import Qt, QByteArray, QRect
+from PySide6.QtGui import QColor, QKeySequence, QPainter, QPen, QFont, QIcon, QPixmap
 
 import re
 from backend.database.db import Config
@@ -22,6 +22,18 @@ from backend.database.db import Config
 # ── Expresiones regulares ──────────────────────────────────────────
 
 SISTEMA_PREFIJOS = re.compile(rf"^[{re.escape('▶🧱👷🔧🚜⚙️📄📚')}]\s?")
+
+
+def _menu_icon(char: str, size: int = 16):
+    """Icono Unicode para acciones de menú contextual."""
+    pix = QPixmap(size, size)
+    pix.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pix)
+    p.setPen(QColor("#E8EDF2"))
+    p.setFont(QFont("Segoe UI Symbol", size - 4))
+    p.drawText(QRect(0, 0, size, size), Qt.AlignmentFlag.AlignCenter, char)
+    p.end()
+    return QIcon(pix)
 
 
 # ── Constantes de conectores ──────────────────────────────────────
@@ -187,13 +199,13 @@ class _Delegate(QStyledItemDelegate):
                 tw.edit(idx)
 
     def eventFilter(self, editor, event):
-        """Intercepta Enter y Tab para confirmar y mover foco."""
+        """Intercepta Enter (cerrar) y Tab (mover foco)."""
         from PySide6.QtCore import QEvent
-        from PySide6.QtGui import QKeyEvent
         if event.type() == QEvent.Type.KeyPress:
             key = event.key()
             if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-                self.commitAndMove(editor, QStyledItemDelegate.EndEditHint.EditNextItem)
+                self.commitData.emit(editor)
+                self.closeEditor.emit(editor, QStyledItemDelegate.EndEditHint.NoHint)
                 return True
             if key == Qt.Key.Key_Tab:
                 self.commitAndMove(editor, QStyledItemDelegate.EndEditHint.EditNextItem)
@@ -476,11 +488,15 @@ class TreeTableWidget(QTreeWidget):
         _select_visible(None)
 
     def keyPressEvent(self, event):
-        """Captura Ctrl+C (copiar) y Ctrl+V (pegar); delega lo demás al comportamiento nativo."""
+        """Captura Ctrl+C/X/V/A; delega lo demás al comportamiento nativo."""
         if event.matches(QKeySequence.StandardKey.Copy):
             self._copy()
+        elif event.matches(QKeySequence.StandardKey.Cut):
+            self._cut()
         elif event.matches(QKeySequence.StandardKey.Paste):
             self._paste()
+        elif event.matches(QKeySequence.StandardKey.SelectAll):
+            self.selectAll()
         else:
             super().keyPressEvent(event)
 
@@ -560,10 +576,20 @@ class TreeTableWidget(QTreeWidget):
         col  = index.column()
         self.setCurrentItem(item, col)
         menu = QMenu(self)
-        menu.addAction("Copiar", self._copy)
+        copy_act = menu.addAction(_menu_icon("📋"), "Copiar")
+        copy_act.setShortcut(QKeySequence.StandardKey.Copy)
+        copy_act.triggered.connect(self._copy)
         if col in self._editable_cols:
-            menu.addAction("Cortar", self._cut)
-            menu.addAction("Pegar", self._paste)
+            cut_act = menu.addAction(_menu_icon("✂"), "Cortar")
+            cut_act.setShortcut(QKeySequence.StandardKey.Cut)
+            cut_act.triggered.connect(self._cut)
+            paste_act = menu.addAction(_menu_icon("📋"), "Pegar")
+            paste_act.setShortcut(QKeySequence.StandardKey.Paste)
+            paste_act.triggered.connect(self._paste)
+        menu.addSeparator()
+        sel_act = menu.addAction(_menu_icon("☑"), "Seleccionar todo")
+        sel_act.setShortcut(QKeySequence.StandardKey.SelectAll)
+        sel_act.triggered.connect(self.selectAll)
         self._context_menu_actions(menu)
         if not menu.isEmpty():
             menu.exec(event.globalPos())

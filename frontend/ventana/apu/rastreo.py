@@ -7,6 +7,7 @@ Se mezcla en VentanaPrincipal via herencia múltiple.
 """
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeySequence
 
 
 class RastreoMixin:
@@ -89,18 +90,38 @@ class RastreoMixin:
     def _on_rastrear_context_menu(self, tabla, pos):
         """Menú contextual sobre tablas de APU y rastreo."""
         from PySide6.QtWidgets import QMenu
+        from frontend.ventana.widgets.base import _menu_icon
         item = tabla.itemAt(pos)
         if not item:
             return
         tabla.setCurrentItem(item)
         menu = QMenu(self)
-        menu.addAction("Copiar", tabla._copy)
-        menu.addAction("Cortar", tabla._cut)
-        menu.addAction("Pegar", tabla._paste)
+        copy_act = menu.addAction(_menu_icon("📋"), "Copiar")
+        copy_act.setShortcut(QKeySequence.StandardKey.Copy)
+        copy_act.triggered.connect(tabla._copy)
+        cut_act = menu.addAction(_menu_icon("✂"), "Cortar")
+        cut_act.setShortcut(QKeySequence.StandardKey.Cut)
+        cut_act.triggered.connect(tabla._cut)
+        paste_act = menu.addAction(_menu_icon("📋"), "Pegar")
+        paste_act.setShortcut(QKeySequence.StandardKey.Paste)
+        paste_act.triggered.connect(tabla._paste)
+        menu.addSeparator()
         matriz_id = item.data(0, Qt.ItemDataRole.UserRole)
-        if matriz_id is not None and matriz_id < 0:
-            menu.addSeparator()
+        es_compuesto = item.data(0, Qt.ItemDataRole.UserRole + 1)
+        if es_compuesto is not None:
+            insumo_id = matriz_id
+            if es_compuesto:
+                act = menu.addAction(_menu_icon("🔍"), "Rastrear uso")
+                act.triggered.connect(lambda: self._on_rastrear_insumo(insumo_id))
+                act = menu.addAction(_menu_icon("🔗"), "Desglozar")
+                act.triggered.connect(lambda: self._abrir_apu_insumo(insumo_id))
+        elif matriz_id and matriz_id < 0:
             insumo_id = -matriz_id
-            act = menu.addAction("\U0001f50d Rastrear uso")
+            act = menu.addAction(_menu_icon("🔍"), "Rastrear uso")
             act.triggered.connect(lambda: self._on_rastrear_insumo(insumo_id))
+            act = menu.addAction(_menu_icon("🔗"), "Desglozar")
+            act.triggered.connect(lambda: self._abrir_apu_insumo(insumo_id))
+        elif matriz_id and matriz_id > 0:
+            act = menu.addAction(_menu_icon("🔗"), "Desglozar")
+            act.triggered.connect(lambda: self._abrir_apu_por_id(matriz_id))
         menu.exec(tabla.mapToGlobal(pos))

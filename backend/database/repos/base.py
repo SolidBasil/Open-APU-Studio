@@ -3,16 +3,17 @@ base.py
 =======
 Clase base para todos los repositorios — Open APU Studio.
 
-Métodos nuevos (no hacen commit, asumen transacción externa):
+Escritura (no hacen commit, asumen transacción externa — ver
+DataService/api.py, que envuelven cada llamada en Database.transaction()):
     _update(tabla, id, campos)
     _insert(tabla, campos) → int
     _delete(tabla, id)
 
-Método legado (DEPRECATED, hace commit):
-    _ejecutar(sql, params)
+Fase 4 (ver docs/ARQUITECTURA_SERVICIOS.md): se eliminaron los métodos
+legados _ejecutar()/_muchos()/_actualizar_campo() — quedaron sin uso una
+vez migrados todos los writes a DataService en Fase 2.
 """
 
-import warnings
 from typing import Any
 
 from backend.database.core import generar_hash  # noqa: F401
@@ -44,14 +45,15 @@ class RepoBase:
         """SELECT → lista de dicts."""
         return [dict(r) for r in self._cursor.execute(sql, params or []).fetchall()]
 
-    def buscar(self, tabla: str, registro_id: int) -> dict | None:
-        """SELECT genérico por id. Los repos específicos pueden sobreescribir con JOINs."""
+    def buscar(self, registro_id: int) -> dict | None:
+        """SELECT genérico por id usando self.TABLA. Los repos específicos
+        pueden sobreescribir con JOINs enriquecidos."""
         row = self._cursor.execute(
-            f"SELECT * FROM {tabla} WHERE id = ?", (registro_id,)
+            f"SELECT * FROM {self.TABLA} WHERE id = ?", (registro_id,)
         ).fetchone()
         return dict(row) if row else None
 
-    # ── Escritura (nuevos, sin commit) ──────────────────────────────
+    # ── Escritura (sin commit — la transacción la controla el servicio) ──
 
     def _update(self, tabla: str, registro_id: int, campos: dict[str, Any]) -> None:
         """UPDATE genérico. No hace commit (asume transacción externa)."""
@@ -78,39 +80,3 @@ class RepoBase:
     def _delete(self, tabla: str, registro_id: int) -> None:
         """Soft-delete genérico. No hace commit."""
         self._update(tabla, registro_id, {"activo": 0})
-
-    # ── Métodos legados (DEPRECATED) ─────────────────────────────────
-
-    def _ejecutar(self, sql, params=None):
-        """DEPRECATED: hace commit(). Solo usar en código no migrado."""
-        warnings.warn(
-            "_ejecutar() está deprecado. Usa _update/_insert/_delete con transacción externa.",
-            DeprecationWarning, stacklevel=2
-        )
-        self._cursor.execute(sql, params or [])
-        self._conn.commit()
-        return self._cursor.lastrowid
-
-    def _muchos(self, sql, seq):
-        """DEPRECATED: executemany + commit."""
-        warnings.warn(
-            "_muchos() está deprecado. Usa transacción externa.",
-            DeprecationWarning, stacklevel=2
-        )
-        self._cursor.executemany(sql, seq)
-        self._conn.commit()
-
-    def _actualizar_campo(self, tabla, registro_id, campo, valor,
-                          campos_permitidos, usuario_id=1):
-        """DEPRECATED: actualiza un campo con whitelist."""
-        warnings.warn(
-            "_actualizar_campo() está deprecado. Usa DataService.actualizar().",
-            DeprecationWarning, stacklevel=2
-        )
-        if campo not in campos_permitidos:
-            raise ValueError(f"Campo '{campo}' no es editable en {tabla}")
-        self._ejecutar(f"""
-            UPDATE {tabla} SET {campo} = ?,
-                modificado_por = ?, modificado_en = datetime('now')
-            WHERE id = ?
-        """, [valor, usuario_id, registro_id])

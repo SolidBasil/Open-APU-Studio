@@ -13,7 +13,7 @@ no de cantidad x costo_final. Por eso sus columnas Cantidad y P.U. muestran —.
 """
 
 from PySide6.QtCore    import Qt, QSize
-from PySide6.QtGui     import QFont, QColor, QBrush, QPalette
+from PySide6.QtGui     import QFont, QColor, QBrush, QPalette, QKeySequence
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
     QCheckBox, QPushButton, QMenu,
@@ -583,18 +583,25 @@ class PestañaExplosion(QWidget):
 
     def _on_context_menu(self, pos, on_rastrear):
         """Menú contextual -> Copiar/Cortar/Pegar + Rastrear uso para el insumo bajo el cursor."""
+        from frontend.ventana.widgets.base import _menu_icon
         item = self._tabla.itemAt(pos)
         if not item:
             return
         self._tabla.setCurrentItem(item)
         menu = QMenu(self)
-        menu.addAction("Copiar", self._tabla._copy)
-        menu.addAction("Cortar", self._tabla._cut)
-        menu.addAction("Pegar", self._tabla._paste)
+        copy_act = menu.addAction(_menu_icon("📋"), "Copiar")
+        copy_act.setShortcut(QKeySequence.StandardKey.Copy)
+        copy_act.triggered.connect(self._tabla._copy)
+        cut_act = menu.addAction(_menu_icon("✂"), "Cortar")
+        cut_act.setShortcut(QKeySequence.StandardKey.Cut)
+        cut_act.triggered.connect(self._tabla._cut)
+        paste_act = menu.addAction(_menu_icon("📋"), "Pegar")
+        paste_act.setShortcut(QKeySequence.StandardKey.Paste)
+        paste_act.triggered.connect(self._tabla._paste)
+        menu.addSeparator()
         insumo_id = item.data(0, Qt.ItemDataRole.UserRole)
         if insumo_id:
-            menu.addSeparator()
-            act = menu.addAction("🔍 Rastrear uso")
+            act = menu.addAction(_menu_icon("🔍"), "Rastrear uso")
             act.triggered.connect(lambda: on_rastrear(insumo_id))
         menu.exec(self._tabla.mapToGlobal(pos))
 

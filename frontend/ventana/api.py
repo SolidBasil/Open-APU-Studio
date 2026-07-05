@@ -17,7 +17,8 @@ Reglas:
 
 Uso típico desde ventana.py:
     from frontend.api import Api
-    api = Api(self._db.conn, self._db.db_path, proyecto_id=1)
+    api = Api(self._db.conn, self._db.db_path, proyecto_id=1,
+              data_service=self._data_service)
     arbol   = api.presupuesto_arbol()
     apu     = api.apu(nodo_id=17)         # concepto del árbol (id en estructura_presupuesto)
     apu2    = api.apu(insumo_id=42)      # insumo compuesto
@@ -28,6 +29,13 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from backend.database.services.data_service import DataService
+
+# ponytail: constante global — evita recrear el dict en cada llamada a apu()
+_EMOJI = {1: "🧱", 2: "👷", 4: "🔧", 8: "🚜", 16: "⚙️", 32: "📄"}
 
 
 # =============================================================================
@@ -39,14 +47,26 @@ class Api:
 
     Args:
         conn       — conexión SQLite activa del proyecto abierto
-        db_path    — ruta al archivo .db (necesaria para get_apu de core)
+        db_path    — ruta al archivo .db (referencial; ya no la usa ningún
+            método de esta clase desde Fase 4, se conserva por si algún
+            flujo futuro la necesita — ver docs/ARQUITECTURA_SERVICIOS.md)
         proyecto_id — siempre 1 en la versión actual (monoproyecto por .db)
+        data_service — DataService para escrituras. Obligatorio: todo write
+            de esta fachada pasa por él (Fase 2 completa, ver
+            docs/ARQUITECTURA_SERVICIOS.md).
     """
 
-    def __init__(self, conn: sqlite3.Connection, db_path: str | Path, proyecto_id: int = 1):
+    def __init__(self, conn: sqlite3.Connection, db_path: str | Path,
+                 proyecto_id: int = 1, data_service: DataService | None = None):
+        if data_service is None:
+            raise ValueError(
+                "Api requiere un DataService. Ver _wire_servicios() en "
+                "frontend/ventana/handlers/gestion_proyectos.py."
+            )
         self._conn   = conn
         self._db_path = str(db_path)
         self._pid    = proyecto_id
+        self._ds     = data_service
 
     def proyecto_actual_id(self) -> int:
         """Devuelve el ID del proyecto activo."""
@@ -58,59 +78,93 @@ class Api:
 
     def presupuesto_arbol(self) -> list[dict]:
         """Devuelve el árbol completo del presupuesto listo para poblar TablaArbol."""
-        from backend.database.core import build_budget_tree
-        return build_budget_tree(self._db_path)
+        from backend.database.repos import NodoRepo
+        return NodoRepo(self._conn).arbol(self._pid)
+
+    def nodo_total(self, nodo_id: int) -> float:
+        """Devuelve el total de un nodo del presupuesto."""
+        from backend.database.repos import NodoRepo
+        nodo = NodoRepo(self._conn).buscar(nodo_id)
+        return (nodo.get("total") or 0) if nodo else 0
 
     def concepto_actualizar_cantidad(self, concepto_id: int, cantidad: float) -> None:
         """Actualiza la cantidad de un concepto y recalcula totales."""
         from backend.database.repos import NodoRepo
-        NodoRepo(self._conn).actualizar_cantidad(concepto_id, cantidad)
+        from backend.database.event_bus import ProyectoRecalculado
+        if cantidad < 0:
+            raise ValueError("La cantidad no puede ser negativa")
+        # El campo 'cantidad' se escribe y se notifica vía DataService.
+        # Solo falta la cascada de totales hacia la raíz: es cálculo
+        # derivado (no dato de usuario), no pasa por SchemaRegistry y
+        # no dispara su propio evento semántico. ProyectoRecalculado
+        # avisa a los widgets que los totales corriente arriba cambiaron
+        # (Fase 3: reemplaza a _refrescar_tab_activa()).
+        self._ds.actualizar("estructura_presupuesto", concepto_id, cantidad=cantidad)
+        NodoRepo(self._conn).recalcular_desde(concepto_id)
+        self._conn.commit()
+        self._ds.emitir(ProyectoRecalculado(self._pid))
 
-    def concepto_actualizar_descripcion(self, nodo_id: int, descripcion: str) -> None:
-        """Actualiza la descripción del insumo ligado a un concepto."""
+    def nodo_descripcion_actual(self, nodo_id: int) -> str:
+        """Devuelve la descripción visible actual de un nodo del árbol
+        (propia si es capítulo, o la de su insumo ligado si es concepto).
+
+        Uso: revertir una celda tras un ValueError de validación (ej.
+        descripción duplicada) sin recargar todo el árbol.
+        """
         from backend.database.repos import NodoRepo, InsumoRepo
         nodo = NodoRepo(self._conn).buscar(nodo_id)
+        if not nodo:
+            return ""
+        if nodo.get("insumo_id"):
+            insumo = InsumoRepo(self._conn).buscar(nodo["insumo_id"])
+            return (insumo or {}).get("descripcion", "") or ""
+        return nodo.get("descripcion", "") or ""
+
+    def concepto_actualizar_descripcion(self, nodo_id: int, descripcion: str) -> None:
+        """Actualiza la descripción del insumo ligado a un concepto.
+
+        Reutiliza insumo_actualizar_descripcion() para no duplicar la
+        lógica de regeneración de hash y verificación de colisión.
+        """
+        from backend.database.repos import NodoRepo
+        nodo = NodoRepo(self._conn).buscar(nodo_id)
         if nodo and nodo.get("insumo_id"):
-            InsumoRepo(self._conn).actualizar_descripcion(
-                nodo["insumo_id"], descripcion, self._pid)
+            self.insumo_actualizar_descripcion(nodo["insumo_id"], descripcion)
 
     def concepto_actualizar_unidad(self, nodo_id: int, unidad: str) -> None:
         """Actualiza la unidad de un concepto (escribe en insumos)."""
-        from backend.database.repos import NodoRepo, InsumoRepo
+        from backend.database.repos import NodoRepo
         nodo = NodoRepo(self._conn).buscar(nodo_id)
         if nodo and nodo.get("insumo_id"):
-            InsumoRepo(self._conn).actualizar_campo(
-                nodo["insumo_id"], "unidad", unidad)
+            self._ds.actualizar("insumos", nodo["insumo_id"], unidad=unidad)
 
     def concepto_actualizar_pu(self, nodo_id: int, precio: float) -> None:
         """Actualiza P.U. solo para insumos básicos (sin APU propio)."""
-        from backend.database.repos import NodoRepo, InsumoRepo
+        from backend.database.repos import NodoRepo, InsumoRepo, RecalculoRepo
+        from backend.database.event_bus import ProyectoRecalculado
+        if precio <= 0:
+            raise ValueError("El precio debe ser mayor que cero")
         nodo = NodoRepo(self._conn).buscar(nodo_id)
         if not nodo or not nodo.get("insumo_id"):
             return
         insumo = InsumoRepo(self._conn).buscar(nodo["insumo_id"])
         if insumo and not insumo.get("es_compuesto"):
-            InsumoRepo(self._conn).actualizar_precio(nodo["insumo_id"], precio)
+            self._ds.actualizar("insumos", nodo["insumo_id"],
+                                costo_mn=precio, costo_directo=precio, costo_final=precio)
             # Recalc total de este concepto y hacia arriba
             NodoRepo(self._conn).actualizar_cantidad(
                 nodo_id, nodo.get("cantidad", 0))
+            RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
+            self._ds.emitir(ProyectoRecalculado(self._pid))
 
     def agrupador_actualizar_descripcion(self, nodo_id: int, descripcion: str) -> None:
         """Actualiza la descripción de un agrupador (capítulo)."""
-        self._conn.execute("""
-            UPDATE estructura_presupuesto SET
-                descripcion = ?, modificado_en = datetime('now')
-            WHERE id = ? AND tipo = 'capitulo'
-        """, (descripcion, nodo_id))
-        self._conn.commit()
+        self._ds.actualizar("estructura_presupuesto", nodo_id, descripcion=descripcion)
 
     def todos_concepto_ids(self) -> list[int]:
         """Devuelve los ids de todos los conceptos activos del proyecto."""
-        rows = self._conn.execute("""
-            SELECT id FROM estructura_presupuesto
-            WHERE proyecto_id = ? AND tipo = 'concepto' AND activo = 1
-        """, (self._pid,)).fetchall()
-        return [r[0] for r in rows]
+        from backend.database.repos import NodoRepo
+        return NodoRepo(self._conn).ids_por_tipo(self._pid, tipo="concepto")
 
     def conceptos_planos(self) -> list[dict]:
         """Lista plana de todos los conceptos con clave, descripción, unidad, cantidad, total."""
@@ -135,12 +189,12 @@ class Api:
             o None si no hay APU asociado.
 
         Cada fila de detalle incluye:
-            tipo_emoji, tipo_nombre, tipo_id, insumo_id, descripcion,
-            insumo_unidad, cantidad (desde valor/operador), precio,
-            importe, es_compuesto, tiene_sub_apu
+            id (pk de apu_matrices, usado como comp_id para editar
+            operador/valor), tipo_emoji, tipo_nombre, tipo_id, insumo_id,
+            descripcion, insumo_unidad, cantidad (desde valor/operador),
+            precio, importe, es_compuesto, tiene_sub_apu
         """
         from backend.database.repos  import NodoRepo, InsumoRepo, ApuMatricesRepo
-        from backend.database.core   import get_apu
 
         # 1. Resolver matriz_id
         matriz_id, descripcion = self._resolver_matriz(nodo_id=nodo_id, insumo_id=insumo_id)
@@ -148,17 +202,10 @@ class Api:
             return None
 
         # 2. Obtener detalle
-        data = get_apu(self._db_path, matriz_id)
+        data = ApuMatricesRepo(self._conn).con_detalle(matriz_id)
 
-        # 3. Fallback: APU negativo vacío → no aplica con el nuevo modelo basado en id.
-        # El resolver ya usa insumo_id directamente; si no hay detalle, no hay APU.
-
-        if not data.get("detalle"):
-            return None
-
-        # 4. Enriquecer filas
+        # 3. Enriquecer filas
         ids_con_apu = self.insumo_ids_con_apu()
-        _EMOJI = {1: "🧱", 2: "👷", 4: "🔧", 8: "🚜", 16: "⚙️", 32: "📄"}
 
         detalle = []
         for r in data["detalle"]:
@@ -168,6 +215,7 @@ class Api:
             v = r.get("valor", 0) or 0
             op = r.get("operador", "*")
             detalle.append({
+                "id":           r.get("id"),
                 "tipo_emoji":   _EMOJI.get(tid, ""),
                 "tipo_nombre":  r.get("tipo_nombre", ""),
                 "tipo_id":      tid,
@@ -190,33 +238,25 @@ class Api:
             "totales":     data.get("totales"),
         }
 
-    def insumo_es_compuesto(self, insumo_id: int) -> bool:
-        """True si el insumo con ese id es compuesto (tiene APU propio)."""
-        row = self._conn.execute("""
-            SELECT es_compuesto FROM insumos
-            WHERE id = ? AND proyecto_id = ? LIMIT 1
-        """, (insumo_id, self._pid)).fetchone()
-        return bool(row and row[0])
-
     def apu_actualizar_operador(self, comp_id: int, operador: str) -> None:
         """Actualiza el operador (* o /) de un componente APU y recalcula en cascada."""
-        from backend.database.repos import ApuMatricesRepo, RecalculoRepo
+        from backend.database.repos import RecalculoRepo
+        from backend.database.event_bus import ProyectoRecalculado
         if operador not in ('*', '/'):
             raise ValueError("Operador debe ser '*' o '/'")
-        ApuMatricesRepo(self._conn).actualizar_campo(comp_id, "operador", operador)
+        self._ds.actualizar("apu_matrices", comp_id, operador=operador)
         RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
+        self._ds.emitir(ProyectoRecalculado(self._pid))
 
     def apu_actualizar_valor(self, comp_id: int, valor: float) -> None:
-        """Actualiza la cantidad (columna Valor) de un componente APU y recalcula en cascada.
-        Es un dato propio de esa combinación matriz+insumo (cuánto se usa AHÍ),
-        no del insumo en sí — a diferencia de Precio, que sí vive en el
-        catálogo (ver apu_actualizar_precio_componente / insumo_actualizar_precio).
-        """
-        from backend.database.repos import ApuMatricesRepo, RecalculoRepo
+        """Actualiza la cantidad (columna Valor) de un componente APU y recalcula en cascada."""
+        from backend.database.repos import RecalculoRepo
+        from backend.database.event_bus import ProyectoRecalculado
         if valor is None or valor <= 0:
             raise ValueError("La cantidad debe ser mayor que cero")
-        ApuMatricesRepo(self._conn).actualizar_campo(comp_id, "valor", valor)
+        self._ds.actualizar("apu_matrices", comp_id, valor=valor)
         RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
+        self._ds.emitir(ProyectoRecalculado(self._pid))
 
     def apu_actualizar_precio_componente(self, insumo_id: int, precio: float) -> None:
         """Actualiza el Precio de un componente editado desde dentro de un APU.
@@ -233,22 +273,8 @@ class Api:
 
     def insumo_ids_con_apu(self) -> set[int]:
         """Conjunto de ids de insumos compuestos (tienen APU propio)."""
-        cur = self._conn.cursor()
-        cur.execute(
-            "SELECT id FROM insumos WHERE es_compuesto = 1 AND proyecto_id = ?",
-            (self._pid,)
-        )
-        return {r[0] for r in cur.fetchall()}
-
-    def ids_con_apu(self) -> set[int]:
-        """Conjunto de IDs de conceptos del árbol que tienen APU."""
-        cur = self._conn.cursor()
-        cur.execute("""
-            SELECT DISTINCT ep.id FROM estructura_presupuesto ep
-            JOIN apu_matrices am ON am.matriz_id = ep.id
-            WHERE ep.proyecto_id = ?
-        """, (self._pid,))
-        return {r[0] for r in cur.fetchall()}
+        from backend.database.repos import InsumoRepo
+        return InsumoRepo(self._conn).ids_con_apu(self._pid)
 
     # =========================================================================
     # INSUMOS
@@ -273,7 +299,10 @@ class Api:
         capítulos. Útil tras editar precios o cantidades a mano.
         """
         from backend.database.repos import RecalculoRepo
-        return RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
+        from backend.database.event_bus import ProyectoRecalculado
+        resultado = RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
+        self._ds.emitir(ProyectoRecalculado(self._pid))
+        return resultado
 
     def rastrear_insumo(self, insumo_id: int) -> list[dict]:
         """Devuelve las matrices (conceptos o compuestos) donde aparece un insumo.
@@ -341,43 +370,50 @@ class Api:
     ) -> None:
         """Actualiza la descripción de un insumo y regenera su hash.
 
-        Lanza ValueError si ya existe otro insumo con la misma descripción
-        normalizada en el proyecto. El mensaje incluye el id y descripción
-        del duplicado para que la UI lo muestre al usuario.
+        Verifica antes de escribir que el hash nuevo no colisione con otro
+        insumo del mismo proyecto. Si hay colisión, lanza ValueError con el
+        id y descripción del insumo existente para que la UI informe al
+        usuario. El hash es una llave de deduplicación interna, no un dato
+        de dominio con reglas de SchemaRegistry, así que se calcula aquí y
+        se envía como campo extra a DataService.actualizar().
         """
         from backend.database.repos import InsumoRepo
-        InsumoRepo(self._conn).actualizar_descripcion(
-            insumo_id, descripcion, self._pid, usuario_id
-        )
+        from backend.database.repos.base import generar_hash
+        descripcion = descripcion.strip()
+        if not descripcion:
+            raise ValueError("La descripción no puede estar vacía")
+        nuevo_hash = generar_hash(descripcion)
+        existente = InsumoRepo(self._conn).buscar_por_hash(nuevo_hash, self._pid)
+        if existente and existente["id"] != insumo_id:
+            raise ValueError(
+                f"Ya existe un insumo con esa descripción: "
+                f"[{existente['id']}] {existente['descripcion']}"
+            )
+        self._ds.actualizar("insumos", insumo_id, descripcion=descripcion, hash=nuevo_hash)
 
     def insumo_actualizar_precio(
         self, insumo_id: int, precio: float, usuario_id: int = 1
     ) -> None:
-        """Actualiza el costo_mn y costo_final de un insumo y recalcula en cascada.
-
-        Antes esto solo llamaba a NodoRepo.recalcular_por_insumo(), que únicamente
-        actualiza los conceptos que usan el insumo de forma directa (básicos).
-        Si el insumo es componente de un compuesto o de la matriz de un
-        concepto (caso normal en un APU), ese cambio de precio nunca llegaba a
-        apu_resumen_totales ni al total del concepto/capítulo en el presupuesto
-        — el precio se veía actualizado en Insumos pero no en Presupuesto.
-        Se usa el mismo recálculo completo que ya usa apu_actualizar_operador().
-        """
-        from backend.database.repos import InsumoRepo, RecalculoRepo
-        InsumoRepo(self._conn).actualizar_precio(insumo_id, precio, usuario_id)
+        """Actualiza el costo_mn y costo_final de un insumo y recalcula en cascada."""
+        from backend.database.repos import RecalculoRepo
+        from backend.database.event_bus import ProyectoRecalculado
+        if precio <= 0:
+            raise ValueError("El precio debe ser mayor que cero")
+        self._ds.actualizar("insumos", insumo_id,
+                            costo_mn=precio, costo_directo=precio, costo_final=precio)
         RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
+        self._ds.emitir(ProyectoRecalculado(self._pid))
 
     def insumo_actualizar_campo(
         self, insumo_id: int, campo: str, valor, usuario_id: int = 1
     ) -> None:
-        """Actualiza un campo simple de un insumo del catálogo.
-        Si el campo afecta el costo (costo_final), recalcula todo el proyecto
-        en cascada (ver nota en insumo_actualizar_precio).
-        """
-        from backend.database.repos import InsumoRepo, RecalculoRepo
-        InsumoRepo(self._conn).actualizar_campo(insumo_id, campo, valor, usuario_id)
+        """Actualiza un campo simple de un insumo del catálogo."""
+        from backend.database.repos import RecalculoRepo
+        from backend.database.event_bus import ProyectoRecalculado
+        self._ds.actualizar("insumos", insumo_id, **{campo: valor})
         if campo == "costo_final":
             RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
+            self._ds.emitir(ProyectoRecalculado(self._pid))
 
     def insumo_insertar(
         self,
@@ -391,21 +427,34 @@ class Api:
     ) -> int:
         """Crea un insumo nuevo desde la app (no importado).
 
-        Genera el hash automáticamente desde la descripción — es la llave
-        funcional. clave_opus queda NULL (solo se llena al importar de OPUS).
-        Lanza ValueError si ya existe un insumo con la misma descripción.
-        Devuelve el id del insumo insertado.
+        Genera el hash de deduplicación aquí, igual que
+        insumo_actualizar_descripcion(): el hash es una llave interna, no
+        un dato de dominio con reglas de SchemaRegistry, así que se calcula
+        en la fachada y se envía como campo extra a DataService.insertar().
+        Verifica colisión con otro insumo del proyecto antes de crear.
         """
         from backend.database.repos import InsumoRepo
-        return InsumoRepo(self._conn).insertar(
-            proyecto_id       = self._pid,
-            tipo_id           = tipo_id,
-            descripcion       = descripcion,
-            descripcion_corta = descripcion_corta,
-            unidad            = unidad,
-            costo             = costo,
-            es_compuesto      = es_compuesto,
-            usuario_id        = usuario_id,
+        from backend.database.repos.base import generar_hash
+        nuevo_hash = generar_hash(descripcion) if descripcion else None
+        if nuevo_hash:
+            existente = InsumoRepo(self._conn).buscar_por_hash(nuevo_hash, self._pid)
+            if existente:
+                raise ValueError(
+                    f"Ya existe un insumo con esa descripción: "
+                    f"[{existente['id']}] {existente['descripcion']}"
+                )
+        return self._ds.insertar(
+            "insumos",
+            proyecto_id=self._pid,
+            tipo_id=tipo_id,
+            descripcion=descripcion,
+            descripcion_corta=descripcion_corta,
+            unidad=unidad,
+            costo_mn=costo,
+            costo_directo=costo,
+            costo_final=costo,
+            es_compuesto=es_compuesto,
+            hash=nuevo_hash,
         )
 
     def insumo_por_id(self, insumo_id: int) -> dict | None:
@@ -426,19 +475,43 @@ class Api:
             return []
         return sorted(p.stem for p in carpeta.glob("*.db"))
 
-    @staticmethod
-    def abrir_carpeta_proyectos():
-        """Abre la carpeta de proyectos en el explorador del sistema."""
-        from backend.database.db import Rutas
-        import subprocess, sys
-        carpeta = Rutas.proyectos()
-        carpeta.mkdir(parents=True, exist_ok=True)
-        if sys.platform == "win32":
-            subprocess.Popen(["explorer", str(carpeta)])
-        elif sys.platform == "darwin":
-            subprocess.Popen(["open", str(carpeta)])
-        else:
-            subprocess.Popen(["xdg-open", str(carpeta)])
+    # =========================================================================
+    # FACTORES DE SOBRECOSTO
+    # =========================================================================
+
+    def factores_sobrecosto_obtener(self) -> dict:
+        """Devuelve los factores de sobrecosto del proyecto o dict vacío."""
+        from backend.database.repos import FactoresSobrecostoRepo
+        return FactoresSobrecostoRepo(self._conn).obtener(self._pid) or {}
+
+    def factores_sobrecosto_calcular(
+        self, pct_indirectos_campo=0, pct_indirectos_oficina=0,
+        pct_financiamiento=0, pct_utilidad=0, pct_cargos_adicionales=0,
+    ) -> float:
+        """Calcula el factor_total sin persistir."""
+        from backend.database.repos import FactoresSobrecostoRepo
+        return FactoresSobrecostoRepo._calcular_factor(
+            pct_indirectos_campo, pct_indirectos_oficina,
+            pct_financiamiento, pct_utilidad, pct_cargos_adicionales,
+        )
+
+    def factores_sobrecosto_guardar(self, valores: dict) -> float:
+        """Guarda los factores, calcula factor_total y recalcula en cascada.
+        Devuelve el factor_total calculado.
+
+        No pasa por DataService.actualizar() porque factor_total es un
+        campo calculado por el propio repo antes de persistir (no encaja
+        en el genérico columna=valor). Se usa DataService solo para emitir
+        el evento semántico, vía el método `emitir()` documentado para
+        este caso en ARQUITECTURA_SERVICIOS.md.
+        """
+        from backend.database.repos import FactoresSobrecostoRepo, RecalculoRepo
+        from backend.database.event_bus import FactoresSobrecostoActualizados, ProyectoRecalculado
+        factor = FactoresSobrecostoRepo(self._conn).guardar(self._pid, **valores)
+        self._ds.emitir(FactoresSobrecostoActualizados(self._pid, valores))
+        RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
+        self._ds.emitir(ProyectoRecalculado(self._pid))
+        return factor
 
     # =========================================================================
     # HELPERS INTERNOS
@@ -459,11 +532,19 @@ class Api:
 
         if nodo_id is not None:
             nodo = NodoRepo(self._conn).buscar(nodo_id)
-            if nodo and nodo.get("proyecto_id") == self._pid:
-                matriz_id   = nodo["id"]
-                descripcion = nodo.get("descripcion") or ""
-                if ApuMatricesRepo(self._conn).por_matriz(matriz_id):
-                    return matriz_id, descripcion
+            if not nodo or nodo.get("proyecto_id") != self._pid:
+                return None, ""
+            insumo_id_nodo = nodo.get("insumo_id")
+            if insumo_id_nodo:
+                insumo = InsumoRepo(self._conn).buscar(insumo_id_nodo)
+                if insumo and insumo.get("es_compuesto"):
+                    neg_id = -insumo["id"]
+                    if ApuMatricesRepo(self._conn).por_matriz(neg_id):
+                        return neg_id, nodo.get("descripcion") or ""
+            matriz_id   = nodo["id"]
+            descripcion = nodo.get("descripcion") or ""
+            if ApuMatricesRepo(self._conn).por_matriz(matriz_id):
+                return matriz_id, descripcion
             return None, ""
 
         if insumo_id is not None:
@@ -475,3 +556,55 @@ class Api:
             return None, ""
 
         return None, ""
+
+    def unificar_matrices_apu(self) -> int:
+        """Una sola matriz por APU (Fase de migración).
+
+        La importación OPUS creaba DOS matrices para el mismo desglose:
+        una para el concepto (matriz_id positivo) y otra para el insumo
+        compuesto (matriz_id negativo). Esto causaba desfase de costos.
+
+        Esta migra: para cada concepto con insumo compuesto que tenga
+        matriz propia, redirige los componentes a la matriz del insumo
+        compuesto y borra la matriz duplicada. Devuelve el número de
+        conceptos migrados.
+        """
+        cur = self._conn.cursor()
+        rows = cur.execute("""
+            SELECT e.id AS cid, e.insumo_id
+            FROM estructura_presupuesto e
+            JOIN insumos i ON i.id = e.insumo_id
+            WHERE e.proyecto_id = ? AND e.tipo = 'concepto' AND e.activo = 1
+              AND i.es_compuesto = 1
+        """, (self._pid,)).fetchall()
+
+        migrados = 0
+        for row in rows:
+            cid  = row["cid"]
+            iid  = row["insumo_id"]
+            neg  = -iid
+
+            n_conc = cur.execute(
+                "SELECT COUNT(*) AS c FROM apu_matrices WHERE matriz_id = ?",
+                (cid,),
+            ).fetchone()["c"]
+            if n_conc == 0:
+                continue
+
+            n_comp = cur.execute(
+                "SELECT COUNT(*) AS c FROM apu_matrices WHERE matriz_id = ?",
+                (neg,),
+            ).fetchone()["c"]
+
+            if n_comp == 0:
+                cur.execute(
+                    "UPDATE apu_matrices SET matriz_id = ? WHERE matriz_id = ?",
+                    (neg, cid),
+                )
+            else:
+                cur.execute("DELETE FROM apu_matrices WHERE matriz_id = ?", (cid,))
+            migrados += 1
+
+        if migrados:
+            self._conn.commit()
+        return migrados

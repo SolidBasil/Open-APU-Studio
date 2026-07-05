@@ -7,13 +7,12 @@ Uso:
     from frontend.widgets.arbol import TablaArbol
 """
 
-from PySide6.QtCore import Qt, QByteArray
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QBrush, QFont, QIcon, QPixmap, QPainter
 from PySide6.QtCore import QRect
 from PySide6.QtWidgets import QHeaderView
 
 from frontend.ventana.widgets.base import TreeTableWidget
-from backend.database.db import Config
 
 
 # ── Icono desde emoji ───────────────────────────────────────────
@@ -33,9 +32,10 @@ def _emoji_icon(char, size=20):
 
 WBS_ROLE       = Qt.ItemDataRole.UserRole
 ID_ROLE        = Qt.ItemDataRole.UserRole + 1   # id de estructura_presupuesto
-INSUMO_ID_ROLE = Qt.ItemDataRole.UserRole + 11  # insumo_id del insumo vinculado
 TIPO_ROLE      = Qt.ItemDataRole.UserRole + 12  # 'capitulo' | 'concepto', seteado explícitamente
                                                  # al crear la fila (NO se infiere leyendo texto)
+INSUMO_ROLE    = Qt.ItemDataRole.UserRole + 13  # insumo_id ligado (solo conceptos), para
+                                                 # localizar filas afectadas por InsumoActualizado
 
 # ── Configuración de columnas ─────────────────────────────────────
 
@@ -118,6 +118,8 @@ class TablaArbol(TreeTableWidget):
     El estado del header (anchos, visibilidad) persiste entre sesiones.
     """
     _HEADER_KEY = "arbol_header_state"
+    rastrear_insumo = Signal(int)
+    desglozar_nodo = Signal(int)
 
     def __init__(self, parent=None):
         """Inicializa el árbol de presupuesto con columnas fijas, modo de columnas, búsqueda y restauración del header."""
@@ -134,24 +136,27 @@ class TablaArbol(TreeTableWidget):
             if c not in _VISIBLE:
                 self.setColumnHidden(c, True)
         self._search_cols = {4}  # búsqueda por Descripción
+        self._api = None  # inyectado por conectar_eventos()
+        self._event_bus = None  # inyectado por conectar_eventos()
 
+    def _context_menu_actions(self, menu):
+        from frontend.ventana.widgets.base import _menu_icon
+        item = self.currentItem()
+        if not item:
+            return
+        tipo = item.data(0, TIPO_ROLE)
+        if tipo != "concepto":
+            return
+        insumo_id = item.data(0, INSUMO_ROLE)
+        nodo_id = item.data(0, ID_ROLE)
+        menu.addSeparator()
+        if insumo_id:
+            act = menu.addAction(_menu_icon("🔍"), "Rastrear uso")
+            act.triggered.connect(lambda: self.rastrear_insumo.emit(insumo_id))
+        if nodo_id:
+            act = menu.addAction(_menu_icon("🔗"), "Desglozar")
+            act.triggered.connect(lambda: self.desglozar_nodo.emit(nodo_id))
 
-
-    def _header_context_menu(self, pos):
-        """Extiende menú contextual de cabecera del padre y persiste estado tras cambios."""
-        super()._header_context_menu(pos)
-        self._save_header_state()
-
-    def _save_header_state(self):
-        """Guarda estado del header (anchos, visibilidad) en config.json como base64."""
-        raw = self.header().saveState()
-        Config.set(self._HEADER_KEY, raw.toBase64().data().decode("ascii"))
-
-    def _restore_header_state(self):
-        """Restaura estado guardado del header desde config.json si existe."""
-        saved = Config.get(self._HEADER_KEY)
-        if saved:
-            self.header().restoreState(QByteArray.fromBase64(saved.encode("ascii")))
 
     # ── Helpers de WBS ────────────────────────────────────────────
 
@@ -232,15 +237,15 @@ class TablaArbol(TreeTableWidget):
         data = self._celdas(n, "")
         item = self.add_row(data, parent, editable=True)
         item.setData(0, ID_ROLE, n.get("id"))
-        item.setData(0, INSUMO_ID_ROLE, n.get("insumo_id"))
         item.setData(0, TIPO_ROLE, "concepto")
+        item.setData(0, INSUMO_ROLE, n.get("insumo_id"))
         item.setIcon(0, _emoji_icon("\U0001F4C4", 20))  # 📄 leaf
         return item
 
     # ── Poblado del árbol ─────────────────────────────────────────
 
     def poblar(self, nodos_raiz: list[dict]):
-        """Puebla el árbol completo desde lista de nodos raíz devuelta por core.build_budget_tree()."""
+        """Puebla el árbol completo desde lista de nodos raíz devuelta por NodoRepo.arbol()."""
         self.clear()
         self._poblar_nodos(nodos_raiz, None)
 
@@ -255,3 +260,167 @@ class TablaArbol(TreeTableWidget):
                 self._poblar_nodos(n.get("hijos", []), item)
             else:
                 self.add_registro(n, parent=parent)
+
+    # ── Fase 3: suscripción a eventos semánticos ───────────────────
+    #
+    # Reemplaza a la vieja _refrescar_tab_activa() centralizada: el propio
+    # widget se suscribe al EventBus del proyecto abierto y decide cómo
+    # reaccionar a cada evento. Ediciones que no cambian totales (descripción,
+    # unidad) se resuelven fila por fila, in-place. Ediciones que sí cambian
+    # totales (cantidad, precio, factores) disparan una cascada que puede
+    # tocar un número arbitrario de nodos ancestro — para esas, ProyectoRecalculado
+    # es la señal de "repuebla desde la fuente de verdad", que aquí se
+    # implementa preservando scroll y selección.
+
+    def conectar_eventos(self, event_bus, api):
+        """Suscribe este árbol al EventBus del proyecto abierto.
+
+        Debe llamarse una sola vez, justo después de poblar(), con el
+        EventBus y el Api vigentes en ese momento (ver _build_presupuesto()
+        en paneles.py). Como cada apertura de proyecto crea un EventBus
+        nuevo, este árbol se reconstruye desde cero en cada apertura y por
+        lo tanto siempre queda enganchado al bus correcto.
+
+        IMPORTANTE: quien remueva este widget de una pestaña (removeTab,
+        reemplazo por pestaña temporal del sidebar, etc.) DEBE llamar a
+        desconectar_eventos() antes — si no, el widget queda "zombi":
+        sigue registrado en el bus con su objeto Qt ya destruido, y la
+        próxima emisión de evento revienta con
+        RuntimeError: libshiboken...already deleted.
+        """
+        from backend.database.event_bus import (
+            ConceptoActualizado, InsumoActualizado, ProyectoRecalculado,
+        )
+        self._api = api
+        self._event_bus = event_bus
+        event_bus.suscribir(ConceptoActualizado, self._on_concepto_actualizado)
+        event_bus.suscribir(InsumoActualizado, self._on_insumo_actualizado)
+        event_bus.suscribir(ProyectoRecalculado, self._on_proyecto_recalculado)
+
+    def desconectar_eventos(self):
+        """Retira las suscripciones hechas por conectar_eventos().
+
+        Llamar SIEMPRE antes de quitar este widget de su pestaña (ver
+        HandlersMixin._cerrar_tab_widget() en handlers/__init__.py).
+        Idempotente: no falla si nunca se conectó o ya se desconectó.
+        """
+        bus = getattr(self, '_event_bus', None)
+        if bus is None:
+            return
+        from backend.database.event_bus import (
+            ConceptoActualizado, InsumoActualizado, ProyectoRecalculado,
+        )
+        bus.desuscribir(ConceptoActualizado, self._on_concepto_actualizado)
+        bus.desuscribir(InsumoActualizado, self._on_insumo_actualizado)
+        bus.desuscribir(ProyectoRecalculado, self._on_proyecto_recalculado)
+        self._event_bus = None
+
+    def _buscar_item_por_id(self, nodo_id: int):
+        """Búsqueda recursiva de la fila cuyo ID_ROLE == nodo_id."""
+        def _rec(item):
+            for i in range(item.childCount()):
+                hijo = item.child(i)
+                if hijo.data(0, ID_ROLE) == nodo_id:
+                    return hijo
+                encontrado = _rec(hijo)
+                if encontrado is not None:
+                    return encontrado
+            return None
+        for i in range(self.topLevelItemCount()):
+            top = self.topLevelItem(i)
+            if top.data(0, ID_ROLE) == nodo_id:
+                return top
+            encontrado = _rec(top)
+            if encontrado is not None:
+                return encontrado
+        return None
+
+    def _buscar_items_por_insumo(self, insumo_id: int) -> list:
+        """Búsqueda recursiva de todas las filas cuyo INSUMO_ROLE == insumo_id
+        (un mismo insumo puede aparecer en varios conceptos del árbol)."""
+        encontrados = []
+        def _rec(item):
+            for i in range(item.childCount()):
+                hijo = item.child(i)
+                if hijo.data(0, INSUMO_ROLE) == insumo_id:
+                    encontrados.append(hijo)
+                _rec(hijo)
+        for i in range(self.topLevelItemCount()):
+            top = self.topLevelItem(i)
+            if top.data(0, INSUMO_ROLE) == insumo_id:
+                encontrados.append(top)
+            _rec(top)
+        return encontrados
+
+    def _on_concepto_actualizado(self, evento):
+        """ConceptoActualizado: actualiza in-place la fila propia del nodo.
+
+        Cubre descripción de agrupadores (el único campo de
+        estructura_presupuesto editable directamente desde la UI que no
+        depende del insumo ligado). El total mostrado aquí puede quedar
+        momentáneamente desactualizado si el cambio también dispara una
+        cascada — el ProyectoRecalculado que le sigue lo deja consistente.
+        """
+        item = self._buscar_item_por_id(evento.concepto_id)
+        if item is None:
+            return
+        registro = evento.registro or {}
+        if "descripcion" in evento.cambios:
+            item.setText(4, registro.get("descripcion", "") or "")
+        if "cantidad" in evento.cambios:
+            item.setText(6, _num(registro.get("cantidad")))
+        if "total" in registro:
+            item.setText(8, _fmt(registro.get("total")))
+
+    def _on_insumo_actualizado(self, evento):
+        """InsumoActualizado: actualiza in-place todas las filas de concepto
+        ligadas a este insumo (descripción, unidad, P.U.).
+
+        El Total no se recalcula aquí: cambiar el precio de un insumo
+        siempre dispara RecalculoRepo.recalcular_proyecto() en api.py, que
+        emite ProyectoRecalculado a continuación con los totales correctos.
+        """
+        items = self._buscar_items_por_insumo(evento.insumo_id)
+        if not items:
+            return
+        registro = evento.registro or {}
+        for item in items:
+            if "descripcion" in evento.cambios:
+                item.setText(4, registro.get("descripcion", "") or "")
+            if "unidad" in evento.cambios:
+                item.setText(5, registro.get("unidad", "") or "")
+            if any(c in evento.cambios for c in ("costo_final", "costo_mn", "costo_directo")):
+                item.setText(7, _fmt(registro.get("costo_final")))
+
+    def _on_proyecto_recalculado(self, evento):
+        """ProyectoRecalculado: repuebla desde la fuente de verdad.
+
+        Una cascada de recálculo puede alterar el total de un número
+        arbitrario de conceptos y capítulos ancestro — no hay forma barata
+        de saber cuáles sin repetir el propio cálculo del backend. Repoblar
+        preservando scroll y selección es el equivalente in-place razonable
+        para este caso (igual a lo que hacía _refrescar_tab_activa(), pero
+        ahora decidido por el propio widget, no por un router central).
+        """
+        if self._api is None:
+            return
+        scroll_y = self.verticalScrollBar().value()
+        current = self.currentItem()
+        id_actual = current.data(0, ID_ROLE) if current else None
+
+        self.blockSignals(True)
+        try:
+            nodos = self._api.presupuesto_arbol()
+            self.poblar(nodos)
+        finally:
+            self.blockSignals(False)
+
+        self.verticalScrollBar().setValue(scroll_y)
+        if id_actual is not None:
+            item = self._buscar_item_por_id(id_actual)
+            if item is not None:
+                self.setCurrentItem(item)
+
+        win = self.window()
+        if hasattr(win, '_search_input') and hasattr(win, '_on_search'):
+            win._on_search(win._search_input.text())

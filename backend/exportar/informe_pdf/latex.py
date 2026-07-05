@@ -12,18 +12,12 @@ API alternativa desde DB
 ------------------------
     reporte  = ReportePresupuesto.desde_db(conn, proyecto_id=1)
     pdf_path = reporte.exportar()
-
-API funcional
--------------
-    pdf_bytes = generar_presupuesto(datos)
-    guardar_presupuesto(datos, "salida/presupuesto.pdf")
 """
 
 from __future__ import annotations
 
 import re
 import subprocess
-import tempfile
 from datetime import date
 from pathlib import Path
 
@@ -327,33 +321,6 @@ def compilar_pdf(tex_path: str | Path) -> str | None:
     return str(pdf) if pdf.exists() else None
 
 
-def _compilar_fuente(tex_source: str) -> bytes:
-    """Compila código LaTeX en memoria y devuelve bytes del PDF."""
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp_path = Path(tmp)
-        tex_file = tmp_path / "presupuesto.tex"
-        tex_file.write_text(tex_source, encoding="utf-8")
-
-        for _ in range(2):
-            result = subprocess.run(
-                ["pdflatex", "-interaction=nonstopmode", "-halt-on-error",
-                 str(tex_file)],
-                cwd=tmp_path,
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode != 0:
-                raise RuntimeError(
-                    f"pdflatex falló (código {result.returncode}):\n"
-                    + result.stdout[-3000:]
-                )
-
-        pdf_file = tmp_path / "presupuesto.pdf"
-        if not pdf_file.exists():
-            raise FileNotFoundError("pdflatex no generó el PDF esperado.")
-        return pdf_file.read_bytes()
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Clase principal
 # ─────────────────────────────────────────────────────────────────────────────
@@ -494,48 +461,3 @@ class ReportePresupuesto:
 
         pdf = compilar_pdf(tex_path)
         return pdf if pdf else str(tex_path)
-
-    def compilar(self, tex_path: str | Path) -> str | None:
-        """Compila un .tex existente a PDF."""
-        return compilar_pdf(tex_path)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# API funcional
-# ─────────────────────────────────────────────────────────────────────────────
-
-def generar_presupuesto(
-    datos: dict,
-    plantilla_path: str | Path | None = None,
-) -> bytes:
-    """Genera PDF desde un dict de datos y devuelve sus bytes."""
-    template = (
-        Path(plantilla_path).read_text(encoding="utf-8")
-        if plantilla_path else _cargar_plantilla()
-    )
-    return _compilar_fuente(_render_template(template, datos))
-
-
-def guardar_presupuesto(
-    datos: dict,
-    destino: str | Path,
-    plantilla_path: str | Path | None = None,
-) -> Path:
-    """Genera el PDF y lo guarda en `destino`. Retorna el Path escrito."""
-    pdf_bytes = generar_presupuesto(datos, plantilla_path=plantilla_path)
-    dest = Path(destino)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_bytes(pdf_bytes)
-    return dest
-
-
-def renderizar_tex(
-    datos: dict,
-    plantilla_path: str | Path | None = None,
-) -> str:
-    """Devuelve el .tex renderizado sin compilar. Útil para depuración."""
-    template = (
-        Path(plantilla_path).read_text(encoding="utf-8")
-        if plantilla_path else _cargar_plantilla()
-    )
-    return _render_template(template, datos)

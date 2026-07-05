@@ -18,23 +18,16 @@ from backend.database.event_bus import (
     InsumoActualizado, ConceptoActualizado, ApuComponenteActualizado,
     FactoresSobrecostoActualizados, NodoInsertado, NodoEliminado,
 )
-from backend.database.schema_registry import SchemaRegistry, ValidationError
+from backend.database.schema_registry import SchemaRegistry
+from backend.database.exceptions import (
+    DataServiceError, ValidationError, RepositoryError,
+    ConflictError,  # noqa: F401 — no se lanza aún internamente (reservado
+                    # para control de concurrencia optimista, ver exceptions.py)
+)
 
 if TYPE_CHECKING:
     from backend.database.db import Database
     from backend.database.services.repository_registry import RepositoryRegistry
-
-
-class DataServiceError(Exception):
-    """Base para errores del servicio de datos."""
-
-
-class RepositoryError(DataServiceError):
-    """Error en operación de repositorio."""
-
-
-class ConflictError(DataServiceError):
-    """Conflicto de concurrencia."""
 
 
 # Mapa de entidad → clase de evento para operaciones de actualización
@@ -123,6 +116,20 @@ class DataService:
             raise RepositoryError(str(e)) from e
 
         self._event_bus.emit(NodoEliminado(registro_id, entidad))
+
+    # ── Emisión manual (operaciones masivas / campos calculados) ─────
+
+    def emitir(self, evento: Evento) -> None:
+        """Emite un evento ya construido por el caller.
+
+        Uso: operaciones que no encajan en actualizar/insertar/eliminar
+        genéricos (ej. factores_sobrecosto, donde el propio repo calcula
+        `factor_total` antes de persistir). El caller sigue siendo
+        responsable de su propia transacción/commit; esto solo evita que
+        el código externo tenga que tocar el EventBus interno de la
+        instancia directamente.
+        """
+        self._event_bus.emit(evento)
 
     # ── Helpers internos ────────────────────────────────────────────
 

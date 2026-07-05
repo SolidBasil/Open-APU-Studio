@@ -430,11 +430,11 @@ y un método `update(registro_id, campos)`.
 **Ver:** `docs/ARQUITECTURA_SERVICIOS.md`
 
 ### SVC-02 — EventBus con eventos semánticos
-**Estado:** ✓ Decidido (pendiente de implementar)
+**Estado:** ✓ Implementado (Fase 3 completa, ver ARQUITECTURA_SERVICIOS.md §7)
 
 **Contexto:**
-Los widgets recargan toda la UI tras cada edición (`_refrescar_tab_activa`).
-No hay notificación de cambios entre módulos.
+Los widgets recargaban toda la UI tras cada edición (`_refrescar_tab_activa`,
+ya eliminado). No había notificación de cambios entre módulos.
 
 **Opciones consideradas:**
 - Qt signals embebidos en repos

@@ -56,6 +56,7 @@ BLOQUE 7 — APU
                           con matriz_id único
   apu_resumen_totales     Subtotales APU por tipo (actualizados por Python)
                           (antiguos auxiliares se almacenan en insumos con es_compuesto=1)
+  variables_formula       Variables para fórmulas (dimensiones, cantidades)
 
 BLOQUE 8 — Colaboración
   notas               Comentarios por nodo, con autor y estado (abierta/resuelta)
@@ -63,6 +64,9 @@ BLOQUE 8 — Colaboración
 
 BLOQUE 9 — Control de esquema
   schema_version      Registro de migraciones aplicadas
+
+BLOQUE 10 — FSR (Factor de Salario Real)
+  factores_fsr        Configuración FSR por categoría (factor, anio, semestre)
 ```
 
 ---
@@ -210,9 +214,8 @@ debe filtrar `WHERE activo = 1`**, excepto las de auditoría/historial.
 
 ## Migraciones aplicadas
 
-Las migraciones se gestionan en `backend/db.py` (no hay carpeta de migraciones separada).
-El schema completo vive en `backend/schema.sql`. Las migraciones v2→v3 se aplican
-automáticamente vía `ALTER TABLE` en `Database._aplicar_schema()`.
+No hay sistema de migraciones automáticas. El esquema completo vive en `backend/schema.sql`.
+Los cambios se aplican directamente al archivo. Los proyectos viejos se consideran incompatibles.
 
 | Versión | Cambios clave |
 |---|---|---|
@@ -220,9 +223,10 @@ automáticamente vía `ALTER TABLE` en `Database._aplicar_schema()`.
 | 2 | Renombres (`nodos`→`estructura_presupuesto`, etc.), eliminar tablas no usadas (roles, estados_nodo, tipos_* extra), agregar subfamilias, tipo trabajo/flete, estado como entero |
 | 3 | `concepto_id` + `insumo_compuesto_id` → `matriz_id` único, `es_compuesto` por presencia en `*F.DBF` |
 | 4 | `apu_matrices.cantidad`+`rendimiento` → `valor`+`operador`; `importe` pasa de GENERATED a REAL; columnas eliminadas de `insumos`: `rendimiento`, `cantidad`, `costo_base`, `es_basico`, `marca`, `pais_origen`; se agrega `insumos.costo_directo` |
+| 5 | Se agregan tablas `factores_fsr` y `variables_formula`; se agrega `insumos.hash`, `insumos.clave_opus`, `insumos.clave_usuario` |
 
-**Regla:** nunca modificar `schema.sql` en formas que rompan migraciones existentes.
-Todos los cambios futuros van como migraciones en `db.py`.
+**Regla:** durante la beta, cualquier cambio en `schema.sql` rompe proyectos anteriores.
+No se escriben migraciones automáticas.
 
 ---
 
@@ -290,5 +294,5 @@ ORDER BY n.wbs;
 ```
 
 ```
-Actualizado: 2026-07-01 (hora local)
+Actualizado: 2026-07-03 (hora local)
 ```

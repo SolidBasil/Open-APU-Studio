@@ -43,6 +43,7 @@ class TablaInsumos(TreeTableWidget):
     """Tabla plana del catálogo de insumos (sin jerarquía)."""
     _HEADER_KEY = "insumos_header_state"
     rastrear_insumo = Signal(int)
+    desglozar_insumo = Signal(int)
 
     def __init__(self, parent=None):
         super().__init__(COLUMNAS, EDITABLE, flat=True, parent=parent)
@@ -59,17 +60,27 @@ class TablaInsumos(TreeTableWidget):
         self._event_bus = None  # inyectado por conectar_eventos()
 
     def _context_menu_actions(self, menu):
+        from frontend.ventana.widgets.base import _menu_icon
         items = self.selectedItems()
         if len(items) == 1:
-            insumo_id = items[0].data(0, Qt.ItemDataRole.UserRole)
-            act_rastrear = menu.addAction("\U0001f50d Rastrear uso")
+            item = items[0]
+            insumo_id = item.data(0, Qt.ItemDataRole.UserRole)
+            act_rastrear = menu.addAction(_menu_icon("🔍"), "Rastrear uso")
             act_rastrear.setEnabled(bool(insumo_id))
-            act_rastrear.triggered.connect(lambda: self._emit_rastrear(items[0]))
+            act_rastrear.triggered.connect(lambda: self._emit_rastrear(item))
+            desc = item.text(1) or ""
+            if desc.startswith("▶"):
+                act = menu.addAction(_menu_icon("🔗"), "Desglozar")
+                act.triggered.connect(lambda: self._emit_desglozar(insumo_id))
 
     def _emit_rastrear(self, item):
         insumo_id = item.data(0, Qt.ItemDataRole.UserRole)
         if insumo_id:
             self.rastrear_insumo.emit(insumo_id)
+
+    def _emit_desglozar(self, insumo_id):
+        if insumo_id:
+            self.desglozar_insumo.emit(insumo_id)
 
     @staticmethod
     def _valores_fila(ins: dict, tiene_sub_apu: bool) -> list[str]:
