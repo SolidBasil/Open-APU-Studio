@@ -210,6 +210,7 @@ class ApuMixin:
                 self._api.apu_actualizar_valor(comp_id, valor)
             except ValueError as e:
                 QMessageBox.warning(self, "Cantidad inválida", str(e))
+                self._revertir_item(item, column, "apu_matrices", comp_id, "valor", ":,.8f")
             return
 
         if column == 4:
@@ -221,7 +222,11 @@ class ApuMixin:
                 precio = float(texto)
             except ValueError:
                 return
-            self._api.apu_actualizar_precio_componente(insumo_id, precio)
+            try:
+                self._api.apu_actualizar_precio_componente(insumo_id, precio)
+            except ValueError as e:
+                QMessageBox.warning(self, "Precio inválido", str(e))
+                self._revertir_item(item, column, "insumos", insumo_id, "costo_mn", "$:,.2f")
 
     def _on_item_dblclick(self, item, column):
         """Doble clic en presupuesto/insumos → abre APU del concepto."""
@@ -283,6 +288,21 @@ class ApuMixin:
         elif column == 5:
             if tipo == "Concepto":
                 self._api.concepto_actualizar_unidad(nodo_id, item.text(column))
+
+    def _revertir_item(self, item, column: int, tabla: str, reg_id: int, campo: str, fmt: str):
+        """Revierte el texto de un item al valor real de la DB tras error de validación."""
+        tw = item.treeWidget()
+        if not tw:
+            return
+        tw.blockSignals(True)
+        row = self._api._conn.execute(
+            f"SELECT {campo} FROM {tabla} WHERE id=?", (reg_id,)
+        ).fetchone()
+        if row:
+            val = row[0] or 0
+            txt = f"${val:,.2f}" if "$" in fmt else f"{val:,.8f}".rstrip("0").rstrip(".")
+            item.setText(column, txt)
+        tw.blockSignals(False)
 
     @staticmethod
     def _es_pu(item, column) -> bool:
