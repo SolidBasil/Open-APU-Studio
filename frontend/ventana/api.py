@@ -142,8 +142,8 @@ class Api:
         """Actualiza P.U. solo para insumos básicos (sin APU propio)."""
         from backend.database.repos import NodoRepo, InsumoRepo, RecalculoRepo
         from backend.database.event_bus import ProyectoRecalculado
-        if precio <= 0:
-            raise ValueError("El precio debe ser mayor que cero")
+        if precio < 0:
+            raise ValueError("El precio no puede ser negativo")
         nodo = NodoRepo(self._conn).buscar(nodo_id)
         if not nodo or not nodo.get("insumo_id"):
             return
@@ -252,8 +252,8 @@ class Api:
         """Actualiza la cantidad (columna Valor) de un componente APU y recalcula en cascada."""
         from backend.database.repos import RecalculoRepo
         from backend.database.event_bus import ProyectoRecalculado
-        if valor is None or valor <= 0:
-            raise ValueError("La cantidad debe ser mayor que cero")
+        if valor is None or valor < 0:
+            raise ValueError("La cantidad no puede ser negativa")
         self._ds.actualizar("apu_matrices", comp_id, valor=valor)
         RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
         self._ds.emitir(ProyectoRecalculado(self._pid))
@@ -397,8 +397,8 @@ class Api:
         """Actualiza el costo_mn y costo_final de un insumo y recalcula en cascada."""
         from backend.database.repos import RecalculoRepo
         from backend.database.event_bus import ProyectoRecalculado
-        if precio <= 0:
-            raise ValueError("El precio debe ser mayor que cero")
+        if precio < 0:
+            raise ValueError("El precio no puede ser negativo")
         self._ds.actualizar("insumos", insumo_id,
                             costo_mn=precio, costo_directo=precio, costo_final=precio)
         RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
