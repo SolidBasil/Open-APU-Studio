@@ -129,10 +129,12 @@ class _Delegate(QStyledItemDelegate):
     Si no se pasa, se usa el set estático `editable_cols` para todas las filas.
     """
 
-    def __init__(self, parent, editable_cols, editable_cols_fn=None):
+    def __init__(self, parent, editable_cols, editable_cols_fn=None, column_editors=None):
         super().__init__(parent)
         self._editable_cols = editable_cols
         self._editable_cols_fn = editable_cols_fn
+        # ponytail: column_editors = {col: callable(parent) -> QWidget}
+        self._column_editors = column_editors or {}
 
     def _cols_for_item(self, item) -> set[int]:
         """Devuelve el set de columnas editables para un item concreto."""
@@ -148,26 +150,39 @@ class _Delegate(QStyledItemDelegate):
 
     def createEditor(self, parent, option, index):
         """Crea editor solo si la celda es editable para ese tipo de nodo."""
-        if self._es_editable(index):
-            editor = super().createEditor(parent, option, index)
-            if editor:
-                # Seleccionar todo el texto al abrir el editor (como Excel)
-                from PySide6.QtWidgets import QLineEdit
-                if isinstance(editor, QLineEdit):
-                    editor.selectAll()
-            return editor
-        return None
+        if not self._es_editable(index):
+            return None
+        col = index.column()
+        if col in self._column_editors:
+            return self._column_editors[col](parent)
+        editor = super().createEditor(parent, option, index)
+        if editor:
+            from PySide6.QtWidgets import QLineEdit
+            if isinstance(editor, QLineEdit):
+                editor.selectAll()
+        return editor
 
     def setEditorData(self, editor, index):
-        """Limpia el formato ($, comas) para editar el valor numérico en bruto."""
-        from PySide6.QtWidgets import QLineEdit
-        if isinstance(editor, QLineEdit):
+        """Limpia formato para QLineEdit; selecciona valor actual para QComboBox."""
+        from PySide6.QtWidgets import QLineEdit, QComboBox
+        if isinstance(editor, QComboBox):
             texto = index.data(Qt.ItemDataRole.DisplayRole) or ""
-            # Quitar prefijo $ y separadores de miles para editar número limpio
+            idx = editor.findText(texto.strip())
+            editor.setCurrentIndex(idx if idx >= 0 else 0)
+        elif isinstance(editor, QLineEdit):
+            texto = index.data(Qt.ItemDataRole.DisplayRole) or ""
             texto = texto.replace("$", "").replace(",", "").strip()
             editor.setText(texto)
         else:
             super().setEditorData(editor, index)
+
+    def setModelData(self, editor, model, index):
+        """Escribe el valor del QComboBox al modelo."""
+        from PySide6.QtWidgets import QComboBox
+        if isinstance(editor, QComboBox):
+            model.setData(index, editor.currentText(), Qt.ItemDataRole.EditRole)
+        else:
+            super().setModelData(editor, model, index)
 
     def commitAndMove(self, editor, hint):
         """Confirma el editor y mueve el foco a la siguiente celda editable."""
@@ -225,12 +240,15 @@ class TreeTableWidget(QTreeWidget):
     # ── Constructor ───────────────────────────────────────────────
 
     def __init__(self, columns, editable_cols=frozenset(), flat=False,
-                 line_color=None, parent=None, editable_cols_fn=None):
+                 line_color=None, parent=None, editable_cols_fn=None,
+                 column_editors=None):
         """Inicializa QTreeWidget con columnas, editabilidad, modo plano/jerárquico y cabecera.
 
         editable_cols_fn: función opcional `item -> set[int]` para tablas donde
         las columnas editables dependen del tipo de fila (ver arbol.py). Si no
         se pasa, editable_cols aplica igual a todas las filas.
+        column_editors: dict `{col: callable(parent) -> QWidget}` para dropdowns
+        u otros editores custom en columnas específicas.
         """
         super().__init__(parent)
         self._flat          = flat
@@ -254,7 +272,7 @@ class TreeTableWidget(QTreeWidget):
             | QAbstractItemView.EditTrigger.AnyKeyPressed   # cualquier tecla alfanumérica
             | QAbstractItemView.EditTrigger.DoubleClicked   # doble clic
         )
-        self.setItemDelegate(_Delegate(self, editable_cols, editable_cols_fn))
+        self.setItemDelegate(_Delegate(self, editable_cols, editable_cols_fn, column_editors))
 
         h = self.header()
         h.setStretchLastSection(False)

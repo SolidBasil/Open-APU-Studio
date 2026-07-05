@@ -43,14 +43,33 @@ class ApuMixin:
 
         def _editable_cols_detalle(item):
             if item.data(0, Qt.ItemDataRole.UserRole + 1):
-                return {5, 6}
-            return {4, 5, 6}
+                return {3, 5, 6}
+            return {3, 4, 5, 6}
+
+        def _combo_operador(parent):
+            from PySide6.QtWidgets import QComboBox
+            combo = QComboBox(parent)
+            combo.addItems(["*", "/"])
+            combo.setEditable(False)
+            return combo
+
+        def _combo_unidad(parent):
+            from PySide6.QtWidgets import QComboBox
+            combo = QComboBox(parent)
+            combo.setEditable(True)
+            if self._api:
+                cur = self._api._conn.execute(
+                    "SELECT DISTINCT unidad FROM insumos WHERE unidad IS NOT NULL AND unidad != '' ORDER BY unidad"
+                )
+                combo.addItems([r[0] for r in cur.fetchall()])
+            return combo
 
         detail = TreeTableWidget(
             ["Tipo", "Clave", "Descripción", "Unidad", "P.U.", "Op", "Valor", "Importe"],
             flat=True,
             editable_cols=frozenset({5}),
             editable_cols_fn=_editable_cols_detalle,
+            column_editors={3: _combo_unidad, 5: _combo_operador},
         )
         detail.set_column_modes({
             c: (QHeaderView.ResizeMode.Interactive, w)
@@ -184,7 +203,7 @@ class ApuMixin:
         y recreó (detail.clear()), y seguir usándolo revienta con
         RuntimeError: libshiboken...already deleted.
         """
-        if column not in (4, 5, 6) or not self._api:
+        if column not in (3, 4, 5, 6) or not self._api:
             return
         comp_id = item.data(5, Qt.ItemDataRole.UserRole)
 
@@ -198,6 +217,14 @@ class ApuMixin:
             return
 
         from PySide6.QtWidgets import QMessageBox
+
+        if column == 3:
+            insumo_id = item.data(0, Qt.ItemDataRole.UserRole)
+            if not insumo_id:
+                return
+            unidad = item.text(column).strip()
+            self._api.insumo_actualizar_campo(insumo_id, "unidad", unidad)
+            return
 
         if column == 6:
             try:
