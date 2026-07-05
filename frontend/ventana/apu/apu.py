@@ -197,6 +197,8 @@ class ApuMixin:
                 self._api.apu_actualizar_operador(comp_id, op)
             return
 
+        from PySide6.QtWidgets import QMessageBox
+
         if column == 6:
             try:
                 texto = item.text(column).replace(",", "").strip()
@@ -205,7 +207,6 @@ class ApuMixin:
                 return
             if not comp_id:
                 return
-            from PySide6.QtWidgets import QMessageBox
             try:
                 self._api.apu_actualizar_valor(comp_id, valor)
             except ValueError as e:
