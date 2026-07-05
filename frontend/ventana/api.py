@@ -254,6 +254,13 @@ class Api:
         from backend.database.event_bus import ProyectoRecalculado
         if valor is None or valor < 0:
             raise ValueError("La cantidad no puede ser negativa")
+        if valor == 0:
+            cur = self._conn.cursor()
+            op = cur.execute(
+                "SELECT operador FROM apu_matrices WHERE id=?", (comp_id,)
+            ).fetchone()
+            if op and op["operador"] == "/":
+                raise ValueError("La cantidad no puede ser cero con operador división (división por cero)")
         self._ds.actualizar("apu_matrices", comp_id, valor=valor)
         RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
         self._ds.emitir(ProyectoRecalculado(self._pid))
