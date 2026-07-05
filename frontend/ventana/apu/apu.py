@@ -51,7 +51,6 @@ class ApuMixin:
             combo = QComboBox(parent)
             combo.setEditable(False)
             combo.addItems(["*", "/"])
-            combo.setFixedWidth(50)
             return combo
 
         def _combo_unidad(parent):
@@ -104,6 +103,7 @@ class ApuMixin:
             scroll_y = detail.verticalScrollBar().value()
             comp_actual = detail.currentItem().data(5, Qt.ItemDataRole.UserRole) \
                 if detail.currentItem() else None
+            col_actual = detail.currentColumn() if detail.currentItem() else 0
 
             detail.blockSignals(True)
             try:
@@ -134,7 +134,7 @@ class ApuMixin:
                 for i in range(detail.topLevelItemCount()):
                     it = detail.topLevelItem(i)
                     if it.data(5, Qt.ItemDataRole.UserRole) == comp_actual:
-                        detail.setCurrentItem(it)
+                        detail.setCurrentItem(it, col_actual)
                         break
 
         _refrescar()

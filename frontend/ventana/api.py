@@ -420,7 +420,7 @@ class Api:
         self._ds.actualizar("insumos", insumo_id, **{campo: valor})
         if campo == "costo_final":
             RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
-            self._ds.emitir(ProyectoRecalculado(self._pid))
+        self._ds.emitir(ProyectoRecalculado(self._pid))
 
     def insumo_insertar(
         self,

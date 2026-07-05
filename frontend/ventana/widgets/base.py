@@ -156,8 +156,14 @@ class _Delegate(QStyledItemDelegate):
         if col in self._column_editors:
             editor = self._column_editors[col](parent)
             from PySide6.QtWidgets import QComboBox
+            from PySide6.QtCore import QTimer
             if isinstance(editor, QComboBox):
-                editor.view().setMinimumWidth(max(120, option.rect.width() + 40))
+                editor.activated.connect(lambda: self._on_combo_selected(editor))
+                # ponytail: ancho del popup = ancho del contenido más largo
+                fm = editor.fontMetrics()
+                max_w = max((fm.horizontalAdvance(editor.itemText(i)) for i in range(editor.count())), default=0)
+                editor.setMinimumWidth(max_w + 40)
+                QTimer.singleShot(0, editor.showPopup)
             return editor
         editor = super().createEditor(parent, option, index)
         if editor:
@@ -165,6 +171,17 @@ class _Delegate(QStyledItemDelegate):
             if isinstance(editor, QLineEdit):
                 editor.selectAll()
         return editor
+
+    def _on_combo_selected(self, editor):
+        """Cierra popup primero, luego confirma y cierra el editor."""
+        from PySide6.QtCore import QTimer
+        editor.hidePopup()
+        QTimer.singleShot(0, lambda: self._commit_and_close(editor))
+
+    def _commit_and_close(self, editor):
+        """Cierra el editor QComboBox confirmando el valor seleccionado."""
+        self.commitData.emit(editor)
+        self.closeEditor.emit(editor, QStyledItemDelegate.EndEditHint.NoHint)
 
     def setEditorData(self, editor, index):
         """Limpia formato para QLineEdit; selecciona valor actual para QComboBox."""

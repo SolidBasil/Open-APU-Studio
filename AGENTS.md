@@ -16,6 +16,10 @@ Antes de subir a GitHub: actualizar `docs/` (SCHEMA.md, DOCUMENTACION.md, planes
 y revisar que comentarios en el código no referencien columnas o tablas eliminadas.
 El docstring o comentario que miente es peor que ningún comentario.
 
+## Regla de testing
+No subir a GitHub sin que el usuario pruebe primero. Esperar confirmación del usuario
+antes de hacer push.
+
 ## Stack
 - Python 3.11+ / PySide6 (Qt6) / SQLite+FTS5 / dbfread (import OPUS) / PyInstaller (dist)
 - Targets: Windows (principal) + Linux (nativo desde inicio)
