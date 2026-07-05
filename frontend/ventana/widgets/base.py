@@ -12,10 +12,11 @@ from PySide6.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QAbstractItemView,
     QHeaderView, QApplication, QStyledItemDelegate, QMenu,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QByteArray
 from PySide6.QtGui import QColor, QKeySequence, QPainter, QPen
 
 import re
+from backend.database.db import Config
 
 
 # ── Expresiones regulares ──────────────────────────────────────────
@@ -86,8 +87,6 @@ def draw_tree_connectors(tree, painter, rect, index, line_color=LINE_COLOR):
 
     painter.restore()
 
-
-# ── Delegado de edición ───────────────────────────────────────────
 
 # ── Delegado de edición ───────────────────────────────────────────
 
@@ -209,6 +208,8 @@ class _Delegate(QStyledItemDelegate):
 
 class TreeTableWidget(QTreeWidget):
 
+    _HEADER_KEY = None  # ponytail: subclases definen su clave de persistencia
+
     # ── Constructor ───────────────────────────────────────────────
 
     def __init__(self, columns, editable_cols=frozenset(), flat=False,
@@ -290,6 +291,23 @@ class TreeTableWidget(QTreeWidget):
         super().showEvent(event)
         self._apply_column_modes()
 
+    # ── Persistencia de cabecera ──────────────────────────────────
+
+    def _save_header_state(self):
+        """Guarda estado del header en config.json como base64."""
+        if not self._HEADER_KEY:
+            return
+        raw = self.header().saveState()
+        Config.set(self._HEADER_KEY, raw.toBase64().data().decode("ascii"))
+
+    def _restore_header_state(self):
+        """Restaura estado del header desde config.json si existe."""
+        if not self._HEADER_KEY:
+            return
+        saved = Config.get(self._HEADER_KEY)
+        if saved:
+            self.header().restoreState(QByteArray.fromBase64(saved.encode("ascii")))
+
     # ── Menú contextual de cabecera ───────────────────────────────
 
     def _header_context_menu(self, pos):
@@ -304,6 +322,7 @@ class TreeTableWidget(QTreeWidget):
             act.setChecked(not self.isColumnHidden(c))
             act.toggled.connect(lambda checked, col=c: self.setColumnHidden(col, not checked))
         menu.exec(self.header().mapToGlobal(pos))
+        self._save_header_state()
 
     # ── Inserción de filas ────────────────────────────────────────
 
@@ -511,6 +530,15 @@ class TreeTableWidget(QTreeWidget):
             return
         QApplication.clipboard().setText(_strip_icons(item.text(col)))
 
+    def _cut(self):
+        """Corta: copia celda al portapapeles y la limpia."""
+        self._copy()
+        item = self.currentItem()
+        col  = self.currentColumn()
+        if not item or col < 0:
+            return
+        item.setText(col, "")
+
     def _paste(self):
         """Pega texto del portapapeles en la celda actual si la columna es editable."""
         text = QApplication.clipboard().text()
@@ -521,3 +549,23 @@ class TreeTableWidget(QTreeWidget):
         if not item or col < 0 or col not in self._editable_cols:
             return
         item.setText(col, text.strip().split("\n")[0].strip())
+
+    # ── Menú contextual (click derecho) ─────────────────────────────
+
+    def contextMenuEvent(self, event):
+        item = self.currentItem()
+        col  = self.currentColumn()
+        if not item or col < 0:
+            return
+        menu = QMenu(self)
+        menu.addAction("Copiar", self._copy)
+        if col in self._editable_cols:
+            menu.addAction("Cortar", self._cut)
+            menu.addAction("Pegar", self._paste)
+        self._context_menu_actions(menu)
+        if not menu.isEmpty():
+            menu.exec(event.globalPos())
+
+    def _context_menu_actions(self, menu: QMenu):
+        """Hook: subclases agregan acciones extra al menú contextual."""
+        pass
