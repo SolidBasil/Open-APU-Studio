@@ -531,12 +531,12 @@ class TreeTableWidget(QTreeWidget):
         QApplication.clipboard().setText(_strip_icons(item.text(col)))
 
     def _cut(self):
-        """Corta: copia celda al portapapeles y la limpia."""
-        self._copy()
+        """Corta: copia celda al portapapeles y la limpia (solo columnas editables)."""
         item = self.currentItem()
         col  = self.currentColumn()
-        if not item or col < 0:
+        if not item or col < 0 or col not in self._editable_cols:
             return
+        self._copy()
         item.setText(col, "")
 
     def _paste(self):

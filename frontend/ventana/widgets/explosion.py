@@ -582,16 +582,20 @@ class PestañaExplosion(QWidget):
         on_apu_click(insumo_id)
 
     def _on_context_menu(self, pos, on_rastrear):
-        """Menú contextual -> Rastrear uso para el insumo bajo el cursor."""
+        """Menú contextual -> Copiar/Cortar/Pegar + Rastrear uso para el insumo bajo el cursor."""
         item = self._tabla.itemAt(pos)
         if not item:
             return
-        insumo_id = item.data(0, Qt.ItemDataRole.UserRole)
-        if not insumo_id:
-            return
+        self._tabla.setCurrentItem(item)
         menu = QMenu(self)
-        act = menu.addAction("🔍 Rastrear uso")
-        act.triggered.connect(lambda: on_rastrear(insumo_id))
+        menu.addAction("Copiar", self._tabla._copy)
+        menu.addAction("Cortar", self._tabla._cut)
+        menu.addAction("Pegar", self._tabla._paste)
+        insumo_id = item.data(0, Qt.ItemDataRole.UserRole)
+        if insumo_id:
+            menu.addSeparator()
+            act = menu.addAction("🔍 Rastrear uso")
+            act.triggered.connect(lambda: on_rastrear(insumo_id))
         menu.exec(self._tabla.mapToGlobal(pos))
 
     def _build_header(self, resumen: dict) -> QWidget:
