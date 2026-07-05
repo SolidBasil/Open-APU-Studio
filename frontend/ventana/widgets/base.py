@@ -154,7 +154,11 @@ class _Delegate(QStyledItemDelegate):
             return None
         col = index.column()
         if col in self._column_editors:
-            return self._column_editors[col](parent)
+            editor = self._column_editors[col](parent)
+            from PySide6.QtWidgets import QComboBox
+            if isinstance(editor, QComboBox):
+                editor.view().setMinimumWidth(max(120, option.rect.width() + 40))
+            return editor
         editor = super().createEditor(parent, option, index)
         if editor:
             from PySide6.QtWidgets import QLineEdit
@@ -214,13 +218,19 @@ class _Delegate(QStyledItemDelegate):
                 tw.edit(idx)
 
     def eventFilter(self, editor, event):
-        """Intercepta Enter (cerrar) y Tab (mover foco)."""
+        """Intercepta Enter (cerrar), Tab (mover foco) y Escape (cancelar)."""
+        from PySide6.QtWidgets import QComboBox
         from PySide6.QtCore import QEvent
         if event.type() == QEvent.Type.KeyPress:
             key = event.key()
             if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                if isinstance(editor, QComboBox) and editor.isPopupVisible():
+                    editor.hidePopup()
                 self.commitData.emit(editor)
                 self.closeEditor.emit(editor, QStyledItemDelegate.EndEditHint.NoHint)
+                return True
+            if key == Qt.Key.Key_Escape:
+                self.closeEditor.emit(editor, QStyledItemDelegate.EndEditHint.RevertModelCache)
                 return True
             if key == Qt.Key.Key_Tab:
                 self.commitAndMove(editor, QStyledItemDelegate.EndEditHint.EditNextItem)

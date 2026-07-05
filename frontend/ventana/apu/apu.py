@@ -49,14 +49,19 @@ class ApuMixin:
         def _combo_operador(parent):
             from PySide6.QtWidgets import QComboBox
             combo = QComboBox(parent)
-            combo.addItems(["*", "/"])
             combo.setEditable(False)
+            combo.addItems(["*", "/"])
+            combo.setFixedWidth(50)
             return combo
 
         def _combo_unidad(parent):
             from PySide6.QtWidgets import QComboBox
             combo = QComboBox(parent)
             combo.setEditable(True)
+            combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+            combo.completer().setCompletionMode(
+                combo.completer().CompletionMode.PopupCompletion
+            )
             if self._api:
                 cur = self._api._conn.execute(
                     "SELECT DISTINCT unidad FROM insumos WHERE unidad IS NOT NULL AND unidad != '' ORDER BY unidad"
