@@ -553,10 +553,12 @@ class TreeTableWidget(QTreeWidget):
     # ── Menú contextual (click derecho) ─────────────────────────────
 
     def contextMenuEvent(self, event):
-        item = self.currentItem()
-        col  = self.currentColumn()
-        if not item or col < 0:
+        index = self.indexAt(event.pos())
+        if not index.isValid():
             return
+        item = self.itemFromIndex(index)
+        col  = index.column()
+        self.setCurrentItem(item, col)
         menu = QMenu(self)
         menu.addAction("Copiar", self._copy)
         if col in self._editable_cols:
