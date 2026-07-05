@@ -88,10 +88,18 @@ class DiagnosticoRepo(RepoBase):
         """, [proyecto_id])
 
     def unidades_no_estandar(self, proyecto_id):
-        """Insumos con unidad no estándar (fuera de UNIDADES)."""
+        """Insumos con unidad no estándar que NO se corrigen por case/alias."""
         from frontend.ventana.widgets.base import UNIDADES
+        ALIASES = {
+            "m2": "m²", "m³": "m³", "m3": "m³",
+            "jgo": "juego",
+            "lt": "L", "l": "L",
+            "hor": "hr", "hr": "hr",
+        }
+        mapa = {u.lower(): u for u in UNIDADES}
+        mapa.update(ALIASES)
         placeholders = ",".join("?" * len(UNIDADES))
-        return self._lista(f"""
+        filas = self._lista(f"""
             SELECT i.id, i.clave_opus AS clave, i.descripcion, i.tipo_id, i.unidad
             FROM insumos i
             WHERE i.proyecto_id = ? AND i.activo = 1
@@ -99,6 +107,7 @@ class DiagnosticoRepo(RepoBase):
               AND i.unidad NOT IN ({placeholders})
             ORDER BY i.unidad, i.id
         """, [proyecto_id] + list(UNIDADES))
+        return [r for r in filas if r["unidad"].lower() not in mapa]
 
     def unidades_case(self, proyecto_id):
         """Insumos cuya unidad es un alias (case o abreviatura) de una estándar."""
