@@ -22,13 +22,25 @@ class InsumoRepo(RepoBase):
 
     # Base SELECT reutilizada en todos los métodos de consulta.
     # Siempre agregar WHERE después de este bloque.
+    #
+    # proveedor_nombre: JOIN agregado junto con el catálogo ampliado de
+    # columnas de Insumos — antes faltaba y la columna "Proveedor" de la
+    # tabla siempre salía vacía sin que nada lo avisara.
+    # creado_por_nombre / modificado_por_nombre: resuelven el id de usuario
+    # a su nombre (mostrar el id crudo no sirve de nada en la UI).
     _SQL = """
         SELECT i.*, t.clave AS tipo_clave, t.nombre AS tipo_nombre,
-               f.nombre AS familia_nombre, sf.nombre AS subfamilia_nombre
+               f.nombre AS familia_nombre, sf.nombre AS subfamilia_nombre,
+               p.nombre AS proveedor_nombre,
+               uc.nombre AS creado_por_nombre,
+               um.nombre AS modificado_por_nombre
         FROM insumos i
         JOIN tipos_insumo t ON t.id = i.tipo_id
         LEFT JOIN familias f ON f.id = i.familia_id
         LEFT JOIN subfamilias sf ON sf.id = i.subfamilia_id
+        LEFT JOIN proveedores p ON p.id = i.proveedor_id
+        LEFT JOIN usuarios uc ON uc.id = i.creado_por
+        LEFT JOIN usuarios um ON um.id = i.modificado_por
     """
 
     def todos(self, proyecto_id):

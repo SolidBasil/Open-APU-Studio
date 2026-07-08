@@ -435,22 +435,25 @@ class TablaExplosion(TreeTableWidget):
     Cada fila lleva el icono de su tipo. Subtotales por tipo destacados.
     """
 
+    _HEADER_KEY = "explosion_columnas"
     TIPO_ID_HERRAMIENTA = 4
 
     def __init__(self, parent=None):
         """Tabla plana de resultados: Tipo, Clave, Descripción, Unidad, Cantidad, P.U., Total, %."""
         super().__init__(COLUMNAS_EXP, EDITABLE_EXP, flat=True, parent=parent)
         self.set_column_modes({
-            0: (QHeaderView.ResizeMode.Interactive, 140),
-            1: (QHeaderView.ResizeMode.Interactive, 90),
-            2: (QHeaderView.ResizeMode.Stretch,     240),
-            3: (QHeaderView.ResizeMode.Interactive, 55),
-            4: (QHeaderView.ResizeMode.Interactive, 85),
-            5: (QHeaderView.ResizeMode.Interactive, 90),
-            6: (QHeaderView.ResizeMode.Interactive, 105),
-            7: (QHeaderView.ResizeMode.Interactive, 65),
+            0: (QHeaderView.ResizeMode.Interactive, 100),
+            1: (QHeaderView.ResizeMode.Interactive, 75),
+            2: (QHeaderView.ResizeMode.Interactive, 140),
+            3: (QHeaderView.ResizeMode.Interactive, 45),
+            4: (QHeaderView.ResizeMode.Interactive, 75),
+            5: (QHeaderView.ResizeMode.Interactive, 75),
+            6: (QHeaderView.ResizeMode.Interactive, 90),
+            7: (QHeaderView.ResizeMode.Interactive, 50),
         })
+        self.header().setMaximumSectionSize(400)
         self._search_cols = {0, 1, 2}
+        self._restore_header_state()
 
     def poblar(self, filas: list[dict], total_global: float):
         """Llena la tabla agrupando filas por tipo de insumo, con subtotales y total general."""

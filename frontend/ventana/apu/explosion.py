@@ -17,7 +17,7 @@ class ExplosionMixin:
         from frontend.ventana.widgets.explosion import (
             DialogoExplosion, PestañaExplosion,
         )
-        from frontend.ventana.widgets.arbol import ID_ROLE
+        from frontend.ventana.widgets.arbol import ID_ROLE, TIPO_ROLE
 
         if not self._db:
             return self._build_placeholder("📦 Explosión de insumos")
@@ -26,9 +26,17 @@ class ExplosionMixin:
         arbol = self._arbol_presupuesto
         if arbol is not None:
             for item in arbol.selectedItems():
-                concepto_id = item.data(0, ID_ROLE)
-                if concepto_id is not None:
-                    concepto_ids.append(concepto_id)
+                tipo = item.data(0, TIPO_ROLE)
+                if tipo is None:
+                    continue
+                if tipo == "concepto":
+                    cid = item.data(0, ID_ROLE)
+                    if cid is not None:
+                        concepto_ids.append(cid)
+                elif tipo == "capitulo":
+                    cid = item.data(0, ID_ROLE)
+                    if cid is not None:
+                        concepto_ids.extend(self._api.conceptos_bajo_nodo(cid))
 
         if not concepto_ids:
             concepto_ids = self._api.todos_concepto_ids()
@@ -81,7 +89,7 @@ class ExplosionMixin:
         from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QAbstractItemView, QHeaderView, QMessageBox, QTreeWidgetItem
         from PySide6.QtGui import QBrush, QColor, QFont
         from frontend.ventana.widgets.base import TreeTableWidget
-        from frontend.ventana.widgets.arbol import COLORES_NIVEL, ID_ROLE
+        from frontend.ventana.widgets.arbol import COLORES_NIVEL, ID_ROLE, TIPO_ROLE
 
         _DEPTH_ROLE = ID_ROLE + 1
 
@@ -92,9 +100,17 @@ class ExplosionMixin:
         arbol = self._arbol_presupuesto
         if arbol is not None:
             for item in arbol.selectedItems():
-                cid = item.data(0, ID_ROLE)
-                if cid is not None:
-                    concepto_ids.append(cid)
+                tipo = item.data(0, TIPO_ROLE)
+                if tipo is None:
+                    continue
+                if tipo == "concepto":
+                    cid = item.data(0, ID_ROLE)
+                    if cid is not None:
+                        concepto_ids.append(cid)
+                elif tipo == "capitulo":
+                    cid = item.data(0, ID_ROLE)
+                    if cid is not None:
+                        concepto_ids.extend(self._api.conceptos_bajo_nodo(cid))
         if not concepto_ids:
             concepto_ids = self._api.todos_concepto_ids()
         if not concepto_ids:
@@ -118,6 +134,7 @@ class ExplosionMixin:
             7: (QHeaderView.ResizeMode.Interactive, 95),
             8: (QHeaderView.ResizeMode.Interactive, 110),
         })
+        tree.header().setMaximumSectionSize(400)
 
         total_conceptos = 0
         for cid in concepto_ids:

@@ -16,16 +16,80 @@ Uso:
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QHeaderView, QMenu
-from frontend.ventana.widgets.base import TreeTableWidget
+from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef
 
 
 # ── Configuración de columnas ─────────────────────────────────────
+#
+# Las primeras 12 son las de siempre (mismo orden e índice, para no romper
+# el header state ya guardado de quien actualice). El resto — hasta ahora
+# datos que existían en la BD pero ninguna columna mostraba — se agregan
+# al final, ocultas y sin marcar como favoritas por defecto: no aparecen
+# en el menú rápido de clic derecho hasta que el usuario las active desde
+# "Personalizar columnas…", así el menú de hoy no cambia de tamaño solo.
 
 COLUMNAS = [
     "Clave", "Descripción", "Unidad", "Precio", "Tipo",
     "Familia", "Proveedor", "F. Precio", "Desc. Corta", "Costo MN", "Costo ME", "Hash",
+    "Costo Directo", "Clave Usuario", "Compuesto",
+    "Salario Nominal", "Salario Real", "Usar Hoja FASAR", "CatFSR", "Factor FSR", "FSR Mínimo",
+    "Tipo de Trabajo",
+    "Peso (kg)", "Comentarios", "Índice INEGI",
+    "Fórmula Costo MN", "Fórmula Costo ME",
+    "Índice 1", "Índice 2", "Índice 3", "Índice 4", "Índice 5", "Índice 6",
+    "Creado", "Creado Por", "Modificado", "Modificado Por",
 ]
 EDITABLE = frozenset({1, 2, 3})  # Descripción, Unidad, Precio
+
+# Catálogo para el esquema de favoritas + "Personalizar columnas…" (ver
+# widgets/base.py PersonalizarColumnasDialog). idx debe coincidir con la
+# posición en COLUMNAS de arriba.
+COLUMNAS_CATALOGO = [
+    ColumnaDef(0,  "Clave",             "Identificación", favorita_default=True,  visible_default=False),
+    ColumnaDef(1,  "Descripción",       "Identificación", favorita_default=True,  visible_default=True),
+    ColumnaDef(2,  "Unidad",            "Identificación", favorita_default=True,  visible_default=True),
+    ColumnaDef(4,  "Tipo",              "Identificación", favorita_default=True,  visible_default=True),
+    ColumnaDef(5,  "Familia",           "Identificación", favorita_default=True,  visible_default=True),
+    ColumnaDef(6,  "Proveedor",         "Identificación", favorita_default=True,  visible_default=True),
+    ColumnaDef(13, "Clave Usuario",     "Identificación", favorita_default=False, visible_default=False),
+    ColumnaDef(14, "Compuesto",         "Identificación", favorita_default=False, visible_default=False),
+
+    ColumnaDef(8,  "Desc. Corta",       "Descripción",    favorita_default=True,  visible_default=False),
+
+    ColumnaDef(3,  "Precio",            "Costos",         favorita_default=True,  visible_default=True),
+    ColumnaDef(7,  "F. Precio",         "Costos",         favorita_default=True,  visible_default=False),
+    ColumnaDef(9,  "Costo MN",          "Costos",         favorita_default=True,  visible_default=False),
+    ColumnaDef(10, "Costo ME",          "Costos",         favorita_default=True,  visible_default=False),
+    ColumnaDef(12, "Costo Directo",     "Costos",         favorita_default=False, visible_default=False),
+
+    ColumnaDef(15, "Salario Nominal",   "Mano de obra",   favorita_default=False, visible_default=False),
+    ColumnaDef(16, "Salario Real",      "Mano de obra",   favorita_default=False, visible_default=False),
+    ColumnaDef(17, "Usar Hoja FASAR",   "Mano de obra",   favorita_default=False, visible_default=False),
+    ColumnaDef(18, "CatFSR",            "Mano de obra",   favorita_default=False, visible_default=False),
+    ColumnaDef(19, "Factor FSR",        "Mano de obra",   favorita_default=False, visible_default=False),
+    ColumnaDef(20, "FSR Mínimo",        "Mano de obra",   favorita_default=False, visible_default=False),
+
+    ColumnaDef(21, "Tipo de Trabajo",   "Trabajo",        favorita_default=False, visible_default=False),
+
+    ColumnaDef(22, "Peso (kg)",         "Datos adicionales", favorita_default=False, visible_default=False),
+    ColumnaDef(23, "Comentarios",       "Datos adicionales", favorita_default=False, visible_default=False),
+    ColumnaDef(24, "Índice INEGI",      "Datos adicionales", favorita_default=False, visible_default=False),
+
+    ColumnaDef(25, "Fórmula Costo MN",  "Fórmulas",       favorita_default=False, visible_default=False),
+    ColumnaDef(26, "Fórmula Costo ME",  "Fórmulas",       favorita_default=False, visible_default=False),
+    ColumnaDef(27, "Índice 1",          "Fórmulas",       favorita_default=False, visible_default=False),
+    ColumnaDef(28, "Índice 2",          "Fórmulas",       favorita_default=False, visible_default=False),
+    ColumnaDef(29, "Índice 3",          "Fórmulas",       favorita_default=False, visible_default=False),
+    ColumnaDef(30, "Índice 4",          "Fórmulas",       favorita_default=False, visible_default=False),
+    ColumnaDef(31, "Índice 5",          "Fórmulas",       favorita_default=False, visible_default=False),
+    ColumnaDef(32, "Índice 6",          "Fórmulas",       favorita_default=False, visible_default=False),
+
+    ColumnaDef(11, "Hash",              "Auditoría",      favorita_default=True,  visible_default=False),
+    ColumnaDef(33, "Creado",            "Auditoría",      favorita_default=False, visible_default=False),
+    ColumnaDef(34, "Creado Por",        "Auditoría",      favorita_default=False, visible_default=False),
+    ColumnaDef(35, "Modificado",        "Auditoría",      favorita_default=False, visible_default=False),
+    ColumnaDef(36, "Modificado Por",    "Auditoría",      favorita_default=False, visible_default=False),
+]
 
 TIPO_NOMBRE = {
     1:  "🧱 Material",
@@ -38,10 +102,31 @@ TIPO_NOMBRE = {
     128:"🏗️ Trabajo",
 }
 
+TIPO_TRABAJO_NOMBRE = {
+    "subcontrato": "Subcontrato",
+    "acarreo":     "Acarreo",
+    "destajo":     "Destajo",
+}
+
+
+def _si_no(val) -> str:
+    """Formatea un entero 0/1 de SQLite como Sí/No."""
+    return "Sí" if val else "No"
+
+
+def _num_opcional(val, decimales: int = 2) -> str:
+    """Formatea un número que puede ser NULL. NULL -> '' (no '0.00', que
+    daría a entender un valor real de cero donde en realidad no hay dato)."""
+    if val is None:
+        return ""
+    return f"{val:,.{decimales}f}"
+
 
 class TablaInsumos(TreeTableWidget):
     """Tabla plana del catálogo de insumos (sin jerarquía)."""
     _HEADER_KEY = "insumos_header_state"
+    _CATALOGO_KEY = "insumos_columnas_favoritas"
+    COLUMNAS_CATALOGO = COLUMNAS_CATALOGO
     rastrear_insumo = Signal(int)
     desglozar_insumo = Signal(int)
 
@@ -56,13 +141,18 @@ class TablaInsumos(TreeTableWidget):
 
         super().__init__(COLUMNAS, EDITABLE, flat=True, parent=parent,
                          column_editors={2: _combo_unidad})
+        anchos = [90, 250, 60, 100, 120, 120, 140, 85, 140, 95, 95, 90]
+        anchos += [100] * (len(COLUMNAS) - len(anchos))  # columnas nuevas: ancho por defecto
         self.set_column_modes({
             c: (QHeaderView.ResizeMode.Interactive, w)
-            for c, w in enumerate([90, 250, 60, 100, 120, 120, 140, 85, 140, 95, 95, 90])
+            for c, w in enumerate(anchos)
         })
         self.header().setMaximumSectionSize(400)
-        for c in (0, 7, 8, 9, 10, 11):
-            self.setColumnHidden(c, True)
+        # Visibilidad inicial: la define el catálogo (visible_default), no
+        # una lista de índices a mano — así agregar una columna al catálogo
+        # no obliga a acordarse de tocar esta lista también.
+        for col in COLUMNAS_CATALOGO:
+            self.setColumnHidden(col.idx, not col.visible_default)
         self._search_cols = {1, 5}
         self._restore_header_state()
         self._api = None  # inyectado por conectar_eventos()
@@ -103,6 +193,7 @@ class TablaInsumos(TreeTableWidget):
         desc       = ins.get("descripcion") or ins.get("descripcion_corta") or ""
         if tiene_sub_apu:
             desc = f"\u25b6 {desc}"
+        tipo_trabajo = ins.get("tipo_trabajo") or ""
         return [
             clave_opus,
             desc,
@@ -119,6 +210,31 @@ class TablaInsumos(TreeTableWidget):
             f"${ins.get('costo_mn', 0) or 0:,.2f}",
             f"${ins.get('costo_me', 0) or 0:,.2f}",
             ins.get("hash") or "",
+            f"${ins.get('costo_directo', 0) or 0:,.2f}",
+            ins.get("clave_usuario") or "",
+            _si_no(ins.get("es_compuesto")),
+            _num_opcional(ins.get("salario_nominal")),
+            _num_opcional(ins.get("salario_real")),
+            _si_no(ins.get("usar_hoja_fasar")),
+            ins.get("catfsr") or "",
+            _num_opcional(ins.get("factor_fsr"), decimales=4),
+            _si_no(ins.get("fsr_minimo")),
+            TIPO_TRABAJO_NOMBRE.get(tipo_trabajo, tipo_trabajo),
+            _num_opcional(ins.get("peso_kg"), decimales=3),
+            ins.get("comentarios") or "",
+            ins.get("indice_inegi") or "",
+            ins.get("formula_costo_mn") or "",
+            ins.get("formula_costo_me") or "",
+            _num_opcional(ins.get("indice_1")),
+            _num_opcional(ins.get("indice_2")),
+            _num_opcional(ins.get("indice_3")),
+            _num_opcional(ins.get("indice_4")),
+            _num_opcional(ins.get("indice_5")),
+            _num_opcional(ins.get("indice_6")),
+            ins.get("creado_en") or "",
+            ins.get("creado_por_nombre") or "",
+            ins.get("modificado_en") or "",
+            ins.get("modificado_por_nombre") or "",
         ]
 
     def poblar(self, insumos: list[dict], ids_con_apu: set[int] | None = None):

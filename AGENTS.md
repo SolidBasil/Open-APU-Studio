@@ -112,6 +112,9 @@ docs/
   DECISIONES_PENDIENTES.md       ← Decisiones de diseño registradas
   DOCUMENTACION.md               ← Documentación general del proyecto
   ARQUITECTURA_SERVICIOS.md      ← Plan de arquitectura de servicios (EventBus, UpdateService, etc.)
+  GUIA_VISUAL.md                 ← Guía de estilo visual para ventanas (colores, espaciado, componentes)
+  GUIA_CODIGO.md                 ← Convenciones de código y decisiones de diseño
+  PLAN_REPARACION.md             ← Auditoría y plan de reparación contra GUIA_INTERFAZ.md
   planes/
     PLAN_INSUMOS.md              ← Plan de transformación de insumos
     PLAN_FSR.md                  ← Plan FSR completo

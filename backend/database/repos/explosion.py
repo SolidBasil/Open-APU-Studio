@@ -118,6 +118,14 @@ class ExplosionRepo(RepoBase):
             iid = row["insumo_id"]
             reverse.setdefault(iid, []).append(row)
 
+        # ── 3b. Mapa compuesto→presupuesto (unificación: apu_matrices no guarda
+        # el vínculo directo compuesto→concepto, solo estructura_presupuesto.insumo_id)
+        budget_por_compuesto: dict[int, float] = {}
+        for cid, cant in budget_cant.items():
+            ins_id = concepto_a_insumo.get(cid)
+            if ins_id is not None:
+                budget_por_compuesto[ins_id] = budget_por_compuesto.get(ins_id, 0.0) + cant
+
         # ── 4. Caché de multiplicadores bottom-up ──
         #   _mult_cache[matriz_id] = cantidad_total_acumulada_hasta_presupuesto
         #   Para conceptos en budget_cant: devuelve cantidad del presupuesto
@@ -159,7 +167,7 @@ class ExplosionRepo(RepoBase):
             # matriz_id < 0 → insumo compuesto
             _visitando.add(matriz_id)
             try:
-                total = 0.0
+                total = budget_por_compuesto.get(-matriz_id, 0.0)
                 for p in reverse.get(-matriz_id, []):
                     total += self._ef_qty(p) * _calc_mult(p["matriz_id"])
             finally:
@@ -251,9 +259,20 @@ class ExplosionRepo(RepoBase):
         tipos_normales = [t for t in tipos_ids if t != self.TIPO_ID_HERRAMIENTA]
         filas_normales = []
 
+        # CTE: resolver matriz_id real — tras unificar_matrices_apu() los
+        # componentes viven en matriz_id = -insumo_id (negativo), no en ep.id.
+        cte_matriz = f"""
+            WITH ep_apu AS (
+                SELECT id, proyecto_id, cantidad,
+                       CASE WHEN insumo_id IS NOT NULL THEN -insumo_id ELSE id END AS matriz_apu
+                FROM estructura_presupuesto
+                WHERE id IN ({ph_conceptos}) AND tipo='concepto' AND activo=1
+            )
+        """
+
         if tipos_normales:
             ph_tipos = ",".join("?" * len(tipos_normales))
-            sql = f"""
+            sql = f"""{cte_matriz}
                 SELECT
                     i.id                AS insumo_id,
                     i.tipo_id,
@@ -262,20 +281,16 @@ class ExplosionRepo(RepoBase):
                     i.clave_opus        AS clave,
                     COALESCE(i.descripcion, i.descripcion_corta, '') AS descripcion,
                     i.unidad,
-                    i.costo_directo     AS pu,
                     SUM(CASE WHEN am.operador='*' THEN am.valor*ep.cantidad ELSE ep.cantidad/am.valor END) AS cantidad_total,
                     SUM(CASE WHEN am.operador='*' THEN am.valor*ep.cantidad ELSE ep.cantidad/am.valor END) * i.costo_directo AS total
-                FROM estructura_presupuesto ep
-                JOIN apu_matrices am ON am.matriz_id = ep.id
+                FROM ep_apu ep
+                JOIN apu_matrices am ON am.matriz_id = ep.matriz_apu
                 JOIN insumos i       ON i.id = am.insumo_id
                 JOIN tipos_insumo ti ON ti.id = i.tipo_id
-                WHERE ep.id         IN ({ph_conceptos})
-                  AND ep.tipo        = 'concepto'
-                  AND ep.activo      = 1
-                  AND ep.proyecto_id = ?
-                  AND i.proyecto_id  = ?
-                  AND i.tipo_id      IN ({ph_tipos})
-                  AND i.activo       = 1
+                WHERE ep.proyecto_id  = ?
+                  AND i.proyecto_id   = ?
+                  AND i.tipo_id       IN ({ph_tipos})
+                  AND i.activo        = 1
                   {filtro_nivel}
                 GROUP BY i.id
             """
@@ -283,7 +298,7 @@ class ExplosionRepo(RepoBase):
 
         filas_herr = []
         if self.TIPO_ID_HERRAMIENTA in tipos_ids:
-            sql_h = f"""
+            sql_h = f"""{cte_matriz}
                 SELECT
                     i.id                AS insumo_id,
                     i.tipo_id,
@@ -295,17 +310,14 @@ class ExplosionRepo(RepoBase):
                     SUM(am.valor * am.precio * ep.cantidad) AS total,
                     SUM(am.valor * am.precio * ep.cantidad) /
                     NULLIF(SUM(am.precio * ep.cantidad), 0) AS pct_mo
-                FROM estructura_presupuesto ep
-                JOIN apu_matrices am ON am.matriz_id = ep.id
+                FROM ep_apu ep
+                JOIN apu_matrices am ON am.matriz_id = ep.matriz_apu
                 JOIN insumos i       ON i.id = am.insumo_id
                 JOIN tipos_insumo ti ON ti.id = i.tipo_id
-                WHERE ep.id         IN ({ph_conceptos})
-                  AND ep.tipo        = 'concepto'
-                  AND ep.activo      = 1
-                  AND ep.proyecto_id = ?
-                  AND i.proyecto_id  = ?
-                  AND i.tipo_id      = {self.TIPO_ID_HERRAMIENTA}
-                  AND i.activo       = 1
+                WHERE ep.proyecto_id  = ?
+                  AND i.proyecto_id   = ?
+                  AND i.tipo_id       = {self.TIPO_ID_HERRAMIENTA}
+                  AND i.activo        = 1
                   {filtro_nivel}
                 GROUP BY i.id
             """

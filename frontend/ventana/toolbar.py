@@ -49,6 +49,44 @@ def _icon(char, size=20, font_size=None):
 # CONFIGURACIÓN DE LA TOOLBAR
 # =============================================================================
 
+# Mapa tooltip → nombre del método handler.
+# Todo botón añadido a _TOOLBAR_CFG debe tener entrada aquí; si no, aparecerá
+# atenuado como "(beta)".
+_HANDLERS = {
+    "Importar OPUS":     "_on_importar_opus",
+    "Abrir":             "_on_abrir_proyecto",
+    "Copiar":            "_on_copy_toolbar",
+    "Primer nivel":      "_on_desplegar_primer_nivel",
+    "Resumen agrupadores": "_on_desplegar_resumen",
+    "Todo":              "_on_desplegar_todo",
+    "Nivel":             "_on_desplegar_nivel",
+    "Cerrar":            "_on_cerrar_proyecto",
+    "Duplicar":          "_on_copiar_proyecto",
+    "Renombrar":         "_on_renombrar_proyecto",
+    "Eliminar proyecto": "_on_eliminar_proyecto",
+    "Abrir carpeta BD":  "_on_abrir_carpeta_bd",
+    "Configuración":     "_on_configuracion",
+    "Configuración general": "_on_configuracion",
+    "Seleccionar todo":  "_on_select_all_toolbar",
+    "Modificar":         "_on_modificar_toolbar",
+    "Desglosar":         "_on_desglozar_toolbar",
+    "Adjuntar archivo":  "_on_adjuntar_archivo",
+    "Ver adjuntos":      "_on_ver_adjuntos",
+    "Depurar catálogos": "_on_depurar_catalogos",
+    "Homologar hash":    "_on_homologar_hash",
+    "Calculadora":       "_on_calculadora",
+    "Ajustar":           "_on_ajustar_columnas",
+    "Mostrar/Ocultar":   "_on_mostrar_ocultar",
+    "Restablecer":       "_on_restablecer_formato",
+    "Pantalla completa": "_on_pantalla_completa",
+    "Recalcular":        "_on_recalcular",
+    "Auditoría":         "_on_depurar_catalogos",
+    "Información proyecto": "_on_info_proyecto",
+    "Presupuesto":       "_on_generar_presupuesto",
+    "Compilar PDF":      "_on_compilar_pdf",
+    "Vista previa":      "_on_vista_previa",
+}
+
 _TOOLBAR_CFG = {
     "PROYECTO": [
         ("Archivo",      [("+", "Nuevo"), ("📂", "Abrir"), ("✕", "Cerrar")]),
@@ -376,93 +414,17 @@ class ToolbarMixin:
         return btn
 
     def _conectar_btn(self, btn, tip):
-        """Enruta el click del botón al handler según su tooltip.
+        """Enruta el click del botón al handler según _HANDLERS dict.
         Marca btn._conectado = True/False para que _style_toolbar_btn decida el estilo.
         """
-        conn = True
-        if "Importar OPUS" in tip:
-            btn.clicked.connect(self._on_importar_opus)
-        elif tip == "Abrir":
-            btn.clicked.connect(self._on_abrir_proyecto)
-        elif "Copiar" in tip:
-            btn.clicked.connect(self._on_copy_toolbar)
-        elif tip == "Primer nivel":
-            btn.clicked.connect(self._on_desplegar_primer_nivel)
-        elif tip == "Resumen agrupadores":
-            btn.clicked.connect(self._on_desplegar_resumen)
-        elif tip == "Todo":
-            btn.clicked.connect(self._on_desplegar_todo)
-        elif tip == "Nivel":
-            btn.clicked.connect(self._on_desplegar_nivel)
-        elif tip == "Cerrar":
-            btn.clicked.connect(self._on_cerrar_proyecto)
-        elif tip == "Duplicar":
-            btn.clicked.connect(self._on_copiar_proyecto)
-        elif tip == "Renombrar":
-            btn.clicked.connect(self._on_renombrar_proyecto)
-        elif tip == "Eliminar proyecto":
-            btn.clicked.connect(self._on_eliminar_proyecto)
-        elif tip == "Abrir carpeta BD":
-            btn.clicked.connect(self._on_abrir_carpeta_bd)
-        elif tip == "Configuración":
-            btn.clicked.connect(self._on_configuracion)
-        elif tip == "Seleccionar todo":
-            btn.clicked.connect(self._on_select_all_toolbar)
-        elif tip == "Modificar":
-            btn.clicked.connect(self._on_modificar_toolbar)
-        elif tip == "Desglosar":
-            btn.clicked.connect(self._on_desglozar_toolbar)
-        elif tip == "Adjuntar archivo":
-            btn.clicked.connect(self._on_adjuntar_archivo)
-        elif tip == "Ver adjuntos":
-            btn.clicked.connect(self._on_ver_adjuntos)
-        elif tip == "Depurar catálogos":
-            btn.clicked.connect(self._on_depurar_catalogos)
-        elif tip == "Homologar hash":
-            btn.clicked.connect(self._on_homologar_hash)
-        elif tip == "Calculadora":
-            btn.clicked.connect(self._on_calculadora)
-        elif tip == "Ajustar":
-            btn.clicked.connect(self._on_ajustar_columnas)
-        elif tip == "Mostrar/Ocultar":
-            btn.clicked.connect(self._on_mostrar_ocultar)
-        elif tip == "Formato columnas":
-            pass  # pendiente de implementar
-        elif tip == "Restablecer":
-            btn.clicked.connect(self._on_restablecer_formato)
-        elif tip == "Pantalla completa":
-            btn.clicked.connect(self._on_pantalla_completa)
-        elif tip == "Filtro":
-            pass  # pendiente de implementar
-        elif tip == "Recalcular":
-            btn.clicked.connect(self._on_recalcular)
-        elif tip == "Auditoría":
-            btn.clicked.connect(self._on_depurar_catalogos)
-        elif tip == "Parámetros proyecto":
-            pass  # pendiente de implementar
-        elif tip == "Información proyecto":
-            btn.clicked.connect(self._on_info_proyecto)
-        elif tip == "Configuración general":
-            btn.clicked.connect(self._on_configuracion)
-        elif tip == "Usuarios":
-            pass  # pendiente de implementar
-        elif tip == "Presupuesto":
-            btn.clicked.connect(self._on_generar_presupuesto)
-        elif tip == "APU":
-            pass  # pendiente de implementar
-        elif tip == "Explosión":
-            pass  # pendiente de implementar
-        elif tip == "Catálogo":
-            pass  # pendiente de implementar
-        elif tip == "Compilar PDF":
-            btn.clicked.connect(self._on_compilar_pdf)
-        elif tip == "Vista previa":
-            btn.clicked.connect(self._on_vista_previa)
-        elif tip == "Tema LaTeX":
-            pass  # pendiente de implementar
-        else:
-            conn = False
-        btn._conectado = conn
+        handler_name = _HANDLERS.get(tip)
+        if handler_name:
+            handler = getattr(self, handler_name, None)
+            if handler:
+                btn.clicked.connect(handler)
+                btn._conectado = True
+                return
+        btn._conectado = False
 
     def _style_toolbar_btn(self, btn):
         """Aplica estilo atenuado a botones sin handler conectado."""

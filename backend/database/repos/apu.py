@@ -61,6 +61,8 @@ class ApuMatricesRepo(RepoBase):
                 ad.precio,
                 CASE WHEN ad.operador = '*' THEN ad.valor * ad.precio ELSE ad.precio / ad.valor END AS importe,
                 ad.formula,
+                ad.creado_en,
+                ad.modificado_en,
                 i.es_compuesto      AS insumo_es_compuesto,
                 i.id                AS insumo_id,
                 i.descripcion       AS insumo_descripcion,

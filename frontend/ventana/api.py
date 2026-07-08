@@ -192,7 +192,8 @@ class Api:
             id (pk de apu_matrices, usado como comp_id para editar
             operador/valor), tipo_emoji, tipo_nombre, tipo_id, insumo_id,
             descripcion, insumo_unidad, cantidad (desde valor/operador),
-            precio, importe, es_compuesto, tiene_sub_apu
+            precio, importe, es_compuesto, tiene_sub_apu, formula,
+            creado_en, modificado_en
         """
         from backend.database.repos  import NodoRepo, InsumoRepo, ApuMatricesRepo
 
@@ -229,6 +230,9 @@ class Api:
                 "importe":      r.get("importe", 0),
                 "es_compuesto": r.get("insumo_es_compuesto", 0),
                 "tiene_sub_apu": tiene_sub,
+                "formula":       r.get("formula"),
+                "creado_en":     r.get("creado_en"),
+                "modificado_en": r.get("modificado_en"),
             })
 
         return {
@@ -356,6 +360,12 @@ class Api:
             tipos_ids    = tipos_ids,
             decimales    = decimales,
         )
+
+    def conceptos_bajo_nodo(self, nodo_id: int) -> list[int]:
+        """IDs de todos los conceptos descendientes de un nodo (capítulo)."""
+        from backend.database.repos import NodoRepo
+        descendientes = NodoRepo(self._conn).descendientes(nodo_id)
+        return [d["id"] for d in descendientes if d.get("tipo") == "concepto"]
 
     def resumen_tipos_explosion(self, tipos_ids: list[int]) -> str:
         """Genera el string de tipos para el encabezado de la pestaña de explosión.

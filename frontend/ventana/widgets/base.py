@@ -20,12 +20,161 @@ UNIDADES = [
 from PySide6.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QAbstractItemView,
     QHeaderView, QApplication, QStyledItemDelegate, QMenu,
+    QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QCheckBox,
+    QLabel, QGroupBox, QScrollArea, QWidget, QDialogButtonBox,
 )
 from PySide6.QtCore import Qt, QByteArray, QRect
 from PySide6.QtGui import QColor, QKeySequence, QPainter, QPen, QFont, QIcon, QPixmap
 
 import re
+from dataclasses import dataclass
 from backend.database.db import Config
+
+
+# ── Catálogo de columnas (favoritas / personalizar) ───────────────
+
+@dataclass(frozen=True)
+class ColumnaDef:
+    """Definición de una columna dentro del catálogo completo de una tabla.
+
+    Una tabla puede tener muchas más columnas de las que tiene sentido
+    mostrar en el menú rápido de clic derecho (ver Insumos: ~30 campos
+    posibles). El catálogo separa dos cosas independientes:
+      - favorita_default: si aparece en el menú rápido por defecto
+      - visible_default:  si se muestra en la tabla por defecto
+    El usuario puede cambiar ambas desde "Personalizar columnas…", y
+    marcar como favorita una columna que hoy no lo es (o viceversa) sin
+    tocar su visibilidad actual.
+
+    idx debe coincidir con la posición real de la columna en la lista
+    `columns` pasada al constructor de TreeTableWidget.
+    """
+    idx: int
+    label: str
+    categoria: str
+    favorita_default: bool = True
+    visible_default: bool = True
+
+
+class PersonalizarColumnasDialog(QDialog):
+    """Diálogo genérico: elegir qué columnas son favoritas (aparecen en el
+    menú rápido de clic derecho) y cuáles están visibles ahora mismo.
+
+    Reutilizable por cualquier TreeTableWidget que defina COLUMNAS_CATALOGO.
+    Los cambios se aplican de inmediato sobre `tabla` — no hay botón
+    "Aplicar", solo "Cerrar", igual que el menú rápido de hoy.
+    """
+
+    def __init__(self, tabla: "TreeTableWidget", parent=None):
+        super().__init__(parent or tabla)
+        self.setWindowTitle("Personalizar columnas")
+        self.setMinimumSize(440, 560)
+        self._tabla = tabla
+        self._favoritas = tabla._favoritas()  # set[int] mutable en memoria, se persiste en cada cambio
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+
+        leyenda = QLabel("★ Favorita — aparece en el menú rápido de clic derecho.")
+        leyenda.setStyleSheet("color: #8A97A3; font-size: 11px;")
+        layout.addWidget(leyenda)
+
+        buscador = QLineEdit()
+        buscador.setPlaceholderText("🔍  Buscar columna…")
+        buscador.setClearButtonEnabled(True)
+        buscador.textChanged.connect(self._filtrar)
+        layout.addWidget(buscador)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        content = QWidget()
+        self._content_layout = QVBoxLayout(content)
+        self._content_layout.setSpacing(2)
+        scroll.setWidget(content)
+        layout.addWidget(scroll, 1)
+
+        self._grupos = []  # [(QGroupBox, [(fila_widget, ColumnaDef), ...])]
+        self._construir_filas(tabla.COLUMNAS_CATALOGO)
+        self._content_layout.addStretch()
+
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        btns.rejected.connect(self.accept)
+        btns.accepted.connect(self.accept)
+        layout.addWidget(btns)
+
+    def _construir_filas(self, catalogo: list[ColumnaDef]):
+        """Agrupa las columnas por categoría preservando el orden de aparición
+        en el catálogo (cada tabla decide ese orden al definirlo)."""
+        categorias: dict[str, list[ColumnaDef]] = {}
+        for col in catalogo:
+            categorias.setdefault(col.categoria, []).append(col)
+
+        for nombre_categoria, columnas in categorias.items():
+            grupo = QGroupBox(nombre_categoria)
+            gl = QVBoxLayout(grupo)
+            gl.setContentsMargins(4, 8, 4, 0)
+            gl.setSpacing(2)
+            filas = []
+            for col in columnas:
+                fila = QWidget()
+                fl = QHBoxLayout(fila)
+                fl.setContentsMargins(4, 0, 4, 0)
+                fl.setSpacing(10)
+
+                es_fav = col.idx in self._favoritas
+                star = QLabel("★" if es_fav else "☆")
+                star.setToolTip("Favorita: aparece en el menú rápido de clic derecho")
+                star.setCursor(Qt.CursorShape.PointingHandCursor)
+                star.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                star.setFixedWidth(24)
+                self._pintar_star(star, es_fav)
+                star.mousePressEvent = lambda _e, s=star, c=col.idx: self._toggle_star(s, c)
+
+                chk_vis = QCheckBox()
+                chk_vis.setChecked(not self._tabla.isColumnHidden(col.idx))
+                chk_vis.toggled.connect(
+                    lambda checked, c=col.idx: self._tabla.setColumnHidden(c, not checked))
+
+                lbl = QLabel(col.label)
+                fl.addWidget(lbl, 1)
+                fl.addWidget(star)
+                fl.addWidget(chk_vis)
+                gl.addWidget(fila)
+                filas.append((fila, col, star))
+            self._content_layout.addWidget(grupo)
+            self._grupos.append((grupo, filas))
+
+    def _pintar_star(self, star: QLabel, es_fav: bool):
+        star.setText("★" if es_fav else "☆")
+        star.setStyleSheet(
+            "QLabel { color: #F0C060; font-size: 18px; padding: 2px 4px; border-radius: 3px; }"
+            "QLabel:hover { background-color: #2A4158; }"
+            if es_fav else
+            "QLabel { color: #6B7884; font-size: 18px; padding: 2px 4px; border-radius: 3px; }"
+            "QLabel:hover { background-color: #2A4158; }"
+        )
+
+    def _toggle_star(self, star: QLabel, col_idx: int):
+        es_fav = col_idx not in self._favoritas
+        if es_fav:
+            self._favoritas.add(col_idx)
+        else:
+            self._favoritas.discard(col_idx)
+        self._tabla._guardar_favoritas(self._favoritas)
+        self._pintar_star(star, es_fav)
+
+    def _filtrar(self, texto: str):
+        """Filtra filas por nombre de columna; oculta categorías vacías."""
+        texto = texto.strip().lower()
+        for grupo, filas in self._grupos:
+            alguna_visible = False
+            for fila, col, _star in filas:
+                coincide = not texto or texto in col.label.lower()
+                fila.setVisible(coincide)
+                alguna_visible = alguna_visible or coincide
+            grupo.setVisible(alguna_visible)
 
 
 # ── Expresiones regulares ──────────────────────────────────────────
@@ -272,6 +421,10 @@ class _Delegate(QStyledItemDelegate):
 class TreeTableWidget(QTreeWidget):
 
     _HEADER_KEY = None  # ponytail: subclases definen su clave de persistencia
+    _CATALOGO_KEY = None  # clave de persistencia de "favoritas" (Config), si aplica
+    COLUMNAS_CATALOGO: list[ColumnaDef] = []  # subclases lo definen para habilitar
+    # el menú "favoritas + Personalizar columnas…". Tablas que lo dejan vacío
+    # conservan el menú simple de siempre (todas las columnas, sin agrupar).
 
     # ── Constructor ───────────────────────────────────────────────
 
@@ -301,6 +454,7 @@ class TreeTableWidget(QTreeWidget):
         self.setRootIsDecorated(not flat)
         self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._applying_modes = False
         self.setMouseTracking(True)
         self.setEditTriggers(
             QAbstractItemView.EditTrigger.SelectedClicked   # clic en celda ya seleccionada
@@ -314,6 +468,7 @@ class TreeTableWidget(QTreeWidget):
         h.setStretchLastSection(False)
         h.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         h.customContextMenuRequested.connect(self._header_context_menu)
+        h.sectionResized.connect(self._save_header_state)
         for c in range(len(columns)):
             h.setSectionResizeMode(c, QHeaderView.ResizeMode.Interactive)
 
@@ -335,6 +490,7 @@ class TreeTableWidget(QTreeWidget):
         modes = getattr(self, "_pending_modes", None)
         if not modes:
             return
+        self._applying_modes = True
         h = self.header()
         # Primero todo Interactive para que resizeSection funcione
         for c in range(self.columnCount()):
@@ -343,6 +499,7 @@ class TreeTableWidget(QTreeWidget):
         for c, (mode, width) in modes.items():
             if width is not None:
                 h.resizeSection(c, width)
+        self._applying_modes = False
         # Aplicar modos finales — Stretch se deja como Interactive
         # para que el usuario pueda redimensionar cualquier columna
         for c, (mode, width) in modes.items():
@@ -353,31 +510,68 @@ class TreeTableWidget(QTreeWidget):
                 h.setSectionResizeMode(c, mode)
 
     def showEvent(self, event):
-        """Re-aplica modos de columna al mostrar (Qt ignora resizeSection antes de ser visible)."""
+        """Restaura estado guardado del usuario; si no hay, aplica anchos por defecto."""
         super().showEvent(event)
+        if self._HEADER_KEY and self._restore_header_state():
+            return
         self._apply_column_modes()
 
     # ── Persistencia de cabecera ──────────────────────────────────
 
     def _save_header_state(self):
         """Guarda estado del header en config.json como base64."""
-        if not self._HEADER_KEY:
+        if not self._HEADER_KEY or getattr(self, '_applying_modes', False):
             return
         raw = self.header().saveState()
         Config.set(self._HEADER_KEY, raw.toBase64().data().decode("ascii"))
 
-    def _restore_header_state(self):
-        """Restaura estado del header desde config.json si existe."""
+    def _restore_header_state(self) -> bool:
+        """Restaura estado del header desde config.json si existe. Retorna True si restauró."""
         if not self._HEADER_KEY:
-            return
+            return False
         saved = Config.get(self._HEADER_KEY)
         if saved:
             self.header().restoreState(QByteArray.fromBase64(saved.encode("ascii")))
+            return True
+        return False
+
+    # ── Menú contextual de cabecera ───────────────────────────────
+
+    # ── Favoritas (catálogo de columnas) ──────────────────────────
+
+    def _favoritas(self) -> set[int]:
+        """Índices de columna marcados como favoritos (aparecen en el menú
+        rápido). Si nunca se guardó nada, usa favorita_default del catálogo.
+        Tablas sin COLUMNAS_CATALOGO no usan este mecanismo."""
+        if not self.COLUMNAS_CATALOGO:
+            return set(range(self.columnCount()))
+        saved = Config.get(self._CATALOGO_KEY) if self._CATALOGO_KEY else None
+        if saved is not None:
+            return set(saved)
+        return {c.idx for c in self.COLUMNAS_CATALOGO if c.favorita_default}
+
+    def _guardar_favoritas(self, favoritas: set[int]) -> None:
+        """Persiste el set de favoritas. No-op si la tabla no define _CATALOGO_KEY."""
+        if self._CATALOGO_KEY:
+            Config.set(self._CATALOGO_KEY, sorted(favoritas))
 
     # ── Menú contextual de cabecera ───────────────────────────────
 
     def _header_context_menu(self, pos):
-        """Menú contextual sobre cabecera para mostrar/ocultar columnas."""
+        """Menú contextual sobre cabecera para mostrar/ocultar columnas.
+
+        Si la tabla define COLUMNAS_CATALOGO, el menú rápido solo lista las
+        columnas favoritas y agrega "Personalizar columnas…" al final para
+        elegir entre todo el catálogo. Si no, se mantiene el menú simple
+        (todas las columnas, sin agrupar) para no romper tablas que aún no
+        migraron a este esquema.
+        """
+        if self.COLUMNAS_CATALOGO:
+            self._header_context_menu_catalogo(pos)
+        else:
+            self._header_context_menu_simple(pos)
+
+    def _header_context_menu_simple(self, pos):
         menu = QMenu(self)
         for c in range(self.columnCount()):
             name = self.headerItem().text(c)
@@ -388,6 +582,28 @@ class TreeTableWidget(QTreeWidget):
             act.setChecked(not self.isColumnHidden(c))
             act.toggled.connect(lambda checked, col=c: self.setColumnHidden(col, not checked))
         menu.exec(self.header().mapToGlobal(pos))
+        self._save_header_state()
+
+    def _header_context_menu_catalogo(self, pos):
+        favoritas = self._favoritas()
+        menu = QMenu(self)
+        for col in self.COLUMNAS_CATALOGO:
+            if col.idx not in favoritas:
+                continue
+            act = menu.addAction(col.label)
+            act.setCheckable(True)
+            act.setChecked(not self.isColumnHidden(col.idx))
+            act.toggled.connect(
+                lambda checked, c=col.idx: self.setColumnHidden(c, not checked))
+        menu.addSeparator()
+        personalizar_act = menu.addAction(_menu_icon("⚙"), "Personalizar columnas…")
+        personalizar_act.triggered.connect(self._abrir_personalizar_columnas)
+        menu.exec(self.header().mapToGlobal(pos))
+        self._save_header_state()
+
+    def _abrir_personalizar_columnas(self):
+        dlg = PersonalizarColumnasDialog(self)
+        dlg.exec()
         self._save_header_state()
 
     # ── Inserción de filas ────────────────────────────────────────
@@ -462,6 +678,15 @@ class TreeTableWidget(QTreeWidget):
             for i in range(item.childCount()):
                 TreeTableWidget._hide_leaves(item.child(i))
 
+    # ── Sincronizar columnas ocultas con búsqueda ──────────────────
+
+    def setColumnHidden(self, column: int, hidden: bool):
+        """Al ocultar una columna, la saca de _search_cols para que la
+        búsqueda no la incluya sin que el usuario pueda desmarcarla."""
+        super().setColumnHidden(column, hidden)
+        if hidden and self._search_cols is not None and column in self._search_cols:
+            self._search_cols.discard(column)
+
     # ── Filtrado de filas (multi-columna) ────────────────────────
     # Busca en todas las columnas de _search_cols (None = todas).
     # Cada widget define sus columnas por defecto y el usuario
@@ -473,7 +698,7 @@ class TreeTableWidget(QTreeWidget):
             self._show_all()
             return
         text = text.lower()
-        cols = self._search_cols if self._search_cols is not None else set(range(self.columnCount()))
+        cols = self._search_cols if self._search_cols is not None else {c for c in range(self.columnCount()) if not self.isColumnHidden(c)}
         for i in range(self.topLevelItemCount()):
             self._filter_item_multi(self.topLevelItem(i), text, cols)
 

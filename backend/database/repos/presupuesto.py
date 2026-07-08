@@ -121,6 +121,8 @@ class NodoRepo(RepoBase):
                 n.nivel,
                 n.tipo,
                 n.insumo_id,
+                n.orden,
+                n.formula,
                 CASE WHEN n.tipo = 'concepto'
                      THEN COALESCE(i.descripcion, n.descripcion)
                      ELSE n.descripcion

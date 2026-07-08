@@ -27,7 +27,7 @@ class ApuMixin:
         importe NO es valor×precio sino un % del subtotal de mano de obra).
         """
         from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QHeaderView
-        from frontend.ventana.widgets.base import TreeTableWidget
+        from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef
 
         container = QWidget()
         layout = QVBoxLayout(container)
@@ -62,17 +62,39 @@ class ApuMixin:
             return combo
 
         detail = TreeTableWidget(
-            ["Tipo", "Clave", "Descripción", "Unidad", "P.U.", "Op", "Valor", "Importe"],
+            ["Tipo", "Clave", "Descripción", "Unidad", "P.U.", "Op", "Valor", "Importe",
+             "Fórmula", "Creado", "Modificado"],
             flat=True,
             editable_cols=frozenset({5}),
             editable_cols_fn=_editable_cols_detalle,
             column_editors={3: _combo_unidad, 5: _combo_operador},
         )
+        # Catálogo de favoritas + "Personalizar columnas…" (ver base.py).
+        # Esta tabla no es una subclase propia de TreeTableWidget — se arma
+        # inline aquí — así que el catálogo se inyecta como atributo de
+        # instancia en vez de heredarlo como class var, mismo patrón que ya
+        # usa este archivo para desconectar_eventos() más abajo.
+        detail._CATALOGO_KEY = "apu_columnas_favoritas"
+        detail.COLUMNAS_CATALOGO = [
+            ColumnaDef(0, "Tipo",        "Identificación", favorita_default=True,  visible_default=True),
+            ColumnaDef(1, "Clave",       "Identificación", favorita_default=True,  visible_default=True),
+            ColumnaDef(2, "Descripción", "Identificación", favorita_default=True,  visible_default=True),
+            ColumnaDef(3, "Unidad",      "Identificación", favorita_default=True,  visible_default=True),
+            ColumnaDef(4, "P.U.",        "Costos",         favorita_default=True,  visible_default=True),
+            ColumnaDef(5, "Op",          "Cálculo",        favorita_default=True,  visible_default=True),
+            ColumnaDef(6, "Valor",       "Cálculo",        favorita_default=True,  visible_default=True),
+            ColumnaDef(7, "Importe",     "Cálculo",        favorita_default=True,  visible_default=True),
+            ColumnaDef(8, "Fórmula",     "Cálculo",        favorita_default=False, visible_default=False),
+            ColumnaDef(9, "Creado",      "Auditoría",      favorita_default=False, visible_default=False),
+            ColumnaDef(10, "Modificado", "Auditoría",      favorita_default=False, visible_default=False),
+        ]
         detail.set_column_modes({
             c: (QHeaderView.ResizeMode.Interactive, w)
-            for c, w in enumerate([110, 90, 250, 50, 100, 40, 80, 110])
+            for c, w in enumerate([110, 90, 250, 50, 100, 40, 80, 110, 160, 130, 130])
         })
         detail.header().setMaximumSectionSize(400)
+        for col in detail.COLUMNAS_CATALOGO:
+            detail.setColumnHidden(col.idx, not col.visible_default)
 
         def _consultar():
             if not self._api:
@@ -115,6 +137,9 @@ class ApuMixin:
                             r["operador"],
                             f"{r['valor']:,.8f}".rstrip("0").rstrip("."),
                             f"${r['importe']:,.2f}",
+                            r.get("formula") or "",
+                            r.get("creado_en") or "",
+                            r.get("modificado_en") or "",
                         ], editable=True)
                         row_item.setData(0, Qt.ItemDataRole.UserRole, r.get("insumo_id"))
                         row_item.setData(0, Qt.ItemDataRole.UserRole + 1, es_compuesto)

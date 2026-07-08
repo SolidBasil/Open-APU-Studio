@@ -12,7 +12,7 @@ from PySide6.QtGui import QColor, QBrush, QFont, QIcon, QPixmap, QPainter
 from PySide6.QtCore import QRect
 from PySide6.QtWidgets import QHeaderView
 
-from frontend.ventana.widgets.base import TreeTableWidget
+from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef
 
 
 # ── Icono desde emoji ───────────────────────────────────────────
@@ -52,14 +52,41 @@ INSUMO_ROLE    = Qt.ItemDataRole.UserRole + 13  # insumo_id ligado (solo concept
 # Col 10: Notas
 # Col 11: Creado
 # Col 12: Modificado
+# Col 13: Orden       (orden manual dentro del padre — nuevo)
+# Col 14: Fórmula     (expresión de cálculo de cantidad, cuando existe — nuevo)
 COLUMNAS = [
     "Estructura", "Nivel", "Tipo", "Clave", "Descripción",
     "Unidad", "Cant", "P.U.", "Total",
     "Estado", "Notas", "Creado", "Modificado",
+    "Orden", "Fórmula",
 ]
-_VISIBLE    = {0, 1, 4, 5, 6, 7, 8}   # Clave y Tipo ocultas por defecto
 EDITABLE    = frozenset({4, 6})        # fallback genérico (usado hoy solo por copiar/pegar)
 _AGRUP_COLS = {0, 1, 4, 8}
+
+# Catálogo para el esquema de favoritas + "Personalizar columnas…" (ver
+# widgets/base.py PersonalizarColumnasDialog). idx debe coincidir con la
+# posición en COLUMNAS de arriba. _VISIBLE ya no se lista a mano: se
+# deriva del catálogo (visible_default) en __init__.
+COLUMNAS_CATALOGO = [
+    ColumnaDef(0,  "Estructura",  "Identificación", favorita_default=True,  visible_default=True),
+    ColumnaDef(1,  "Nivel",       "Identificación", favorita_default=True,  visible_default=True),
+    ColumnaDef(2,  "Tipo",        "Identificación", favorita_default=True,  visible_default=False),
+    ColumnaDef(3,  "Clave",       "Identificación", favorita_default=True,  visible_default=False),
+    ColumnaDef(4,  "Descripción", "Identificación", favorita_default=True,  visible_default=True),
+
+    ColumnaDef(5,  "Unidad",      "Cálculo", favorita_default=True,  visible_default=True),
+    ColumnaDef(6,  "Cant",        "Cálculo", favorita_default=True,  visible_default=True),
+    ColumnaDef(7,  "P.U.",        "Cálculo", favorita_default=True,  visible_default=True),
+    ColumnaDef(8,  "Total",       "Cálculo", favorita_default=True,  visible_default=True),
+    ColumnaDef(13, "Orden",       "Cálculo", favorita_default=False, visible_default=False),
+    ColumnaDef(14, "Fórmula",     "Cálculo", favorita_default=False, visible_default=False),
+
+    ColumnaDef(9,  "Estado",      "Seguimiento", favorita_default=True,  visible_default=False),
+    ColumnaDef(10, "Notas",       "Seguimiento", favorita_default=True,  visible_default=False),
+
+    ColumnaDef(11, "Creado",      "Auditoría", favorita_default=False, visible_default=False),
+    ColumnaDef(12, "Modificado",  "Auditoría", favorita_default=False, visible_default=False),
+]
 
 # Columnas editables según el tipo de nodo (fila). Se usa vía editable_cols_fn
 # — el tipo se lee de TIPO_ROLE (dato explícito seteado al crear la fila),
@@ -92,6 +119,14 @@ COLORES_NIVEL = [
     "#A06A6A",  # 5+: vino
 ]
 
+# Estado de revisión de un concepto (0-3, ver NodoRepo.arbol()).
+ESTADO_NOMBRE = {
+    0: "Sin revisar",
+    1: "En revisión",
+    2: "Verificado",
+    3: "Cuestionado",
+}
+
 
 # ── Formateo de valores ───────────────────────────────────────────
 
@@ -118,6 +153,8 @@ class TablaArbol(TreeTableWidget):
     El estado del header (anchos, visibilidad) persiste entre sesiones.
     """
     _HEADER_KEY = "arbol_header_state"
+    _CATALOGO_KEY = "arbol_columnas_favoritas"
+    COLUMNAS_CATALOGO = COLUMNAS_CATALOGO
     rastrear_insumo = Signal(int)
     desglozar_nodo = Signal(int)
 
@@ -125,16 +162,25 @@ class TablaArbol(TreeTableWidget):
         """Inicializa el árbol de presupuesto con columnas fijas, modo de columnas, búsqueda y restauración del header."""
         super().__init__(COLUMNAS, EDITABLE, parent=parent,
                           editable_cols_fn=_editable_cols_arbol)
+        anchos = [80, 80, 70, 90, 250, 55, 65, 90, 90, 70, 100, 130, 130]
+        anchos += [70, 160]  # Orden, Fórmula
         self.set_column_modes({
             c: (QHeaderView.ResizeMode.Interactive, w)
-            for c, w in enumerate([80, 80, 70, 90, 250, 55, 65, 90, 90,
-                                   70, 100, 130, 130])
+            for c, w in enumerate(anchos)
         })
         self.header().setMaximumSectionSize(400)
+        # Visibilidad inicial: la define el catálogo (visible_default), no
+        # una lista de índices a mano — agregar una columna al catálogo ya
+        # no obliga a acordarse de tocar esta lista también.
+        #
+        # IMPORTANTE: esto va ANTES de _restore_header_state(). Si el orden
+        # se invierte, un usuario que hubiera mostrado manualmente una
+        # columna oculta por defecto (ej. "Clave") vería su elección
+        # revertida en cada arranque, porque este bucle la volvería a
+        # ocultar después de que restoreState() ya la había recuperado.
+        for col in COLUMNAS_CATALOGO:
+            self.setColumnHidden(col.idx, not col.visible_default)
         self._restore_header_state()
-        for c in range(len(COLUMNAS)):
-            if c not in _VISIBLE:
-                self.setColumnHidden(c, True)
         self._search_cols = {4}  # búsqueda por Descripción
         self._api = None  # inyectado por conectar_eventos()
         self._event_bus = None  # inyectado por conectar_eventos()
@@ -195,10 +241,14 @@ class TablaArbol(TreeTableWidget):
             _num(n.get("cantidad")),                       # 6  Cant
             _fmt(n.get("precio_unitario")),                # 7  P.U.
             _fmt(n.get("total")),                          # 8  Total
-            n.get("estado_nombre", ""),                    # 9  Estado
+            ESTADO_NOMBRE.get(n.get("estado"), ""),        # 9  Estado (bug previo: leía "estado_nombre",
+                                                            #    clave que el repo nunca devuelve — siempre
+                                                            #    salía vacío; ahora resuelve desde "estado")
             n.get("notas_rapidas", ""),                    # 10 Notas
             str(n.get("creado_en", "") or ""),             # 11 Creado
             str(n.get("modificado_en", "") or ""),         # 12 Modificado
+            _num(n.get("orden"), decimals=0),              # 13 Orden
+            n.get("formula") or "",                        # 14 Fórmula
         ]
 
     # ── Inserción de agrupadores ──────────────────────────────────

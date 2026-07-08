@@ -1,4 +1,4 @@
-/* Open APU Studio — Light Mode */
+﻿/* Open APU Studio — Light Mode */
 /* Palette: docs/Guia diseño.md sección 17 */
 
 * {
@@ -240,8 +240,8 @@ QGroupBox {
     border: none;
     font-weight: bold;
     font-size: 13px;
-    margin-top: 12px;
-    padding-top: 4px;
+    margin-top: 16px;
+    padding-top: 10px;
 }
 
 /* ── Checkboxes & RadioButtons ── */
