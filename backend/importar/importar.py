@@ -22,6 +22,7 @@ Archivos DBF que lee:
   *F.DBF   — Fórmulas/APU: componentes de cada concepto o insumo compuesto
   *N.DBF   — Resúmenes de APU por concepto (totales por tipo de costo)
   *Z.DBF   — Configuración del proyecto (horas/día, tasas)
+  *C.DBF   — Carátula del proyecto (factores de sobrecosto)
   *1.DBF   — Árbol jerárquico del presupuesto (formato numérico)
   *A.DBF   — Nombres de unidades/agrupadores para el árbol
 
@@ -82,11 +83,11 @@ def _leer_dbf(ruta: Path, encoding="latin-1") -> list[dict]:
             tabla   = DBF(str(ruta), encoding=enc, load=True)
             activos = [dict(r) for r in tabla if not r.get("_deleted", False)]
             borrados = sum(1 for r in tabla if r.get("_deleted", False))
-            print(f"  ✓ {ruta.name}: {len(activos)} activos / {borrados} borrados")
+            print(f"  [OK] {ruta.name}: {len(activos)} activos / {borrados} borrados")
             return activos
         except Exception as e:
             last_err = e
-    print(f"  ✗ {ruta.name}: {last_err}")
+    print(f"  [FALLO] {ruta.name}: {last_err}")
     return []
 
 
@@ -95,9 +96,9 @@ def _leer_dbf(ruta: Path, encoding="latin-1") -> list[dict]:
 # =============================================================================
 
 _SUFIJOS = {
-    "clasico":  {"P":"EGP","F":"EGF","N":"EGN","X":"EGX","Z":"EGZ","I":"EGI"},
+    "clasico":  {"P":"EGP","F":"EGF","N":"EGN","X":"EGX","Z":"EGZ","I":"EGI","C":"EGC"},
     "numerico": {"P":"P",  "F":"F",  "N":"N",  "X":"X",  "Z":"Z",  "I":"I",
-                 "1":"1",  "A":"A"},
+                 "1":"1",  "A":"A",  "C":"C"},
 }
 
 
@@ -222,6 +223,7 @@ def importar(
     regs_f = dbf("F")
     regs_n = dbf("N")
     regs_z = dbf("Z")
+    regs_c = dbf("C")
     regs_1 = dbf("1")
     regs_a = dbf("A")
 
@@ -246,6 +248,22 @@ def importar(
 
     con.commit()
     print(f"  → proyecto '{nombre_proyecto}' (id={proyecto_id})")
+
+    # ── Factores de sobrecosto (desde *C.DBF) ──────────────────────────
+    from backend.database.repos.proyecto import FactoresSobrecostoRepo
+    sobrecosto_repo = FactoresSobrecostoRepo(con)
+    cfg_c = regs_c[0] if regs_c else {}
+    sobrecosto_repo.guardar(
+        proyecto_id,
+        pct_indirectos_campo   = _f(cfg_c.get("OBRPIND")),
+        pct_indirectos_oficina = _f(cfg_c.get("OBRPIND2")),
+        pct_financiamiento     = _f(cfg_c.get("OBRPFIN")),
+        pct_utilidad           = _f(cfg_c.get("OBRPUTI")),
+        pct_cargos_adicionales = _f(cfg_c.get("OBRPCAD")),
+    )
+    con.commit()
+    n_sobrecosto = 1 if cfg_c else 0
+    print(f"  → factores de sobrecosto: {'importados' if cfg_c else 'defaults (sin *C.DBF)'}")
 
     # ── Familias y subfamilias ────────────────────────────────────────────
     # Se recopilan los valores únicos de FAMILIA y SUBFAMILIA del catálogo
@@ -425,6 +443,13 @@ def importar(
     con.commit()
     print(f"  → estructura_presupuesto: {len(nodo_id_sqlite)}")
 
+    # Deja wbs/nivel canónicos desde el primer momento, derivados de
+    # padre_id + orden (ver NodoRepo.reindexar). Robusto ante cualquier
+    # inconsistencia menor del propio importador (ej. PRE_WBS sin resolver).
+    from backend.database.repos import NodoRepo
+    NodoRepo(con).reindexar(proyecto_id)
+    con.commit()
+
     # ── Vincular insumo_id en estructura_presupuesto ──────────────────────
     # clave_a_conceptos mapea clave_opus → [ep_id, ...]. Para cada concepto
     # del árbol se busca el insumo correspondiente por clave_opus y se escribe
@@ -594,6 +619,7 @@ def importar(
         "apu_matrices":          n_comp,
         "apu_resumen_totales":   n_tot,
         "insumos_compuestos":    n_compuestos,
+        "factores_sobrecosto":   n_sobrecosto,
     }
     print("\n--- Resumen ---")
     for k, v in stats.items():

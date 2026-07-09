@@ -30,8 +30,7 @@ class ProyectoRepo(RepoBase):
         core.get_proyecto() (Fase 4, ver ARQUITECTURA_SERVICIOS.md).
         """
         return self._uno("""
-            SELECT p.*, pc.horas_dia, pc.tasa_seguro, pc.tasa_interes,
-                   pc.decimales_costo, pc.decimales_cantidad
+        SELECT p.*, pc.horas_dia, pc.tasa_seguro, pc.tasa_interes
             FROM proyectos p
             LEFT JOIN configuracion_proyecto pc ON pc.proyecto_id = p.id
             WHERE p.id = ? AND p.activo = 1

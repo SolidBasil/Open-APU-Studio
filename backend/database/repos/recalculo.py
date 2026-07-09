@@ -208,8 +208,8 @@ class RecalculoRepo(RepoBase):
         """Aplica los factores de sobrecosto del proyecto: costo_final = costo_directo * factor_total."""
         cur.execute("""
             UPDATE insumos SET
-                costo_final = ROUND(costo_directo * COALESCE(
-                    (SELECT factor_total FROM factores_sobrecosto WHERE proyecto_id = ?), 1.0), 6),
+                costo_final = costo_directo * COALESCE(
+                    (SELECT factor_total FROM factores_sobrecosto WHERE proyecto_id = ?), 1.0),
                 modificado_en = datetime('now')
             WHERE proyecto_id = ? AND activo = 1
         """, (proyecto_id, proyecto_id))

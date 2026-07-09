@@ -373,15 +373,12 @@ class Api:
                     unidad, cantidad_total, pu, total, pct, pct_mo
         """
         from backend.database.repos  import ExplosionRepo
-        from frontend.ventana.widgets.ajustes import get_decimales_explosion
 
-        decimales = get_decimales_explosion()
         return ExplosionRepo(self._conn).calcular(
             proyecto_id  = self._pid,
             concepto_ids = concepto_ids,
             nivel        = nivel,
             tipos_ids    = tipos_ids,
-            decimales    = decimales,
         )
 
     def conceptos_bajo_nodo(self, nodo_id: int) -> list[int]:
@@ -400,6 +397,30 @@ class Api:
             f"{TIPO_ICONO.get(tid, '')} {tipo_nombre_map.get(tid, str(tid))}".strip()
             for tid in tipos_ids
         )
+
+    # =========================================================================
+    # CATÁLOGOS (FAMILIAS / SUBFAMILIAS)
+    # =========================================================================
+
+    def familias(self) -> list[dict]:
+        """Lista de familias activas del proyecto."""
+        from backend.database.repos import FamiliaRepo
+        return FamiliaRepo(self._conn).todas()
+
+    def familia_insertar(self, nombre: str) -> int:
+        """Inserta una nueva familia."""
+        from backend.database.repos import FamiliaRepo
+        return FamiliaRepo(self._conn).insertar(nombre)
+
+    def subfamilias(self, familia_id: int) -> list[dict]:
+        """Lista de subfamilias activas de una familia."""
+        from backend.database.repos import SubfamiliaRepo
+        return SubfamiliaRepo(self._conn).por_familia(familia_id)
+
+    def subfamilia_insertar(self, familia_id: int, nombre: str) -> int:
+        """Inserta una nueva subfamilia dentro de una familia."""
+        from backend.database.repos import SubfamiliaRepo
+        return SubfamiliaRepo(self._conn).insertar(familia_id, nombre)
 
     # =========================================================================
     # MUTACIÓN DE INSUMOS
@@ -444,6 +465,20 @@ class Api:
         RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
         self._ds.emitir(ProyectoRecalculado(self._pid))
 
+    def insumo_actualizar_precios(
+        self, insumo_id: int, costo_mn: float, costo_me: float, usuario_id: int = 1
+    ) -> None:
+        """Actualiza costo_mn y costo_me de un insumo y recalcula en cascada."""
+        from backend.database.repos import RecalculoRepo
+        from backend.database.event_bus import ProyectoRecalculado
+        if costo_mn < 0 or costo_me < 0:
+            raise ValueError("Los precios no pueden ser negativos")
+        self._ds.actualizar("insumos", insumo_id,
+                            costo_mn=costo_mn, costo_directo=costo_mn,
+                            costo_final=costo_mn, costo_me=costo_me)
+        RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
+        self._ds.emitir(ProyectoRecalculado(self._pid))
+
     def insumo_actualizar_campo(
         self, insumo_id: int, campo: str, valor, usuario_id: int = 1
     ) -> None:
@@ -462,7 +497,10 @@ class Api:
         descripcion_corta: str | None = None,
         unidad: str | None = None,
         costo: float = 0.0,
+        costo_me: float = 0.0,
         es_compuesto: int = 0,
+        familia_id: int | None = None,
+        subfamilia_id: int | None = None,
         usuario_id: int = 1,
     ) -> int:
         """Crea un insumo nuevo desde la app (no importado).
@@ -483,19 +521,24 @@ class Api:
                     f"Ya existe un insumo con esa descripción: "
                     f"[{existente['id']}] {existente['descripcion']}"
                 )
-        return self._ds.insertar(
-            "insumos",
+        campos = dict(
             proyecto_id=self._pid,
             tipo_id=tipo_id,
             descripcion=descripcion,
             descripcion_corta=descripcion_corta,
             unidad=unidad,
             costo_mn=costo,
+            costo_me=costo_me,
             costo_directo=costo,
             costo_final=costo,
             es_compuesto=es_compuesto,
             hash=nuevo_hash,
         )
+        if familia_id is not None:
+            campos["familia_id"] = familia_id
+        if subfamilia_id is not None:
+            campos["subfamilia_id"] = subfamilia_id
+        return self._ds.insertar("insumos", **campos)
 
     def insumo_por_id(self, insumo_id: int) -> dict | None:
         """Devuelve el dict completo de un insumo por su id, o None si no existe."""

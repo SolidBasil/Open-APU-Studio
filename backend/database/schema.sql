@@ -167,10 +167,6 @@ CREATE TABLE IF NOT EXISTS configuracion_proyecto (
     horas_dia               REAL    NOT NULL DEFAULT 8.0,
     tasa_seguro             REAL    NOT NULL DEFAULT 0.0,
     tasa_interes            REAL    NOT NULL DEFAULT 0.0,
-    decimales_costo         INTEGER NOT NULL DEFAULT 2,
-    decimales_cantidad      INTEGER NOT NULL DEFAULT 3,
-    decimales_factor        INTEGER NOT NULL DEFAULT 4,
-    decimales_porcentaje    INTEGER NOT NULL DEFAULT 2,
     capturar_rendimientos   INTEGER NOT NULL DEFAULT 0,
     unidad_cantidad_agrup   INTEGER NOT NULL DEFAULT 0
 );
@@ -360,18 +356,6 @@ CREATE TABLE IF NOT EXISTS insumos (
     indice_inegi        TEXT,
     peso_kg             REAL,
     comentarios         TEXT,
-
-    -- Fórmulas de costo
-    formula_costo_mn    TEXT,
-    formula_costo_me    TEXT,
-
-    -- Índices numéricos para fórmulas (1-3 MN, 4-6 ME)
-    indice_1            REAL,
-    indice_2            REAL,
-    indice_3            REAL,
-    indice_4            REAL,
-    indice_5            REAL,
-    indice_6            REAL,
 
     -- Auditoría
     activo              INTEGER NOT NULL DEFAULT 1,

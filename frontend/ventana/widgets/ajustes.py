@@ -5,7 +5,6 @@ Diálogo de configuración general de Open APU Studio.
 
 Secciones navegables por sidebar:
     General    — información del proyecto (próximamente)
-    Cálculo    — precisión de decimales para la explosión de insumos
     Red        — (próximamente)
     Apariencia — (próximamente)
 
@@ -17,35 +16,18 @@ Uso:
 
 from PySide6.QtCore    import Qt
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSpinBox,
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QWidget, QFrame, QPushButton, QListWidget, QListWidgetItem,
     QStackedWidget,
 )
 
-from backend.database.db import Config
-
-
-# ── Claves de Config ─────────────────────────────────────────────
-KEY_DECIMALES_EXPLOSION = "explosion_decimales"
-DECIMALES_DEFAULT       = None
 
 # ── Categorías de la sidebar ─────────────────────────────────────
 _CATEGORIAS = [
     ("📋", "General"),
-    ("🧮", "Cálculo"),
     ("🌐", "Red"),
     ("🎨", "Apariencia"),
 ]
-
-
-def get_decimales_explosion() -> int | None:
-    val = Config.get(KEY_DECIMALES_EXPLOSION, None)
-    if val is None:
-        return None
-    try:
-        return int(val)
-    except (TypeError, ValueError):
-        return None
 
 
 # =============================================================================
@@ -63,7 +45,6 @@ class DialogoAjustes(QDialog):
         self.setMinimumHeight(380)
         self.setObjectName("dlgAjustes")
         self._build_ui()
-        self._cargar_valores()
 
     # ── Construcción ─────────────────────────────────────────────
 
@@ -132,7 +113,6 @@ class DialogoAjustes(QDialog):
         self._stack.setObjectName("dlgAjustesStack")
 
         self._stack.addWidget(self._build_page_general())
-        self._stack.addWidget(self._build_page_calculo())
         self._stack.addWidget(self._build_page_red())
         self._stack.addWidget(self._build_page_apariencia())
 
@@ -149,58 +129,6 @@ class DialogoAjustes(QDialog):
         return self._build_placeholder("General",
             "Información general del proyecto y preferencias básicas.\n\n"
             "Esta sección estará disponible en una versión futura.")
-
-    def _build_page_calculo(self) -> QWidget:
-        page = QWidget()
-        vbox = QVBoxLayout(page)
-        vbox.setContentsMargins(16, 16, 16, 16)
-        vbox.setSpacing(12)
-
-        card = QFrame()
-        card.setObjectName("dlgCard")
-        cvbox = QVBoxLayout(card)
-        cvbox.setSpacing(10)
-        cvbox.setContentsMargins(12, 12, 12, 12)
-
-        title = QLabel("Cálculo")
-        title.setObjectName("dlgCardTitle")
-        cvbox.addWidget(title)
-
-        desc = QLabel(
-            "Precisión de decimales usada en la <b>Explosión de insumos</b>.<br>"
-            "OPUS 2010 trabaja con 2 decimales por operación. "
-            "Usa más decimales para mayor exactitud matemática."
-        )
-        desc.setWordWrap(True)
-        desc.setTextFormat(Qt.TextFormat.RichText)
-        cvbox.addWidget(desc)
-
-        row = QHBoxLayout()
-        row.setSpacing(8)
-        lbl = QLabel("Decimales por operación:")
-        row.addWidget(lbl)
-
-        self._spin_decimales = QSpinBox()
-        self._spin_decimales.setRange(1, 10)
-        self._spin_decimales.setValue(2)
-        self._spin_decimales.setSpecialValueText("Completa (sin redondeo)")
-        self._spin_decimales.setFixedWidth(170)
-        row.addWidget(self._spin_decimales)
-        row.addStretch()
-        cvbox.addLayout(row)
-
-        nota = QLabel(
-            "<i>Valor 1 = precisión completa (flotante). "
-            "Valor 2 = modo OPUS. "
-            "Valores mayores aumentan precisión intermedia.</i>"
-        )
-        nota.setWordWrap(True)
-        nota.setTextFormat(Qt.TextFormat.RichText)
-        cvbox.addWidget(nota)
-
-        vbox.addWidget(card)
-        vbox.addStretch()
-        return page
 
     def _build_page_red(self) -> QWidget:
         return self._build_placeholder("Red",
@@ -254,21 +182,7 @@ class DialogoAjustes(QDialog):
 
         btn_save = QPushButton("Guardar")
         btn_save.setObjectName("btnPrimario")
-        btn_save.clicked.connect(self._guardar)
+        btn_save.clicked.connect(self.accept)
         row.addWidget(btn_save)
 
         return footer
-
-    # ── Carga / guardado ─────────────────────────────────────────
-
-    def _cargar_valores(self):
-        val = get_decimales_explosion()
-        self._spin_decimales.setValue(1 if val is None else val)
-
-    def _guardar(self):
-        val = self._spin_decimales.value()
-        if val == 1:
-            Config.set(KEY_DECIMALES_EXPLOSION, None)
-        else:
-            Config.set(KEY_DECIMALES_EXPLOSION, val)
-        self.accept()

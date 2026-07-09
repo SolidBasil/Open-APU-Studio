@@ -83,7 +83,6 @@ class ExplosionRepo(RepoBase):
         concepto_ids: list[int],
         tipos_ids: list[int],
         ph_conceptos: str,
-        decimales: int | None = None,
         solo_compuestos: bool = False,
     ) -> tuple[list[dict], float]:
         """
@@ -95,9 +94,6 @@ class ExplosionRepo(RepoBase):
         solo_compuestos=True  → insumos compuestos (es_compuesto=1)
         """
         tipos_set = set(tipos_ids)
-
-        def rd(v):
-            return round(v, decimales) if decimales is not None else v
 
         # ── 1. Budget concepts ──
         rows = self._lista(f"""
@@ -226,9 +222,9 @@ class ExplosionRepo(RepoBase):
                 if mult == 0.0:
                     continue
                 if es_pct:
-                    pct_importe += rd(self._ef_qty(p) * (p["precio"] or 0) * mult)
+                    pct_importe += self._ef_qty(p) * (p["precio"] or 0) * mult
                 else:
-                    qty_total += rd(self._ef_qty(p) * mult)
+                    qty_total += self._ef_qty(p) * mult
 
             pu = info.get("costo_directo") or 0
             if es_pct:
@@ -258,7 +254,7 @@ class ExplosionRepo(RepoBase):
                         "unidad":         info["unidad"] or "",
                         "pu":             pu,
                         "cantidad_total": qty_total,
-                        "total":          rd(qty_total * pu),
+                        "total":          qty_total * pu,
                         "importe_pct":    0.0,
                     }
 
@@ -333,7 +329,6 @@ class ExplosionRepo(RepoBase):
         concepto_ids: list[int],
         nivel: str,
         tipos_ids: list[int],
-        decimales: int | None = None,
     ) -> tuple[list[dict], float]:
         """
         Devuelve (filas, total_global).
@@ -342,8 +337,6 @@ class ExplosionRepo(RepoBase):
         Ordenada por tipo_orden asc, total desc dentro de cada tipo.
 
         nivel     — 'basico' | 'compuesto' | 'primer_nivel'
-        decimales — None = precisión flotante completa
-                    2    = redondea como OPUS (para comparación)
         """
         if not concepto_ids or not tipos_ids:
             return [], 0.0
@@ -351,9 +344,9 @@ class ExplosionRepo(RepoBase):
         ph = ",".join("?" * len(concepto_ids))
 
         if nivel == "compuesto":
-            return self._calcular_basico_bottom_up(proyecto_id, concepto_ids, tipos_ids, ph, decimales,
+            return self._calcular_basico_bottom_up(proyecto_id, concepto_ids, tipos_ids, ph,
                                                    solo_compuestos=True)
         elif nivel == "basico":
-            return self._calcular_basico_bottom_up(proyecto_id, concepto_ids, tipos_ids, ph, decimales)
+            return self._calcular_basico_bottom_up(proyecto_id, concepto_ids, tipos_ids, ph)
         else:  # primer_nivel
             return self._calcular_sql(proyecto_id, concepto_ids, tipos_ids, ph, "")
