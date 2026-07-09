@@ -78,9 +78,12 @@ class RecalculoRepo(RepoBase):
         return {"iteraciones_compuestos": n_iter}
 
     def _sincronizar_precios_componentes(self, cur, proyecto_id):
-        """Copia insumos.costo_final → apu_matrices.precio en todos los
+        """Copia insumos.costo_directo → apu_matrices.precio en todos los
         componentes de matrices que pertenecen a este proyecto (tanto
         conceptos del árbol como insumos compuestos).
+
+        Usa costo_directo (no costo_final) para que la cascada de sobrecosto
+        solo se aplique una vez al final, no se acumule en padres.
 
         Excluye ítems con unidad (%): su costo no es un precio unitario fijo
         del catálogo, es un % del subtotal del tipo que indica el sufijo
@@ -88,7 +91,7 @@ class RecalculoRepo(RepoBase):
         """
         cur.execute("""
             UPDATE apu_matrices
-            SET precio = (SELECT costo_final FROM insumos WHERE id = apu_matrices.insumo_id),
+            SET precio = (SELECT costo_directo FROM insumos WHERE id = apu_matrices.insumo_id),
                 modificado_en = datetime('now')
             WHERE matriz_id IN (
                 SELECT id  FROM estructura_presupuesto WHERE proyecto_id = ? AND activo = 1
@@ -199,9 +202,9 @@ class RecalculoRepo(RepoBase):
             if abs(actual - nuevo) > 1e-6:
                 cambios = True
             cur.execute("""
-                UPDATE insumos SET costo_directo = ?, costo_mn = ?, costo_final = ?, modificado_en = datetime('now')
+                UPDATE insumos SET costo_directo = ?, costo_final = ?, modificado_en = datetime('now')
                 WHERE id = ?
-            """, (nuevo, nuevo, nuevo, row["id"]))
+            """, (nuevo, nuevo, row["id"]))
         return cambios
 
     def _aplicar_cascada_sobrecosto(self, cur, proyecto_id):
