@@ -170,6 +170,8 @@ class PanelesMixin:
         tabla = TablaInsumos()
         tabla._insumos_tipo = tipo_map.get(title)
         tabla._insumos_matrices = (title == "🧮 Matrices")
+        tabla._HEADER_KEY = "insumos_header_state_" + (tabla._insumos_tipo or "todos")
+        tabla._restore_header_state()  # re-restaurar con la clave correcta por tipo
         ids = set()
         if self._api:
             tipo = tabla._insumos_tipo
@@ -187,7 +189,18 @@ class PanelesMixin:
 
         def _on_insumo_dblclick(item, column):
             insumo_id = item.data(0, Qt.ItemDataRole.UserRole)
-            if insumo_id and insumo_id in ids:
+            if not insumo_id:
+                return
+            arbol = getattr(self, '_arbol_presupuesto', None)
+            if arbol:
+                sel = arbol.currentItem()
+                if sel:
+                    from frontend.ventana.widgets.arbol import TIPO_ROLE, ID_ROLE
+                    if sel.data(0, TIPO_ROLE) == 'concepto':
+                        concepto_id = sel.data(0, ID_ROLE)
+                        self._api.concepto_reasignar_insumo(concepto_id, insumo_id)
+                        return
+            if insumo_id in ids:
                 self._abrir_apu_insumo(insumo_id)
 
         tabla.itemDoubleClicked.connect(_on_insumo_dblclick)

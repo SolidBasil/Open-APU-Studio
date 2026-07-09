@@ -93,8 +93,8 @@ COLUMNAS_CATALOGO = [
 # nunca del texto de la columna "Tipo", que en otras tablas basadas en
 # TreeTableWidget significa otra cosa (ver base.py::_Delegate).
 _EDITABLE_POR_TIPO = {
-    "capitulo": {4},          # Descripción
-    "concepto": {4, 5, 6},    # Desc, Unidad, Cant (vía insumo ligado)
+    "capitulo": {4},          # Descripción (caso especial: agrupadores)
+    "concepto": {6},          # Cant (solo cantidad, no descripción ni unidad)
     # P.U. (col 7) NO es editable aquí a propósito: el árbol solo tiene el
     # insumo_id, no si es compuesto, así que no podía distinguir "básico sin
     # APU" de "compuesto" para bloquear solo este último caso (por eso sí
@@ -178,8 +178,15 @@ class TablaArbol(TreeTableWidget):
         # columna oculta por defecto (ej. "Clave") vería su elección
         # revertida en cada arranque, porque este bucle la volvería a
         # ocultar después de que restoreState() ya la había recuperado.
+        #
+        # setColumnHidden dispara sectionResized al cambiar el ancho a 0,
+        # y esa señal llama a _save_header_state, que sobreescribe el
+        # estado guardado del usuario con valores por defecto.
+        # El guard _applying_modes evita esa escritura espuria.
+        self._applying_modes = True
         for col in COLUMNAS_CATALOGO:
             self.setColumnHidden(col.idx, not col.visible_default)
+        self._applying_modes = False
         self._restore_header_state()
         self._search_cols = {4}  # búsqueda por Descripción
         self._api = None  # inyectado por conectar_eventos()

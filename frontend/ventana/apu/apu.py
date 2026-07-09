@@ -26,7 +26,8 @@ class ApuMixin:
         recalculó RecalculoRepo (incluyendo casos como herramienta, cuyo
         importe NO es valor×precio sino un % del subtotal de mano de obra).
         """
-        from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QHeaderView
+        from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QHeaderView
+        from PySide6.QtCore import QTimer
         from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef
 
         container = QWidget()
@@ -34,17 +35,29 @@ class ApuMixin:
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
+        hdr = QHBoxLayout()
+        hdr.setContentsMargins(8, 4, 0, 4)
         lbl = QLabel()
         lbl.setTextFormat(Qt.TextFormat.RichText)
         lbl.setWordWrap(True)
-        lbl.setContentsMargins(8, 4, 8, 4)
-        layout.addWidget(lbl)
+        hdr.addWidget(lbl, 1)
+
+        btn_presupuesto = QPushButton("📋")
+        btn_presupuesto.setFixedSize(28, 28)
+        btn_presupuesto.setToolTip("Abrir presupuesto en ventana emergente")
+        btn_presupuesto.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_presupuesto.clicked.connect(self._abrir_popup_presupuesto)
+        hdr.addWidget(btn_presupuesto)
+
+        layout.addLayout(hdr)
         layout.addSpacing(2)
 
         def _editable_cols_detalle(item):
+            # ponytail: descripción y unidad se editan vía popup (doble clic),
+            # no inline — misma filosofía que el árbol de presupuesto.
             if item.data(0, Qt.ItemDataRole.UserRole + 1):
-                return {3, 5, 6}
-            return {3, 4, 5, 6}
+                return {5, 6}
+            return {4, 5, 6}
 
         def _combo_operador(parent):
             from PySide6.QtWidgets import QComboBox
@@ -75,6 +88,7 @@ class ApuMixin:
         # instancia en vez de heredarlo como class var, mismo patrón que ya
         # usa este archivo para desconectar_eventos() más abajo.
         detail._CATALOGO_KEY = "apu_columnas_favoritas"
+        detail._HEADER_KEY = "apu_header_state"
         detail.COLUMNAS_CATALOGO = [
             ColumnaDef(0, "Tipo",        "Identificación", favorita_default=True,  visible_default=True),
             ColumnaDef(1, "Clave",       "Identificación", favorita_default=True,  visible_default=True),
@@ -93,8 +107,10 @@ class ApuMixin:
             for c, w in enumerate([110, 90, 250, 50, 100, 40, 80, 110, 160, 130, 130])
         })
         detail.header().setMaximumSectionSize(400)
+        detail._applying_modes = True
         for col in detail.COLUMNAS_CATALOGO:
             detail.setColumnHidden(col.idx, not col.visible_default)
+        detail._applying_modes = False
 
         def _consultar():
             if not self._api:
@@ -206,16 +222,29 @@ class ApuMixin:
         return container
 
     def _on_apu_detail_dblclick(self, item, column):
-        """Doble clic en columna P.U. → abre sub-APU si el insumo es compuesto."""
-        if column != 4:
-            return
+        """Doble clic: Descripción → selector de insumo (como en presupuesto); P.U. → sub-APU."""
         insumo_id = item.data(0, Qt.ItemDataRole.UserRole)
-        es_compuesto = item.data(0, Qt.ItemDataRole.UserRole + 1)
-        if insumo_id and es_compuesto:
-            self._abrir_apu_insumo(insumo_id)
+        if not insumo_id:
+            return
+
+        if column == 2:  # Descripción → reasignar insumo (mismo diálogo que el árbol)
+            from PySide6.QtWidgets import QDialog
+            from frontend.ventana.widgets.dialogs import DialogoSeleccionarInsumo
+            dlg = DialogoSeleccionarInsumo(self._api, self, default_tipos={1, 2})
+            if dlg.exec() == QDialog.DialogCode.Accepted:
+                nuevo_id = dlg.insumo_seleccionado
+                comp_id = item.data(5, Qt.ItemDataRole.UserRole)
+                if nuevo_id is not None and comp_id:
+                    self._api.apu_reasignar_componente(comp_id, nuevo_id)
+            return
+
+        if column == 4:  # P.U.
+            es_compuesto = item.data(0, Qt.ItemDataRole.UserRole + 1)
+            if es_compuesto:
+                self._abrir_apu_insumo(insumo_id)
 
     def _on_apu_detalle_editado(self, item, column):
-        """Persiste edición de Precio (col 4), Operador (col 5) o Cantidad (col 6).
+        """Persiste edición de Precio (col 4), Operador (col 5) o Valor (col 6).
 
         No hace falta recalcular nada a mano aquí: api.apu_actualizar_*()
         emite ApuComponenteActualizado/InsumoActualizado de forma SÍNCRONA
@@ -226,7 +255,7 @@ class ApuMixin:
         y recreó (detail.clear()), y seguir usándolo revienta con
         RuntimeError: libshiboken...already deleted.
         """
-        if column not in (3, 4, 5, 6) or not self._api:
+        if column not in (4, 5, 6) or not self._api:
             return
         comp_id = item.data(5, Qt.ItemDataRole.UserRole)
 
@@ -240,14 +269,6 @@ class ApuMixin:
             return
 
         from PySide6.QtWidgets import QMessageBox
-
-        if column == 3:
-            insumo_id = item.data(0, Qt.ItemDataRole.UserRole)
-            if not insumo_id:
-                return
-            unidad = item.text(column).strip()
-            self._api.insumo_actualizar_campo(insumo_id, "unidad", unidad)
-            return
 
         if column == 6:
             try:
@@ -280,12 +301,29 @@ class ApuMixin:
                 self._revertir_item(item, column, "insumos", insumo_id, "costo_mn", "$:,.2f")
 
     def _on_item_dblclick(self, item, column):
-        """Doble clic en presupuesto/insumos → abre APU del concepto."""
+        """Doble clic en el árbol de presupuesto.
+
+        Col 7 (P.U.) → abre APU del concepto.
+        Col 4 (Descripción) en Concepto → abre selector de insumo.
+        """
         from frontend.ventana.widgets.arbol import ID_ROLE
         if self._es_pu(item, column):
             nodo_id = item.data(0, ID_ROLE)
             if nodo_id:
                 self._abrir_apu_por_id(nodo_id)
+            return
+
+        if column == 4 and item.text(2) == "Concepto":
+            nodo_id = item.data(0, ID_ROLE)
+            if not nodo_id or not self._api:
+                return
+            from PySide6.QtWidgets import QDialog
+            from frontend.ventana.widgets.dialogs import DialogoSeleccionarInsumo
+            dlg = DialogoSeleccionarInsumo(self._api, self)
+            if dlg.exec() == QDialog.DialogCode.Accepted:
+                nuevo_id = dlg.insumo_seleccionado
+                if nuevo_id is not None:
+                    self._api.concepto_reasignar_insumo(nodo_id, nuevo_id)
 
     def _abrir_apu_por_id(self, nodo_id: int):
         """Abre el APU de un concepto del árbol de presupuesto."""
@@ -371,6 +409,21 @@ class ApuMixin:
         resultado = self._api.apu(insumo_id=insumo_id)
         self._abrir_apu_resultado(resultado, referencia=f"Insumo #{insumo_id}",
                                    id_fallback=f"#{insumo_id}")
+
+    def _abrir_popup_presupuesto(self):
+        """Abre el presupuesto en una ventana emergente no modal."""
+        from frontend.ventana.widgets.presupuesto_popup import PresupuestoPopup
+        existing = getattr(self, '_popup_presupuesto', None)
+        if existing:
+            try:
+                if existing.isVisible():
+                    existing.raise_()
+                    existing.activateWindow()
+                    return
+            except RuntimeError:
+                pass  # C++ object was deleted (WA_DeleteOnClose)
+        self._popup_presupuesto = PresupuestoPopup(self._api, self._event_bus, self)
+        self._popup_presupuesto.show()
 
     def _abrir_apu_resultado(self, resultado, *, referencia: str, id_fallback: str):
         """Punto único que arma o enfoca la pestaña de un APU ya resuelto.

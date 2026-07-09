@@ -3,6 +3,26 @@ Repositorio de explosión de insumos (tres niveles de cálculo).
 """
 from .base import RepoBase
 
+# ponytail: mapeo sufijo unidad → tipo_id destino para porcentajes
+_PCT_TIPO_DESTINO = {
+    "MO": 2, "MA": 1, "MAT": 1,
+    "EQ": 8, "AUX": 16, "SUBC": 32, "FL": 64, "TR": 128,
+}
+
+def _parse_unidad_pct(unidad: str) -> tuple:
+    """Retorna (es_porcentaje, sufijo, tipo_id_destino).
+
+    Si unidad empieza con '(%' se considera porcentaje.
+    El sufijo determina sobre qué tipo de insumo se aplica:
+      (%)MO → Mano de Obra, (%)MA/MAT → Material, (%)EQ → Equipo, etc.
+    """
+    if not unidad or not unidad.startswith("(%"):
+        return False, None, None
+    sufijo = (unidad[3:] or "").upper().strip()
+    tipo_destino = _PCT_TIPO_DESTINO.get(sufijo, 2)  # default MO
+    return True, sufijo, tipo_destino
+
+
 class ExplosionRepo(RepoBase):
     """Calcula la explosión de insumos para un conjunto de conceptos.
 
@@ -13,11 +33,11 @@ class ExplosionRepo(RepoBase):
         'compuesto'    — solo insumos compuestos del APU directo
         'primer_nivel' — todos los insumos del APU directo (sin bajar)
 
-    Herramienta: su importe es % × subtotal_MO del APU, no valor × costo_final.
+    Porcentajes: un insumo se calcula como % cuando su unidad empieza con '(%'.
+    El sufijo (MO, MA, EQ…) determina el subtotal base (ver _parse_unidad_pct).
     """
 
-    TIPO_ID_HERRAMIENTA = 4
-    TIPO_ID_MO          = 2
+    TIPO_ID_MO = 2
 
     @staticmethod
     def _ef_qty(row: dict) -> float:
@@ -33,18 +53,24 @@ class ExplosionRepo(RepoBase):
     # ── Helpers internos ─────────────────────────────────────────────────
 
     def _postprocesar(self, filas: list[dict], tipos_set: set) -> tuple[list[dict], float]:
-        """Filtra por tipos, calcula pct_mo para herramienta, % global y ordena."""
+        """Filtra por tipos, calcula pct_base para ítems % y ordena."""
         filas = [f for f in filas if f.get("tipo_id") in tipos_set]
 
         total_global = sum(f.get("total") or 0 for f in filas)
-        total_mo     = sum(f["total"] for f in filas if f["tipo_id"] == self.TIPO_ID_MO)
+        total_por_tipo = {}
+        for f in filas:
+            total_por_tipo[f["tipo_id"]] = total_por_tipo.get(f["tipo_id"], 0) + f["total"]
 
         for f in filas:
             f["pct"] = (f["total"] / total_global * 100) if total_global else 0
-            if f["tipo_id"] == self.TIPO_ID_HERRAMIENTA:
-                f.setdefault("pct_mo", f["total"] / total_mo if total_mo else None)
+            es_pct, sufijo, tipo_destino = _parse_unidad_pct(f.get("unidad"))
+            if es_pct:
+                base = total_por_tipo.get(tipo_destino, 0)
+                f["pct_base"] = f["total"] / base if base else None
+                f["pct_sufijo"] = sufijo
             else:
-                f.setdefault("pct_mo", None)
+                f["pct_base"] = None
+                f["pct_sufijo"] = None
 
         filas.sort(key=lambda f: (f.get("tipo_orden") or 99, -(f.get("total") or 0)))
         return filas, total_global
@@ -187,26 +213,26 @@ class ExplosionRepo(RepoBase):
             else:
                 if info["es_compuesto"]:
                     continue
-            is_herr = (info["tipo_id"] == self.TIPO_ID_HERRAMIENTA)
+            es_pct, sufijo, _ = _parse_unidad_pct(info.get("unidad"))
             parents = reverse.get(insumo_id, [])
             if not parents:
                 continue
 
             qty_total = 0.0
-            herr_importe = 0.0
+            pct_importe = 0.0
 
             for p in parents:
                 mult = _calc_mult(p["matriz_id"])
                 if mult == 0.0:
                     continue
-                if is_herr:
-                    herr_importe += rd(self._ef_qty(p) * (p["precio"] or 0) * mult)
+                if es_pct:
+                    pct_importe += rd(self._ef_qty(p) * (p["precio"] or 0) * mult)
                 else:
                     qty_total += rd(self._ef_qty(p) * mult)
 
             pu = info.get("costo_directo") or 0
-            if is_herr:
-                if herr_importe:
+            if es_pct:
+                if pct_importe:
                     acumulado[insumo_id] = {
                         "insumo_id":      insumo_id,
                         "tipo_id":        info["tipo_id"],
@@ -218,7 +244,7 @@ class ExplosionRepo(RepoBase):
                         "pu":             None,
                         "cantidad_total": 0.0,
                         "total":          0.0,
-                        "importe_herr":   herr_importe,
+                        "importe_pct":    pct_importe,
                     }
             else:
                 if qty_total:
@@ -233,14 +259,14 @@ class ExplosionRepo(RepoBase):
                         "pu":             pu,
                         "cantidad_total": qty_total,
                         "total":          rd(qty_total * pu),
-                        "importe_herr":   0.0,
+                        "importe_pct":    0.0,
                     }
 
         # ── 6. Convertir a lista ──
         filas = []
         for entry in acumulado.values():
-            es_herr = (entry["tipo_id"] == self.TIPO_ID_HERRAMIENTA)
-            filas.append({**entry, "total": entry["importe_herr"] if es_herr else entry["total"]})
+            es_pct, _, _ = _parse_unidad_pct(entry.get("unidad"))
+            filas.append({**entry, "total": entry["importe_pct"] if es_pct else entry["total"]})
 
         return self._postprocesar(filas, tipos_set)
 
@@ -255,12 +281,8 @@ class ExplosionRepo(RepoBase):
         filtro_nivel: str,
     ) -> tuple[list[dict], float]:
         """Niveles 'primer_nivel' o 'compuesto': resuelve por SQL agregado."""
-        tipos_set      = set(tipos_ids)
-        tipos_normales = [t for t in tipos_ids if t != self.TIPO_ID_HERRAMIENTA]
-        filas_normales = []
+        tipos_set = set(tipos_ids)
 
-        # CTE: resolver matriz_id real — tras unificar_matrices_apu() los
-        # componentes viven en matriz_id = -insumo_id (negativo), no en ep.id.
         cte_matriz = f"""
             WITH ep_apu AS (
                 SELECT id, proyecto_id, cantidad,
@@ -270,61 +292,38 @@ class ExplosionRepo(RepoBase):
             )
         """
 
-        if tipos_normales:
-            ph_tipos = ",".join("?" * len(tipos_normales))
-            sql = f"""{cte_matriz}
-                SELECT
-                    i.id                AS insumo_id,
-                    i.tipo_id,
-                    ti.nombre           AS tipo_nombre,
-                    ti.orden            AS tipo_orden,
-                    i.clave_opus        AS clave,
-                    COALESCE(i.descripcion, i.descripcion_corta, '') AS descripcion,
-                    i.unidad,
-                    SUM(CASE WHEN am.operador='*' THEN am.valor*ep.cantidad ELSE ep.cantidad/am.valor END) AS cantidad_total,
-                    SUM(CASE WHEN am.operador='*' THEN am.valor*ep.cantidad ELSE ep.cantidad/am.valor END) * i.costo_directo AS total
-                FROM ep_apu ep
-                JOIN apu_matrices am ON am.matriz_id = ep.matriz_apu
-                JOIN insumos i       ON i.id = am.insumo_id
-                JOIN tipos_insumo ti ON ti.id = i.tipo_id
-                WHERE ep.proyecto_id  = ?
-                  AND i.proyecto_id   = ?
-                  AND i.tipo_id       IN ({ph_tipos})
-                  AND i.activo        = 1
-                  {filtro_nivel}
-                GROUP BY i.id
-            """
-            filas_normales = self._lista(sql, concepto_ids + [proyecto_id, proyecto_id] + tipos_normales)
+        # Items normales (sin unidad %) + items con unidad % en una sola query
+        sql = f"""{cte_matriz}
+            SELECT
+                i.id                AS insumo_id,
+                i.tipo_id,
+                ti.nombre           AS tipo_nombre,
+                ti.orden            AS tipo_orden,
+                i.clave_opus        AS clave,
+                COALESCE(i.descripcion, i.descripcion_corta, '') AS descripcion,
+                i.unidad,
+                CASE WHEN i.unidad LIKE '(%' THEN NULL
+                     ELSE SUM(CASE WHEN am.operador='*' THEN am.valor*ep.cantidad ELSE ep.cantidad/am.valor END)
+                END AS cantidad_total,
+                CASE WHEN i.unidad LIKE '(%'
+                     THEN SUM(am.valor * am.precio * ep.cantidad)
+                     ELSE SUM(CASE WHEN am.operador='*' THEN am.valor*ep.cantidad ELSE ep.cantidad/am.valor END) * i.costo_directo
+                END AS total
+            FROM ep_apu ep
+            JOIN apu_matrices am ON am.matriz_id = ep.matriz_apu
+            JOIN insumos i       ON i.id = am.insumo_id
+            JOIN tipos_insumo ti ON ti.id = i.tipo_id
+            WHERE ep.proyecto_id  = ?
+              AND i.proyecto_id   = ?
+              AND i.tipo_id       IN ({','.join('?' * len(tipos_ids))})
+              AND i.activo        = 1
+              {filtro_nivel}
+            GROUP BY i.id
+        """
+        params = concepto_ids + [proyecto_id, proyecto_id] + tipos_ids
+        filas = self._lista(sql, params)
 
-        filas_herr = []
-        if self.TIPO_ID_HERRAMIENTA in tipos_ids:
-            sql_h = f"""{cte_matriz}
-                SELECT
-                    i.id                AS insumo_id,
-                    i.tipo_id,
-                    ti.nombre           AS tipo_nombre,
-                    ti.orden            AS tipo_orden,
-                    i.clave_opus        AS clave,
-                    COALESCE(i.descripcion, i.descripcion_corta, '') AS descripcion,
-                    i.unidad,
-                    SUM(am.valor * am.precio * ep.cantidad) AS total,
-                    SUM(am.valor * am.precio * ep.cantidad) /
-                    NULLIF(SUM(am.precio * ep.cantidad), 0) AS pct_mo
-                FROM ep_apu ep
-                JOIN apu_matrices am ON am.matriz_id = ep.matriz_apu
-                JOIN insumos i       ON i.id = am.insumo_id
-                JOIN tipos_insumo ti ON ti.id = i.tipo_id
-                WHERE ep.proyecto_id  = ?
-                  AND i.proyecto_id   = ?
-                  AND i.tipo_id       = {self.TIPO_ID_HERRAMIENTA}
-                  AND i.activo        = 1
-                  {filtro_nivel}
-                GROUP BY i.id
-            """
-            params_h = [proyecto_id, proyecto_id]
-            filas_herr = self._lista(sql_h, concepto_ids + params_h)
-
-        return self._postprocesar(filas_normales + filas_herr, tipos_set)
+        return self._postprocesar(filas, tipos_set)
 
     # ── API pública ───────────────────────────────────────────────────────
 

@@ -469,6 +469,7 @@ class TreeTableWidget(QTreeWidget):
         h.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         h.customContextMenuRequested.connect(self._header_context_menu)
         h.sectionResized.connect(self._save_header_state)
+        h.sectionMoved.connect(self._save_header_state)
         for c in range(len(columns)):
             h.setSectionResizeMode(c, QHeaderView.ResizeMode.Interactive)
 

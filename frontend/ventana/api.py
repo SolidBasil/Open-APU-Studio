@@ -93,14 +93,24 @@ class Api:
         from backend.database.event_bus import ProyectoRecalculado
         if cantidad < 0:
             raise ValueError("La cantidad no puede ser negativa")
-        # El campo 'cantidad' se escribe y se notifica vía DataService.
-        # Solo falta la cascada de totales hacia la raíz: es cálculo
-        # derivado (no dato de usuario), no pasa por SchemaRegistry y
-        # no dispara su propio evento semántico. ProyectoRecalculado
-        # avisa a los widgets que los totales corriente arriba cambiaron
-        # (Fase 3: reemplaza a _refrescar_tab_activa()).
         self._ds.actualizar("estructura_presupuesto", concepto_id, cantidad=cantidad)
         NodoRepo(self._conn).recalcular_desde(concepto_id)
+        self._conn.commit()
+        self._ds.emitir(ProyectoRecalculado(self._pid))
+
+    def concepto_reasignar_insumo(self, concepto_id: int, nuevo_insumo_id: int) -> None:
+        """Reasigna un concepto a otro insumo del catálogo.
+
+        Cambia el insumo_id del concepto, que ahora apuntará al nuevo
+        insumo (descripción, unidad, precio se resuelven desde allí).
+        Dispara recálculo completo del proyecto y reconstrucción del árbol.
+        """
+        from backend.database.repos import NodoRepo, RecalculoRepo
+        from backend.database.event_bus import ProyectoRecalculado
+        self._ds.actualizar("estructura_presupuesto", concepto_id,
+                             insumo_id=nuevo_insumo_id)
+        NodoRepo(self._conn).recalcular_desde(concepto_id)
+        RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
         self._conn.commit()
         self._ds.emitir(ProyectoRecalculado(self._pid))
 
@@ -267,6 +277,19 @@ class Api:
                 raise ValueError("La cantidad no puede ser cero con operador división (división por cero)")
         self._ds.actualizar("apu_matrices", comp_id, valor=valor)
         RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
+        self._ds.emitir(ProyectoRecalculado(self._pid))
+
+    def apu_reasignar_componente(self, comp_id: int, nuevo_insumo_id: int) -> None:
+        """Reasigna el insumo de un componente dentro de un APU.
+
+        Cambia el insumo_id del registro en apu_matrices. Dispara recálculo
+        completo y todos los widgets suscritos se refrescan solos.
+        """
+        from backend.database.repos import RecalculoRepo
+        from backend.database.event_bus import ProyectoRecalculado
+        self._ds.actualizar("apu_matrices", comp_id, insumo_id=nuevo_insumo_id)
+        RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
+        self._conn.commit()
         self._ds.emitir(ProyectoRecalculado(self._pid))
 
     def apu_actualizar_precio_componente(self, insumo_id: int, precio: float) -> None:

@@ -212,6 +212,36 @@ class DiagnosticoRepo(RepoBase):
               )) > 1.0
         """, [proyecto_id])
 
+    def componentes_cantidad_cero(self, proyecto_id):
+        """Componentes APU con valor = 0 (cantidad cero)."""
+        return self._lista("""
+            SELECT am.id, i.clave_opus AS clave, i.descripcion, i.tipo_id,
+                   am.matriz_id
+            FROM apu_matrices am
+            JOIN insumos i ON i.id = am.insumo_id
+            WHERE i.proyecto_id = ? AND i.activo = 1
+              AND (am.valor IS NULL OR am.valor = 0)
+            ORDER BY am.matriz_id, am.orden
+        """, [proyecto_id])
+
+    def insumos_duplicados_en_matriz(self, proyecto_id):
+        """Mismo insumo_id aparece más de una vez en la misma matriz."""
+        return self._lista("""
+            SELECT am.id, i.clave_opus AS clave, i.descripcion, i.tipo_id,
+                   am.matriz_id, dups.cnt
+            FROM apu_matrices am
+            JOIN insumos i ON i.id = am.insumo_id
+            JOIN (
+                SELECT matriz_id, insumo_id, COUNT(*) AS cnt
+                FROM apu_matrices
+                GROUP BY matriz_id, insumo_id
+                HAVING COUNT(*) > 1
+            ) dups ON dups.matriz_id = am.matriz_id
+                  AND dups.insumo_id = am.insumo_id
+            WHERE i.proyecto_id = ? AND i.activo = 1
+            ORDER BY am.matriz_id, am.insumo_id, am.orden
+        """, [proyecto_id])
+
     def resumen_integridad(self, proyecto_id) -> dict:
         """Reporte agregado de integridad del proyecto. Migrado desde
         core.validar() (Fase 4, ver ARQUITECTURA_SERVICIOS.md).

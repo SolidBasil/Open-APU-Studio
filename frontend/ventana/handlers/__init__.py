@@ -32,9 +32,10 @@ class HandlersMixin:
     """
 
     def _cerrar_tab_widget(self, idx: int):
-        """Quita la pestaña en `idx`, desconectando primero del EventBus
-        cualquier widget que se haya suscrito (TablaArbol/TablaInsumos,
-        directamente o anidado dentro de una pestaña compuesta).
+        """Quita la pestaña en `idx`, guardando estado de columnas y
+        desconectando primero del EventBus cualquier widget que se haya
+        suscrito (TablaArbol/TablaInsumos, directamente o anidado dentro
+        de una pestaña compuesta).
 
         Usar SIEMPRE esta función en vez de self._tabs.removeTab(idx)
         directo. removeTab() por sí solo no elimina el widget ni lo
@@ -45,11 +46,16 @@ class HandlersMixin:
         """
         widget = self._tabs.widget(idx)
         if widget is not None:
-            if hasattr(widget, 'desconectar_eventos'):
-                widget.desconectar_eventos()
+            if hasattr(widget, '_save_header_state'):
+                widget._save_header_state()
+            for hijo in widget.findChildren(QWidget):
+                if hasattr(hijo, '_save_header_state'):
+                    hijo._save_header_state()
             for hijo in widget.findChildren(QWidget):
                 if hasattr(hijo, 'desconectar_eventos'):
                     hijo.desconectar_eventos()
+            if hasattr(widget, 'desconectar_eventos'):
+                widget.desconectar_eventos()
         self._tabs.removeTab(idx)
 
     def _reload_presupuesto(self):
@@ -398,10 +404,12 @@ class HandlersMixin:
         return w.findChild(TreeTableWidget) if w else None
 
     def _on_ajustar_columnas(self):
-        """Auto-ajusta ancho de columnas al contenido."""
+        """Auto-ajusta ancho de columnas al contenido (solo si no hay estado guardado)."""
         from PySide6.QtWidgets import QHeaderView
         t = self._get_active_table()
         if not t:
+            return
+        if hasattr(t, '_restore_header_state') and t._restore_header_state():
             return
         h = t.header()
         h.resizeSections(QHeaderView.ResizeMode.ResizeToContents)
@@ -426,6 +434,8 @@ class HandlersMixin:
             act.toggled.connect(lambda checked, col=c: t.setColumnHidden(col, not checked))
         pos = btn.mapToGlobal(btn.rect().bottomLeft()) if btn else self._tb.mapToGlobal(self._tb.rect().topLeft())
         menu.exec(pos)
+        if hasattr(t, '_save_header_state'):
+            t._save_header_state()
 
     def _on_restablecer_formato(self):
         """Restaura anchos y visibilidad de columnas a sus valores por defecto."""

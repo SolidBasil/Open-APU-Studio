@@ -82,10 +82,9 @@ class RecalculoRepo(RepoBase):
         componentes de matrices que pertenecen a este proyecto (tanto
         conceptos del árbol como insumos compuestos).
 
-        Excluye herramienta: su costo no es un precio unitario fijo del
-        catálogo, es un % del subtotal de mano de obra de cada matriz
-        (ver _recalcular_resumenes), así que su `precio` no debe
-        sobreescribirse aquí.
+        Excluye ítems con unidad (%): su costo no es un precio unitario fijo
+        del catálogo, es un % del subtotal del tipo que indica el sufijo
+        (MO, MA, EQ…). Su `precio` no debe sobreescribirse.
         """
         cur.execute("""
             UPDATE apu_matrices
@@ -97,35 +96,53 @@ class RecalculoRepo(RepoBase):
                 SELECT -id FROM insumos WHERE proyecto_id = ? AND es_compuesto = 1 AND activo = 1
             )
             AND insumo_id NOT IN (
-                SELECT i.id FROM insumos i
-                JOIN tipos_insumo t ON t.id = i.tipo_id
-                WHERE t.clave = 'herramienta'
+                SELECT id FROM insumos
+                WHERE proyecto_id = ? AND unidad LIKE '(%'
             )
-        """, (proyecto_id, proyecto_id))
+        """, (proyecto_id, proyecto_id, proyecto_id))
 
     def _recalcular_resumenes(self, cur, proyecto_id):
         """Recalcula apu_resumen_totales para todas las matrices del
         proyecto (conceptos del árbol e insumos compuestos).
 
-        Herramienta es un caso especial: en apu_matrices su columna
-        `valor` no es una cantidad física, es un PORCENTAJE. Su importe
-        real es ese % multiplicado por el subtotal de mano de obra de esa
-        misma matriz — no `valor` × `precio` como el resto de los tipos
-        (ver ExplosionRepo, que ya calcula herramienta de esta forma).
+        Los ítems con unidad (%) son porcentajes cuyo importe real es
+        (valor / 100) × subtotal del tipo destino que indica el sufijo:
+          (%)MO → mano_obra, (%)MA/MAT → material, (%)EQ → equipo, etc.
         """
-        cur.execute("""
-            WITH mo AS (
-                SELECT ac.matriz_id AS matriz_id,
-                       COALESCE(SUM(CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END), 0) AS subtotal
+        ph_matrices = """
+            SELECT id  FROM estructura_presupuesto WHERE proyecto_id = ? AND activo = 1
+            UNION ALL
+            SELECT -id FROM insumos WHERE proyecto_id = ? AND es_compuesto = 1 AND activo = 1
+        """
+        cur.execute(f"""
+            WITH base AS (
+                SELECT
+                    ac.matriz_id,
+                    COALESCE(SUM(CASE WHEN t.clave='material'  AND i.unidad NOT LIKE '(%' THEN
+                      CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END ELSE 0 END),0) AS materiales,
+                    COALESCE(SUM(CASE WHEN t.clave='mano_obra' AND i.unidad NOT LIKE '(%' THEN
+                      CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END ELSE 0 END),0) AS mano_obra,
+                    COALESCE(SUM(CASE WHEN t.clave='equipo'    AND i.unidad NOT LIKE '(%' THEN
+                      CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END ELSE 0 END),0) AS equipo,
+                    COALESCE(SUM(CASE WHEN t.clave='auxiliar'  AND i.unidad NOT LIKE '(%' THEN
+                      CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END ELSE 0 END),0) AS auxiliares,
+                    COALESCE(SUM(CASE WHEN t.clave='concepto'  AND i.unidad NOT LIKE '(%' THEN
+                      CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END ELSE 0 END),0) AS subcontratos,
+                    COALESCE(SUM(CASE WHEN t.clave='flete'     AND i.unidad NOT LIKE '(%' THEN
+                      CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END ELSE 0 END),0) AS fletes,
+                    COALESCE(SUM(CASE WHEN t.clave='trabajo'   AND i.unidad NOT LIKE '(%' THEN
+                      CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END ELSE 0 END),0) AS trabajos,
+                    COALESCE(SUM(CASE WHEN i.unidad = '(%)MO'  THEN ac.valor ELSE 0 END),0) AS pct_val_mo,
+                    COALESCE(SUM(CASE WHEN i.unidad IN('(%)MA','(%)MAT') THEN ac.valor ELSE 0 END),0) AS pct_val_ma,
+                    COALESCE(SUM(CASE WHEN i.unidad = '(%)EQ'  THEN ac.valor ELSE 0 END),0) AS pct_val_eq,
+                    COALESCE(SUM(CASE WHEN i.unidad = '(%)AUX' THEN ac.valor ELSE 0 END),0) AS pct_val_aux,
+                    COALESCE(SUM(CASE WHEN i.unidad IN('(%)SUBC','(%)CONCEPTO') THEN ac.valor ELSE 0 END),0) AS pct_val_subc,
+                    COALESCE(SUM(CASE WHEN i.unidad = '(%)FL'  THEN ac.valor ELSE 0 END),0) AS pct_val_fl,
+                    COALESCE(SUM(CASE WHEN i.unidad = '(%)TR'  THEN ac.valor ELSE 0 END),0) AS pct_val_tr
                 FROM apu_matrices ac
                 JOIN insumos i      ON i.id = ac.insumo_id
                 JOIN tipos_insumo t ON t.id = i.tipo_id
-                WHERE t.clave = 'mano_obra'
-                  AND ac.matriz_id IN (
-                      SELECT id  FROM estructura_presupuesto WHERE proyecto_id = ? AND activo = 1
-                      UNION ALL
-                      SELECT -id FROM insumos WHERE proyecto_id = ? AND es_compuesto = 1 AND activo = 1
-                  )
+                WHERE ac.matriz_id IN ({ph_matrices})
                 GROUP BY ac.matriz_id
             )
             INSERT INTO apu_resumen_totales
@@ -133,36 +150,24 @@ class RecalculoRepo(RepoBase):
                  auxiliares, subcontratos, fletes, trabajos, costo_directo,
                  modificado_en)
             SELECT
-                ac.matriz_id,
-                COALESCE(SUM(CASE WHEN t.clave='material'    THEN
-                  CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END ELSE 0 END),0),
-                COALESCE(SUM(CASE WHEN t.clave='mano_obra'   THEN
-                  CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END ELSE 0 END),0),
-                COALESCE(SUM(CASE WHEN t.clave='herramienta' THEN ac.valor ELSE 0 END),0) * COALESCE(mo.subtotal, 0),
-                COALESCE(SUM(CASE WHEN t.clave='equipo'      THEN
-                  CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END ELSE 0 END),0),
-                COALESCE(SUM(CASE WHEN t.clave='auxiliar'    THEN
-                  CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END ELSE 0 END),0),
-                COALESCE(SUM(CASE WHEN t.clave='concepto'    THEN
-                  CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END ELSE 0 END),0),
-                COALESCE(SUM(CASE WHEN t.clave='flete'       THEN
-                  CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END ELSE 0 END),0),
-                COALESCE(SUM(CASE WHEN t.clave='trabajo'     THEN
-                  CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END ELSE 0 END),0),
-                COALESCE(SUM(CASE WHEN t.clave<>'herramienta' THEN
-                  CASE WHEN ac.operador='*' THEN ac.valor*ac.precio ELSE ac.precio/ac.valor END ELSE 0 END),0)
-                    + COALESCE(SUM(CASE WHEN t.clave='herramienta' THEN ac.valor ELSE 0 END),0) * COALESCE(mo.subtotal, 0),
+                matriz_id,
+                materiales + pct_val_ma * COALESCE(materiales, 0),
+                mano_obra + pct_val_mo * COALESCE(mano_obra, 0),
+                0.0,  -- herramienta: columna legacy, ahora se suma al tipo destino
+                equipo + pct_val_eq * COALESCE(equipo, 0),
+                auxiliares + pct_val_aux * COALESCE(auxiliares, 0),
+                subcontratos + pct_val_subc * COALESCE(subcontratos, 0),
+                fletes + pct_val_fl * COALESCE(fletes, 0),
+                trabajos + pct_val_tr * COALESCE(trabajos, 0),
+                (materiales + pct_val_ma * COALESCE(materiales, 0))
+                + (mano_obra + pct_val_mo * COALESCE(mano_obra, 0))
+                + (equipo + pct_val_eq * COALESCE(equipo, 0))
+                + (auxiliares + pct_val_aux * COALESCE(auxiliares, 0))
+                + (subcontratos + pct_val_subc * COALESCE(subcontratos, 0))
+                + (fletes + pct_val_fl * COALESCE(fletes, 0))
+                + (trabajos + pct_val_tr * COALESCE(trabajos, 0)),
                 datetime('now')
-            FROM apu_matrices ac
-            JOIN insumos i      ON i.id = ac.insumo_id
-            JOIN tipos_insumo t ON t.id = i.tipo_id
-            LEFT JOIN mo ON mo.matriz_id = ac.matriz_id
-            WHERE ac.matriz_id IN (
-                SELECT id  FROM estructura_presupuesto WHERE proyecto_id = ? AND activo = 1
-                UNION ALL
-                SELECT -id FROM insumos WHERE proyecto_id = ? AND es_compuesto = 1 AND activo = 1
-            )
-            GROUP BY ac.matriz_id
+            FROM base WHERE 1=1
             ON CONFLICT(matriz_id) DO UPDATE SET
                 materiales    = excluded.materiales,
                 mano_obra     = excluded.mano_obra,
@@ -174,7 +179,7 @@ class RecalculoRepo(RepoBase):
                 trabajos      = excluded.trabajos,
                 costo_directo = excluded.costo_directo,
                 modificado_en = excluded.modificado_en
-        """, (proyecto_id, proyecto_id, proyecto_id, proyecto_id))
+        """, (proyecto_id, proyecto_id))
 
     def _actualizar_costo_compuestos(self, cur, proyecto_id) -> bool:
         """Copia el costo_directo del resumen de cada insumo compuesto a su

@@ -82,7 +82,17 @@ class DiagDialogsMixin:
         for r in diag.unidades_no_estandar(pid):
             _ins(r["id"], r["clave"], r["descripcion"],
                  f'{_tipo_str(r["tipo_id"])} [{r["unidad"]}]',
-                 f'Unidad no estándar: {r["unidad"]}')
+                 "Unidad no estándar")
+
+        for r in diag.componentes_cantidad_cero(pid):
+            _ins(r["id"], r["clave"],
+                 f"{r['descripcion']} (matriz {r['matriz_id']})",
+                 _tipo_str(r["tipo_id"]), "Componentes APU con cantidad cero")
+
+        for r in diag.insumos_duplicados_en_matriz(pid):
+            _ins(r["id"], r["clave"],
+                 f"{r['descripcion']} (matriz {r['matriz_id']}, ×{r['cnt']})",
+                 _tipo_str(r["tipo_id"]), "Insumos duplicados en misma matriz")
 
         total = sum(len(v) for v in grupos.values())
         if not total:

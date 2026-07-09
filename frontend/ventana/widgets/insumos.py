@@ -151,8 +151,13 @@ class TablaInsumos(TreeTableWidget):
         # Visibilidad inicial: la define el catálogo (visible_default), no
         # una lista de índices a mano — así agregar una columna al catálogo
         # no obliga a acordarse de tocar esta lista también.
+        #
+        # setColumnHidden dispara sectionResized (N→0); _applying_modes
+        # evita que _save_header_state sobreescriba el estado del usuario.
+        self._applying_modes = True
         for col in COLUMNAS_CATALOGO:
             self.setColumnHidden(col.idx, not col.visible_default)
+        self._applying_modes = False
         self._search_cols = {1, 5}
         self._restore_header_state()
         self._api = None  # inyectado por conectar_eventos()

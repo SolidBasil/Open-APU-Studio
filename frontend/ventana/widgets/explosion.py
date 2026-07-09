@@ -436,7 +436,6 @@ class TablaExplosion(TreeTableWidget):
     """
 
     _HEADER_KEY = "explosion_columnas"
-    TIPO_ID_HERRAMIENTA = 4
 
     def __init__(self, parent=None):
         """Tabla plana de resultados: Tipo, Clave, Descripción, Unidad, Cantidad, P.U., Total, %."""
@@ -488,17 +487,19 @@ class TablaExplosion(TreeTableWidget):
                     sep.setForeground(c, QBrush(QColor(COLOR_GRUPO.get(tid, "#888888"))))
             es_primero = False
 
-            es_herramienta = (tid == self.TIPO_ID_HERRAMIENTA)
             for f in grupo:
-                cantidad = f.get("cantidad_total")
-                pu       = f.get("pu")
-                pct_mo   = f.get("pct_mo")
-                total    = f.get("total") or 0
-                pct      = f.get("pct") or 0
+                cantidad  = f.get("cantidad_total")
+                pu        = f.get("pu")
+                pct_base  = f.get("pct_base")
+                pct_sufijo = f.get("pct_sufijo") or ""
+                total     = f.get("total") or 0
+                pct       = f.get("pct") or 0
+                es_pct    = f.get("unidad", "").startswith("(%)")
 
-                cant_txt = "—" if es_herramienta or cantidad is None else f"{cantidad:,.4f}"
-                if es_herramienta:
-                    pu_txt = f"{pct_mo*100:.2f}% MO" if pct_mo is not None else "—"
+                cant_txt = "—" if es_pct or cantidad is None else f"{cantidad:,.4f}"
+                if es_pct:
+                    sufijo = pct_sufijo if pct_sufijo else f.get("unidad", "")[3:] or ""
+                    pu_txt = f"{pct_base*100:.2f}% {sufijo}" if pct_base is not None else "—"
                 else:
                     pu_txt = "—" if pu is None else f"${pu:,.2f}"
 

@@ -67,6 +67,18 @@ class VentanaPrincipal(
         self._build_central()
         self._build_statusbar()
 
+    def closeEvent(self, event):
+        from frontend.ventana.widgets.base import TreeTableWidget
+        for i in range(self._tabs.count()):
+            w = self._tabs.widget(i)
+            if w is None:
+                continue
+            if isinstance(w, TreeTableWidget):
+                w._save_header_state()
+            for hijo in w.findChildren(TreeTableWidget):
+                hijo._save_header_state()
+        super().closeEvent(event)
+
     def _build_central(self):
         """Ensambla el layout vertical: tab bar + toolbar + splitter (sidebar | contenido)."""
         wrapper = QWidget()

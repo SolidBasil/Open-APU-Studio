@@ -1,11 +1,14 @@
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSize
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QListWidget,
     QListWidgetItem, QLabel, QPushButton, QWidget, QFrame,
+    QTreeWidgetItem, QAbstractItemView,
 )
+from PySide6.QtCore import Qt
 
 _SEL_BG = "#2A4158"
 
@@ -313,3 +316,173 @@ class EditarPrecioDialog(QDialog):
     def precio(self) -> float:
         """Devuelve el precio validado."""
         return getattr(self, "_precio", 0.0)
+
+
+# ── Tipos de insumo para filtros ──────────────────────────────────
+
+_TIPO_ICONO = {
+    1: "🧱", 2: "👷", 4: "🔧", 8: "🚜",
+    16: "⚙️", 32: "📄", 64: "🚛", 128: "🏗️",
+}
+
+_TIPO_NOMBRE = {
+    1: "Materiales", 2: "Mano de obra", 4: "Herramienta", 8: "Equipo",
+    16: "Auxiliares", 32: "Conceptos", 64: "Fletes", 128: "Trabajos",
+}
+
+_FILTROS_TIPO = [
+    (32, "📄",  "Conceptos"),
+    (1,  "🧱",  "Materiales"),
+    (2,  "👷",  "Mano de obra"),
+    (4,  "🔧",  "Herramienta"),
+    (8,  "🚜",  "Equipo"),
+    (16, "⚙️",  "Auxiliares"),
+    (64, "🚛",  "Fletes"),
+    (128,"🏗️", "Trabajos"),
+]
+
+
+# ── Diálogo de selección de insumo ─────────────────────────────────
+
+class DialogoSeleccionarInsumo(QDialog):
+    """Diálogo modal para buscar y seleccionar un insumo del catálogo.
+
+    Tiene barra de búsqueda + botones de filtro por tipo + tabla
+    (mismas columnas que la vista de insumos, incluido Tipo con icono).
+
+    Uso:
+        dlg = DialogoSeleccionarInsumo(api, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            nuevo_id = dlg.insumo_seleccionado
+    """
+
+    def __init__(self, api, parent=None, *, default_tipos: set[int] | None = None):
+        super().__init__(parent)
+        self._api = api
+        self._selected_id = None
+        self._tipos_filtro: set[int] = {32} if default_tipos is None else default_tipos
+        self._items: list[tuple[int, QTreeWidgetItem, int]] = []
+
+        self.setWindowTitle("Seleccionar insumo")
+        self.setMinimumSize(700, 520)
+        self.setModal(True)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(8)
+
+        # ── Search bar ──────────────────────────────────────────
+        self._search = QLineEdit()
+        self._search.setPlaceholderText("🔍  Buscar insumo…")
+        self._search.setClearButtonEnabled(True)
+        self._search.textChanged.connect(self._aplicar_filtros)
+        layout.addWidget(self._search)
+
+        # ── Filter buttons (icono + tooltip, azul al activarse) ──
+        fila_btns = QHBoxLayout()
+        fila_btns.setSpacing(4)
+        self._btns_tipo: dict[int, QPushButton] = {}
+        for tipo_id, icono, nombre in _FILTROS_TIPO:
+            btn = QPushButton(icono)
+            btn.setToolTip(nombre)
+            btn.setCheckable(True)
+            btn.setMinimumSize(76, 66)
+            btn.setMaximumSize(90, 70)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            fnt = btn.font()
+            fnt.setFamilies(["Segoe UI Emoji", "Segoe UI"])
+            fnt.setPointSize(26)
+            btn.setFont(fnt)
+            btn.setStyleSheet(
+                "QPushButton { padding: 0; margin: 0; }"
+                "QPushButton:checked { background-color: #7FAFD6; color: #12161D; }"
+            )
+            btn.clicked.connect(lambda _, t=tipo_id: self._on_tipo_click(t))
+            self._btns_tipo[tipo_id] = btn
+            fila_btns.addWidget(btn)
+        fila_btns.addStretch()
+        layout.addLayout(fila_btns)
+
+        # ── Results tree (usa TablaInsumos internamente) ────────
+        from frontend.ventana.widgets.insumos import TablaInsumos, TIPO_NOMBRE, COLUMNAS_CATALOGO
+        self._tree = TablaInsumos()
+        self._tree.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._tree.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self._tree.itemDoubleClicked.connect(self._on_aceptar)
+        layout.addWidget(self._tree)
+
+        # ── Load data ───────────────────────────────────────────
+        self._cargar_insumos()
+
+        # ── Default: tipos pasados por el caller (ej. {1,2}=Materiales+MO) ──
+        for tid in self._tipos_filtro:
+            if tid in self._btns_tipo:
+                self._btns_tipo[tid].setChecked(True)
+        self._aplicar_filtros()
+
+        # ── Buttons ─────────────────────────────────────────────
+        bl = QHBoxLayout()
+        bl.setSpacing(8)
+        cancelar = QPushButton("Cancelar")
+        cancelar.clicked.connect(self.reject)
+        aceptar = QPushButton("Seleccionar")
+        aceptar.setDefault(True)
+        aceptar.clicked.connect(self._on_aceptar)
+        bl.addStretch()
+        bl.addWidget(aceptar)
+        bl.addWidget(cancelar)
+        layout.addLayout(bl)
+
+    def _cargar_insumos(self):
+        """Carga todos los insumos del proyecto en la tabla."""
+        try:
+            filas = self._api.insumos()
+        except Exception:
+            filas = []
+        self._tree.poblar(filas)
+        for i in range(self._tree.topLevelItemCount()):
+            item = self._tree.topLevelItem(i)
+            ins_id = item.data(0, Qt.ItemDataRole.UserRole)
+            tipo_id = filas[i].get("tipo_id", 0) if i < len(filas) else 0
+            self._items.append((ins_id, item, tipo_id))
+
+    def _on_tipo_click(self, tipo_id: int):
+        from PySide6.QtWidgets import QApplication
+        modifiers = QApplication.keyboardModifiers()
+        if modifiers == Qt.KeyboardModifier.ControlModifier:
+            if tipo_id in self._tipos_filtro:
+                self._tipos_filtro.discard(tipo_id)
+            else:
+                self._tipos_filtro.add(tipo_id)
+        else:
+            if self._tipos_filtro == {tipo_id}:
+                self._tipos_filtro.clear()
+            else:
+                self._tipos_filtro = {tipo_id}
+        for tid, btn in self._btns_tipo.items():
+            btn.setChecked(tid in self._tipos_filtro)
+        self._aplicar_filtros()
+
+    def _aplicar_filtros(self):
+        texto = self._search.text()
+        if texto:
+            self._tree.filter_rows(texto)
+        else:
+            self._tree._show_all()
+        if self._tipos_filtro:
+            for _, item, tipo_id in self._items:
+                if tipo_id not in self._tipos_filtro:
+                    item.setHidden(True)
+
+    def _on_aceptar(self):
+        sel = self._tree.currentItem()
+        if not sel:
+            return
+        self._selected_id = sel.data(0, Qt.ItemDataRole.UserRole)
+        if self._selected_id is not None:
+            self.accept()
+
+    @property
+    def insumo_seleccionado(self) -> int | None:
+        return self._selected_id
