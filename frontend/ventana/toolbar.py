@@ -96,7 +96,6 @@ _HANDLERS = {
 _TOOLBAR_CFG = {
     "PROYECTO": [
         ("Archivo",      [("+", "Nuevo"), ("📂", "Abrir"), ("✕", "Cerrar")]),
-        ("Guardar",      [("💾", "Guardar"), ("💾", "Guardar como")]),
         ("Gestión",      [("📋", "Duplicar"), ("✏", "Renombrar"), ("🗑", "Eliminar proyecto")]),
         ("Transferir",   [("📤", "Exportar"), ("📥", "Importar OPUS")]),
         ("Explorar",     []),
