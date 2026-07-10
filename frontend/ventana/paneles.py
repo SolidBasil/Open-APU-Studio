@@ -116,6 +116,9 @@ class PanelesMixin:
         tree.itemDoubleClicked.connect(self._on_item_dblclick)
         tree.rastrear_insumo.connect(self._on_rastrear_insumo)
         tree.desglozar_nodo.connect(self._abrir_apu_por_id)
+        tree.agregar_agrupador.connect(self._on_agregar_agrupador)
+        tree.agregar_concepto.connect(self._on_agregar_concepto)
+        tree.eliminar_seleccion.connect(self._on_eliminar)
         self._arbol_presupuesto = tree
         if self._event_bus and self._api:
             tree.conectar_eventos(self._event_bus, self._api)

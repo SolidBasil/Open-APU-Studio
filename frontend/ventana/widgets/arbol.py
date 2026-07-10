@@ -157,6 +157,9 @@ class TablaArbol(TreeTableWidget):
     COLUMNAS_CATALOGO = COLUMNAS_CATALOGO
     rastrear_insumo = Signal(int)
     desglozar_nodo = Signal(int)
+    agregar_agrupador = Signal()
+    agregar_concepto = Signal()
+    eliminar_seleccion = Signal()
 
     def __init__(self, parent=None):
         """Inicializa el árbol de presupuesto con columnas fijas, modo de columnas, búsqueda y restauración del header."""
@@ -194,6 +197,18 @@ class TablaArbol(TreeTableWidget):
 
     def _context_menu_actions(self, menu):
         from frontend.ventana.widgets.base import _menu_icon
+        menu.addSeparator()
+
+        act = menu.addAction(_menu_icon("⊞"), "Agregar agrupador")
+        act.triggered.connect(self.agregar_agrupador)
+
+        act = menu.addAction(_menu_icon("+"), "Agregar concepto")
+        act.triggered.connect(self.agregar_concepto)
+
+        if self.selectedItems():
+            act = menu.addAction(_menu_icon("✕"), "Eliminar")
+            act.triggered.connect(self.eliminar_seleccion)
+
         if len(self.selectedItems()) != 1:
             return
         item = self.currentItem()
@@ -204,7 +219,6 @@ class TablaArbol(TreeTableWidget):
             return
         insumo_id = item.data(0, INSUMO_ROLE)
         nodo_id = item.data(0, ID_ROLE)
-        menu.addSeparator()
         if insumo_id:
             act = menu.addAction(_menu_icon("🔍"), "Rastrear uso")
             act.triggered.connect(lambda: self.rastrear_insumo.emit(insumo_id))

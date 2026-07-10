@@ -810,6 +810,8 @@ class HandlersMixin:
             item = t._buscar_item_por_id(nuevo_id)
             if item:
                 t.setCurrentItem(item)
+                if t.isColumnHidden(edit_col):
+                    t.setColumnHidden(edit_col, False)
                 t.editItem(item, edit_col)
         QTimer.singleShot(0, _seleccionar_nuevo)
 
