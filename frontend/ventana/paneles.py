@@ -80,6 +80,20 @@ class PanelesMixin:
 
         QShortcut(QKeySequence("Ctrl+Tab"),       self).activated.connect(self._next_tab)
         QShortcut(QKeySequence("Ctrl+Shift+Tab"), self).activated.connect(self._prev_tab)
+
+        # Mover nodos del árbol de presupuesto con Alt+flechas — mismos
+        # handlers que los botones Subir/Bajar/Izquierda/Derecha de la
+        # toolbar (ver _HANDLERS en toolbar.py y HandlersMixin en
+        # handlers/__init__.py). Shortcuts a nivel de ventana: operan
+        # sobre la tabla activa (self._get_active_table()) sin importar
+        # qué widget tenga el foco puntual dentro de la pestaña.
+        QShortcut(QKeySequence("Alt+Up"),    self).activated.connect(self._on_subir)
+        QShortcut(QKeySequence("Alt+Down"),  self).activated.connect(self._on_bajar)
+        QShortcut(QKeySequence("Alt+Left"),  self).activated.connect(self._on_izquierda)
+        QShortcut(QKeySequence("Alt+Right"), self).activated.connect(self._on_derecha)
+        QShortcut(QKeySequence("Delete"),    self).activated.connect(self._on_eliminar)
+        QShortcut(QKeySequence("Insert"),    self).activated.connect(self._on_agregar_concepto)
+
         return self._tabs
 
     # ── Presupuesto ──────────────────────────────────────────────────────

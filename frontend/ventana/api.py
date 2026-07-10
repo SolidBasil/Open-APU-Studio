@@ -171,6 +171,67 @@ class Api:
         """Actualiza la descripción de un agrupador (capítulo)."""
         self._ds.actualizar("estructura_presupuesto", nodo_id, descripcion=descripcion)
 
+    def eliminar_nodo(self, nodo_id: int) -> None:
+        """Elimina (soft-delete) un nodo del presupuesto y recalcula en cascada."""
+        from backend.database.repos import NodoRepo, RecalculoRepo
+        from backend.database.event_bus import ProyectoRecalculado
+        self._ds.eliminar("estructura_presupuesto", nodo_id)
+        NodoRepo(self._conn).recalcular_desde(nodo_id)
+        RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
+        self._conn.commit()
+        self._ds.emitir(ProyectoRecalculado(self._pid))
+
+    def agregar_nodo(
+        self, tipo: str, padre_id: int | None = None,
+        descripcion: str = "", insumo_id: int | None = None,
+        cantidad: float | None = None, orden: float | None = None,
+        antes_de: int | None = None,
+    ) -> int:
+        """Inserta un nodo nuevo en el presupuesto y recalcula en cascada.
+
+        Args:
+            tipo: 'concepto' o 'capitulo'
+            padre_id: id del padre (None = raíz)
+            descripcion: texto (capítulo) o vacío (concepto)
+            insumo_id: vínculo a catálogo (solo conceptos)
+            cantidad: cantidad inicial (solo conceptos)
+            orden: posición explícita (None = al final)
+            antes_de: id del nodo hermano justo después del nuevo
+                      (computa orden internamente)
+
+        Returns:
+            id del nodo insertado
+        """
+        from backend.database.repos import NodoRepo, RecalculoRepo
+        from backend.database.event_bus import ProyectoRecalculado
+        repo = NodoRepo(self._conn)
+        if orden is None and antes_de is not None:
+            ref = repo.buscar(antes_de)
+            if ref:
+                orden = ref["orden"] - 0.5
+        if orden is None:
+            orden = repo.proximo_orden(self._pid, padre_id)
+        nuevo_id = repo.insert({
+            "proyecto_id": self._pid,
+            "padre_id":    padre_id,
+            "wbs":         "",
+            "nivel":       0,
+            "tipo":        tipo,
+            "descripcion": descripcion or "",
+            "orden":       orden,
+            "insumo_id":   insumo_id,
+            "cantidad":    cantidad,
+            "total":       0.0,
+            "estado":      0,
+            "activo":      1,
+            "creado_por":  1,
+        })
+        repo.reindexar(self._pid)
+        RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
+        self._conn.commit()
+        self._ds.emitir(ProyectoRecalculado(self._pid))
+        return nuevo_id
+
     def todos_concepto_ids(self) -> list[int]:
         """Devuelve los ids de todos los conceptos activos del proyecto."""
         from backend.database.repos import NodoRepo
@@ -544,6 +605,15 @@ class Api:
         """Devuelve el dict completo de un insumo por su id, o None si no existe."""
         from backend.database.repos import InsumoRepo
         return InsumoRepo(self._conn).buscar(insumo_id)
+
+    def eliminar_insumo(self, insumo_id: int) -> None:
+        """Elimina (soft-delete) un insumo del catálogo y recalcula en cascada."""
+        from backend.database.repos import RecalculoRepo
+        from backend.database.event_bus import ProyectoRecalculado
+        self._ds.eliminar("insumos", insumo_id)
+        RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
+        self._conn.commit()
+        self._ds.emitir(ProyectoRecalculado(self._pid))
 
     # =========================================================================
     # GESTIÓN DE PROYECTOS

@@ -457,6 +457,362 @@ class HandlersMixin:
         else:
             self.showFullScreen()
 
+    # ── Reordenar nodos ────────────────────────────────────────────
+    #
+    # Las 4 operaciones (Subir/Bajar/Izquierda/Derecha) tocan ÚNICAMENTE
+    # padre_id y/o orden del nodo movido — nunca wbs/nivel a mano, y nunca
+    # a sus descendientes. padre_id + orden (con alcance local a cada
+    # padre_id) son la única fuente de verdad de la jerarquía; wbs/nivel
+    # son etiquetas derivadas que reindexar() recalcula desde cero al
+    # final de cada operación, por lo que nunca pueden desincronizarse
+    # (ver NodoRepo.reindexar() en backend/database/repos/presupuesto.py).
+
+    def _on_subir(self):
+        self._mover_nodo(-1)
+
+    def _on_bajar(self):
+        self._mover_nodo(1)
+
+    @property
+    def _conn(self):
+        return self._db._conn if self._db else None
+
+    @staticmethod
+    def _grupos_por_padre(t, seleccionados, ID_ROLE):
+        """Agrupa los QTreeWidgetItem seleccionados por el id de su padre
+        real (None = nivel raíz). Selecciones que abarcan varios grupos
+        de hermanos distintos (ej. conceptos de dos capítulos diferentes,
+        seleccionados juntos con Ctrl+click) se procesan cada una por
+        separado, cada quien dentro de su propia lista de hermanos."""
+        grupos: dict[int | None, set[int]] = {}
+        for item in seleccionados:
+            node_id = item.data(0, ID_ROLE)
+            if node_id is None:
+                continue
+            padre_item = item.parent()
+            padre_id = padre_item.data(0, ID_ROLE) if padre_item is not None else None
+            grupos.setdefault(padre_id, set()).add(node_id)
+        return grupos
+
+    @staticmethod
+    def _runs_contiguos(hermanos: list[int], seleccionados: set[int]) -> list[list[int]]:
+        """Tramos contiguos de ids seleccionados dentro de la lista de
+        hermanos (en su orden actual). Un Shift+click típico produce un
+        solo tramo; un Ctrl+click salteado puede producir varios, cada
+        uno tratado como su propio bloque."""
+        runs: list[list[int]] = []
+        actual: list[int] = []
+        for nid in hermanos:
+            if nid in seleccionados:
+                actual.append(nid)
+            elif actual:
+                runs.append(actual)
+                actual = []
+        if actual:
+            runs.append(actual)
+        return runs
+
+    def _mover_nodo(self, direccion: int):
+        """Sube (-1) o baja (+1) los nodos seleccionados un lugar entre
+        sus hermanos. Soporta selección múltiple (Shift/Ctrl+click): cada
+        tramo contiguo de seleccionados se mueve como bloque, y cada
+        grupo de hermanos afectado (si la selección abarca más de un
+        padre) se procesa por separado — ver NodoRepo.reordenar_grupo()."""
+        from frontend.ventana.widgets.arbol import ID_ROLE
+        from backend.database.repos import NodoRepo
+        from backend.database.event_bus import ProyectoRecalculado
+
+        t = self._get_active_table()
+        ds = getattr(self, '_data_service', None)
+        api = getattr(self, '_api', None)
+        conn = getattr(self, '_conn', None)
+        if not t or not conn or not ds or not api:
+            return
+        seleccionados = t.selectedItems()
+        if not seleccionados:
+            return
+
+        proyecto_id = api.proyecto_actual_id()
+        repo = NodoRepo(conn)
+        grupos = self._grupos_por_padre(t, seleccionados, ID_ROLE)
+
+        hubo_cambio = False
+        for padre_id, ids_sel in grupos.items():
+            hermanos = repo.hermanos_de(padre_id, proyecto_id)
+            nuevo = repo.reordenar_grupo(hermanos, ids_sel, direccion)
+            if nuevo != hermanos:
+                repo.escribir_orden(nuevo)
+                hubo_cambio = True
+
+        if not hubo_cambio:
+            return
+        repo.reindexar(proyecto_id)
+        conn.commit()
+        ds.emitir(ProyectoRecalculado(proyecto_id))
+
+    def _on_izquierda(self):
+        """Saca los nodos seleccionados de su padre (outdent): pasan a
+        ser hijos de su abuelo (o del nivel raíz, si el padre ya estaba
+        en la raíz), colocándose como bloque justo DESPUÉS de su antiguo
+        padre — para conservar su ubicación relativa en vez de saltar al
+        final de todo el grupo (que, si el abuelo es la raíz, sería el
+        final de TODOS los capítulos del proyecto).
+
+        Con selección múltiple: los seleccionados que comparten el mismo
+        padre salen juntos, preservando su orden relativo original entre
+        sí, aunque no hayan estado contiguos dentro de ese padre."""
+        from frontend.ventana.widgets.arbol import ID_ROLE
+        from backend.database.repos import NodoRepo
+        from backend.database.event_bus import ProyectoRecalculado
+
+        t = self._get_active_table()
+        ds = getattr(self, '_data_service', None)
+        api = getattr(self, '_api', None)
+        conn = getattr(self, '_conn', None)
+        if not t or not conn or not ds or not api:
+            return
+        seleccionados = t.selectedItems()
+        if not seleccionados:
+            return
+
+        proyecto_id = api.proyecto_actual_id()
+        repo = NodoRepo(conn)
+
+        # Solo agrupa seleccionados que SÍ tienen padre (los que ya están
+        # en la raíz no tienen adónde "salir" y se ignoran en silencio).
+        grupos: dict[int, set[int]] = {}
+        for item in seleccionados:
+            node_id = item.data(0, ID_ROLE)
+            if node_id is None:
+                continue
+            padre_item = item.parent()
+            if padre_item is None:
+                continue
+            padre_id = padre_item.data(0, ID_ROLE)
+            if padre_id is None:
+                continue
+            grupos.setdefault(padre_id, set()).add(node_id)
+
+        hubo_cambio = False
+        for padre_id, ids_sel in grupos.items():
+            fila_padre = conn.execute(
+                "SELECT padre_id, orden FROM estructura_presupuesto WHERE id=?",
+                (padre_id,)
+            ).fetchone()
+            if not fila_padre:
+                continue
+            abuelo_id = fila_padre["padre_id"]
+
+            # Orden relativo original dentro de padre_id, para preservarlo
+            # al reinsertar el bloque tras su antiguo padre.
+            hermanos = repo.hermanos_de(padre_id, proyecto_id)
+            ids_en_orden = [nid for nid in hermanos if nid in ids_sel]
+            if not ids_en_orden:
+                continue
+
+            base = repo.orden_tras(proyecto_id, abuelo_id, fila_padre["orden"],
+                                    hueco=len(ids_en_orden))
+            for offset, nid in enumerate(ids_en_orden):
+                ds.actualizar("estructura_presupuesto", nid,
+                               padre_id=abuelo_id, orden=base + offset)
+            hubo_cambio = True
+
+        if not hubo_cambio:
+            return
+        repo.reindexar(proyecto_id)
+        conn.commit()
+        ds.emitir(ProyectoRecalculado(proyecto_id))
+
+    def _on_derecha(self):
+        """Mete los nodos seleccionados como hijos del hermano inmediato
+        anterior (indent), al final de los hijos de ese hermano.
+
+        Si el hermano anterior es un concepto (no agrupador), se crea un
+        nuevo agrupador como hermano de ese concepto y los nodos entran
+        como hijos del nuevo agrupador.
+
+        Con selección múltiple: cada tramo CONTIGUO de seleccionados (ver
+        _runs_contiguos) se mueve como un solo bloque hacia el hermano
+        que estaba justo antes del tramo — así el bloque entra completo
+        a un mismo nuevo padre, en vez de que cada nodo busque su propio
+        "hermano anterior" (que tras mover el primero ya habría cambiado)."""
+        from frontend.ventana.widgets.arbol import ID_ROLE
+        from backend.database.repos import NodoRepo
+        from backend.database.event_bus import ProyectoRecalculado
+
+        t = self._get_active_table()
+        ds = getattr(self, '_data_service', None)
+        api = getattr(self, '_api', None)
+        conn = getattr(self, '_conn', None)
+        if not t or not conn or not ds or not api:
+            return
+        seleccionados = t.selectedItems()
+        if not seleccionados:
+            return
+
+        proyecto_id = api.proyecto_actual_id()
+        repo = NodoRepo(conn)
+        grupos = self._grupos_por_padre(t, seleccionados, ID_ROLE)
+
+        hubo_cambio = False
+        for padre_id, ids_sel in grupos.items():
+            hermanos = repo.hermanos_de(padre_id, proyecto_id)
+            for run in self._runs_contiguos(hermanos, ids_sel):
+                idx0 = hermanos.index(run[0])
+                if idx0 == 0:
+                    continue
+                objetivo_id = hermanos[idx0 - 1]
+                objetivo = repo.buscar(objetivo_id)
+                if objetivo and objetivo["tipo"] != "capitulo":
+                    orden_nuevo = repo.proximo_orden(proyecto_id, padre_id)
+                    nuevo_ag_id = repo.insert({
+                        "proyecto_id": proyecto_id,
+                        "padre_id":    padre_id,
+                        "wbs":         "",
+                        "nivel":       0,
+                        "tipo":        "capitulo",
+                        "descripcion": "Agrupador",
+                        "orden":       orden_nuevo,
+                        "total":       0.0,
+                        "estado":      0,
+                        "activo":      1,
+                        "creado_por":  1,
+                    })
+                    objetivo_id = nuevo_ag_id
+                base = repo.proximo_orden(proyecto_id, objetivo_id)
+                for offset, nid in enumerate(run):
+                    ds.actualizar("estructura_presupuesto", nid,
+                                   padre_id=objetivo_id, orden=base + offset)
+                hubo_cambio = True
+
+        if not hubo_cambio:
+            return
+        repo.reindexar(proyecto_id)
+        conn.commit()
+        ds.emitir(ProyectoRecalculado(proyecto_id))
+
+    def _on_eliminar(self):
+        """Elimina los elementos seleccionados (nodos del árbol o filas de insumos).
+
+        Detecta qué pestaña está activa y qué tipo de widget contiene la selección.
+        Muestra confirmación antes de proceder.
+        """
+        from frontend.ventana.widgets.arbol import TablaArbol, ID_ROLE, TIPO_ROLE
+        from frontend.ventana.widgets.insumos import TablaInsumos
+
+        t = self._get_active_table()
+        api = getattr(self, '_api', None)
+        if not t or not api:
+            return
+        seleccionados = t.selectedItems()
+        if not seleccionados:
+            return
+
+        if isinstance(t, TablaInsumos):
+            ids = [it.data(0, Qt.ItemDataRole.UserRole) for it in seleccionados
+                   if it.data(0, Qt.ItemDataRole.UserRole) is not None]
+            if not ids:
+                return
+            resp = QMessageBox.question(
+                self, "Eliminar insumos",
+                f"¿Eliminar {len(ids)} insumo(s) del catálogo?\n"
+                "Los insumos se desactivarán y no aparecerán en el presupuesto.",
+            )
+            if resp != QMessageBox.StandardButton.Yes:
+                return
+            for iid in ids:
+                api.eliminar_insumo(iid)
+
+        elif isinstance(t, TablaArbol):
+            nodos = []
+            for it in seleccionados:
+                nid = it.data(0, ID_ROLE)
+                tipo = it.data(0, TIPO_ROLE)
+                if nid is not None:
+                    nodos.append((nid, tipo))
+            if not nodos:
+                return
+            resp = QMessageBox.question(
+                self, "Eliminar elementos",
+                f"¿Eliminar {len(nodos)} elemento(s) del presupuesto?\n"
+                "Se desactivarán y los totales se recalcularán.",
+            )
+            if resp != QMessageBox.StandardButton.Yes:
+                return
+            for nid, tipo in nodos:
+                api.eliminar_nodo(nid)
+
+    def _on_agregar_agrupador(self):
+        """Agrega un capítulo/agrupador nuevo al presupuesto."""
+        self._agregar_nodo("capitulo")
+
+    def _on_agregar_concepto(self):
+        """Agrega un concepto nuevo al presupuesto."""
+        self._agregar_nodo("concepto")
+
+    def _agregar_nodo(self, tipo: str):
+        """Inserta un nodo del tipo dado en el presupuesto.
+
+        - Capítulo: se inserta directo.
+        - Concepto: abre selector de insumo; si se cancela (Esc), no inserta nada.
+
+        Contexto del árbol al momento de insertar:
+          - Capítulo seleccionado → hijo, arriba del primero
+          - Concepto seleccionado → hermano, arriba de él
+          - Nada seleccionado → nodo raíz, al final
+
+        Tras insertar, selecciona el nodo nuevo y abre edición inline.
+        """
+        from frontend.ventana.widgets.arbol import TablaArbol, ID_ROLE, TIPO_ROLE
+        from PySide6.QtCore import QTimer
+
+        api = getattr(self, '_api', None)
+        t = getattr(self, '_arbol_presupuesto', None)
+        if not t or not api or not isinstance(t, TablaArbol):
+            return
+
+        # Calcular padre y posición
+        sel = t.selectedItems()
+        padre_id = None
+        antes_de = None
+
+        if sel:
+            item = sel[0]
+            id_actual = item.data(0, ID_ROLE)
+            tipo_actual = item.data(0, TIPO_ROLE)
+            if tipo_actual == "capitulo":
+                padre_id = id_actual
+                if item.childCount() > 0:
+                    antes_de = item.child(0).data(0, ID_ROLE)
+            elif tipo_actual == "concepto":
+                padre_id = item.parent().data(0, ID_ROLE) if item.parent() else None
+                antes_de = id_actual
+
+        # Concepto: pedir insumo antes de insertar
+        insumo_id = None
+        if tipo == "concepto":
+            from PySide6.QtWidgets import QDialog
+            from frontend.ventana.widgets.dialogs import DialogoSeleccionarInsumo
+            dlg = DialogoSeleccionarInsumo(api, parent=self)
+            if dlg.exec() != QDialog.DialogCode.Accepted:
+                return
+            insumo_id = dlg.insumo_seleccionado
+            if insumo_id is None:
+                return
+
+        nuevo_id = api.agregar_nodo(
+            tipo, padre_id=padre_id, antes_de=antes_de, insumo_id=insumo_id,
+        )
+
+        edit_col = 6 if tipo == "concepto" else 4
+
+        def _seleccionar_nuevo():
+            item = t._buscar_item_por_id(nuevo_id)
+            if item:
+                t.setCurrentItem(item)
+                t.editItem(item, edit_col)
+        QTimer.singleShot(0, _seleccionar_nuevo)
+
 
 __all__ = [
     "HandlersMixin",

@@ -80,11 +80,17 @@ _HANDLERS = {
     "Restablecer":       "_on_restablecer_formato",
     "Pantalla completa": "_on_pantalla_completa",
     "Recalcular":        "_on_recalcular",
-    "Auditoría":         "_on_depurar_catalogos",
+    "Izquierda":         "_on_izquierda",
+    "Derecha":           "_on_derecha",
+    "Subir":             "_on_subir",
+    "Bajar":             "_on_bajar",
     "Información proyecto": "_on_info_proyecto",
     "Presupuesto":       "_on_generar_presupuesto",
     "Compilar PDF":      "_on_compilar_pdf",
     "Vista previa":      "_on_vista_previa",
+    "Eliminar":          "_on_eliminar",
+    "Agregar agrupador": "_on_agregar_agrupador",
+    "Agregar concepto":  "_on_agregar_concepto",
 }
 
 _TOOLBAR_CFG = {
@@ -132,19 +138,18 @@ _TOOLBAR_CFG = {
         ("Aspecto", [("🎨", "__TEMAS__")]),
 
         ("Ver", [
-            ("📋", "Auditoría"),
             ("🔍", "Filtro"),
         ]),
     ],
     "PRINCIPAL": [
         ("Historial",    [[("↩", "Deshacer"), ("↪", "Rehacer")]]),
         ("Portapapeles", [("📋", "Copiar"), [("✂", "Cortar"), ("📄", "Pegar"), ("☑", "Seleccionar todo")]]),
-        ("Editar",       [("+", "Agregar elemento"), ("✎", "Modificar"), ("→", "Desglosar"), ("✕", "Eliminar")]),
+        ("Editar",       [[("⊞", "Agregar agrupador"), ("+", "Agregar concepto")], ("✎", "Modificar"), ("→", "Desglosar"), ("✕", "Eliminar")]),
         ("Estructura",   [[("◀", "Izquierda"), ("▶", "Derecha")],[("▲", "Subir"), ("▼", "Bajar")]]),
         ("Buscar",       [("📚", "En catálogos"), ("👁", "En vista")]),
         ("Desplegar",    [("1", "Primer nivel"), ("Σ", "Resumen agrupadores"), ("⊞", "Todo"), ("≡", "Nivel")]),
         ("Filtrar",      [("🌐", "Global"), ("☰", "Por columna"), ("✏", "Editor")]),
-        ("Cálculo",      [("↻", "Recalcular"), ("✓", "Auditoría")]),
+        ("Cálculo",      [("↻", "Recalcular")]),
     ],
     "HERRAMIENTAS": [
         ("Sistema",     [("⚙", "Configuración")]),

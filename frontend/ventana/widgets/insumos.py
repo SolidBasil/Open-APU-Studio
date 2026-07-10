@@ -35,8 +35,6 @@ COLUMNAS = [
     "Salario Nominal", "Salario Real", "Usar Hoja FASAR", "CatFSR", "Factor FSR", "FSR Mínimo",
     "Tipo de Trabajo",
     "Peso (kg)", "Comentarios", "Índice INEGI",
-    "Fórmula Costo MN", "Fórmula Costo ME",
-    "Índice 1", "Índice 2", "Índice 3", "Índice 4", "Índice 5", "Índice 6",
     "Creado", "Creado Por", "Modificado", "Modificado Por",
 ]
 EDITABLE = frozenset({1, 2, 3})  # Descripción, Unidad, Precio
@@ -75,20 +73,11 @@ COLUMNAS_CATALOGO = [
     ColumnaDef(23, "Comentarios",       "Datos adicionales", favorita_default=False, visible_default=False),
     ColumnaDef(24, "Índice INEGI",      "Datos adicionales", favorita_default=False, visible_default=False),
 
-    ColumnaDef(25, "Fórmula Costo MN",  "Fórmulas",       favorita_default=False, visible_default=False),
-    ColumnaDef(26, "Fórmula Costo ME",  "Fórmulas",       favorita_default=False, visible_default=False),
-    ColumnaDef(27, "Índice 1",          "Fórmulas",       favorita_default=False, visible_default=False),
-    ColumnaDef(28, "Índice 2",          "Fórmulas",       favorita_default=False, visible_default=False),
-    ColumnaDef(29, "Índice 3",          "Fórmulas",       favorita_default=False, visible_default=False),
-    ColumnaDef(30, "Índice 4",          "Fórmulas",       favorita_default=False, visible_default=False),
-    ColumnaDef(31, "Índice 5",          "Fórmulas",       favorita_default=False, visible_default=False),
-    ColumnaDef(32, "Índice 6",          "Fórmulas",       favorita_default=False, visible_default=False),
-
     ColumnaDef(11, "Hash",              "Auditoría",      favorita_default=True,  visible_default=False),
-    ColumnaDef(33, "Creado",            "Auditoría",      favorita_default=False, visible_default=False),
-    ColumnaDef(34, "Creado Por",        "Auditoría",      favorita_default=False, visible_default=False),
-    ColumnaDef(35, "Modificado",        "Auditoría",      favorita_default=False, visible_default=False),
-    ColumnaDef(36, "Modificado Por",    "Auditoría",      favorita_default=False, visible_default=False),
+    ColumnaDef(25, "Creado",            "Auditoría",      favorita_default=False, visible_default=False),
+    ColumnaDef(26, "Creado Por",        "Auditoría",      favorita_default=False, visible_default=False),
+    ColumnaDef(27, "Modificado",        "Auditoría",      favorita_default=False, visible_default=False),
+    ColumnaDef(28, "Modificado Por",    "Auditoría",      favorita_default=False, visible_default=False),
 ]
 
 TIPO_NOMBRE = {
@@ -228,14 +217,6 @@ class TablaInsumos(TreeTableWidget):
             _num_opcional(ins.get("peso_kg"), decimales=3),
             ins.get("comentarios") or "",
             ins.get("indice_inegi") or "",
-            ins.get("formula_costo_mn") or "",
-            ins.get("formula_costo_me") or "",
-            _num_opcional(ins.get("indice_1")),
-            _num_opcional(ins.get("indice_2")),
-            _num_opcional(ins.get("indice_3")),
-            _num_opcional(ins.get("indice_4")),
-            _num_opcional(ins.get("indice_5")),
-            _num_opcional(ins.get("indice_6")),
             ins.get("creado_en") or "",
             ins.get("creado_por_nombre") or "",
             ins.get("modificado_en") or "",

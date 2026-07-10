@@ -293,8 +293,11 @@ class TablaArbol(TreeTableWidget):
         El delegado inteligente permite editar col 6 (Cant) para conceptos.
         Descripción (col 4) no es editable — refleja insumos.descripcion via JOIN.
         """
-        data = self._celdas(n, "")
+        wbs = n.get("wbs", "")
+        fmt = self._calc_wbs(wbs, parent)
+        data = self._celdas(n, fmt)
         item = self.add_row(data, parent, editable=True)
+        item.setData(0, WBS_ROLE, wbs)
         item.setData(0, ID_ROLE, n.get("id"))
         item.setData(0, TIPO_ROLE, "concepto")
         item.setData(0, INSUMO_ROLE, n.get("insumo_id"))
@@ -349,11 +352,13 @@ class TablaArbol(TreeTableWidget):
         """
         from backend.database.event_bus import (
             ConceptoActualizado, InsumoActualizado, ProyectoRecalculado,
+            NodoEliminado,
         )
         self._api = api
         self._event_bus = event_bus
         event_bus.suscribir(ConceptoActualizado, self._on_concepto_actualizado)
         event_bus.suscribir(InsumoActualizado, self._on_insumo_actualizado)
+        event_bus.suscribir(NodoEliminado, self._on_nodo_eliminado)
         event_bus.suscribir(ProyectoRecalculado, self._on_proyecto_recalculado)
 
     def desconectar_eventos(self):
@@ -368,9 +373,11 @@ class TablaArbol(TreeTableWidget):
             return
         from backend.database.event_bus import (
             ConceptoActualizado, InsumoActualizado, ProyectoRecalculado,
+            NodoEliminado,
         )
         bus.desuscribir(ConceptoActualizado, self._on_concepto_actualizado)
         bus.desuscribir(InsumoActualizado, self._on_insumo_actualizado)
+        bus.desuscribir(NodoEliminado, self._on_nodo_eliminado)
         bus.desuscribir(ProyectoRecalculado, self._on_proyecto_recalculado)
         self._event_bus = None
 
@@ -451,6 +458,21 @@ class TablaArbol(TreeTableWidget):
             if any(c in evento.cambios for c in ("costo_final", "costo_mn", "costo_directo")):
                 item.setText(7, _fmt(registro.get("costo_final")))
 
+    def _on_nodo_eliminado(self, evento):
+        """NodoEliminado (entidad='estructura_presupuesto'): quita la fila."""
+        if evento.tipo != "estructura_presupuesto":
+            return
+        item = self._buscar_item_por_id(evento.nodo_id)
+        if item is None:
+            return
+        parent = item.parent()
+        if parent:
+            parent.removeChild(item)
+        else:
+            idx = self.indexOfTopLevelItem(item)
+            if idx >= 0:
+                self.takeTopLevelItem(idx)
+
     def _on_proyecto_recalculado(self, evento):
         """ProyectoRecalculado: repuebla desde la fuente de verdad.
 
@@ -460,12 +482,22 @@ class TablaArbol(TreeTableWidget):
         preservando scroll y selección es el equivalente in-place razonable
         para este caso (igual a lo que hacía _refrescar_tab_activa(), pero
         ahora decidido por el propio widget, no por un router central).
+
+        Preserva la selección MÚLTIPLE completa (no solo currentItem) —
+        necesario para que Subir/Bajar/Izquierda/Derecha con varios nodos
+        seleccionados (Shift/Ctrl+click) sigan viéndose seleccionados tras
+        cada movimiento, ya que poblar() reconstruye todas las filas desde
+        cero y por tanto pierde cualquier selección previa de Qt.
         """
         if self._api is None:
             return
         scroll_y = self.verticalScrollBar().value()
         current = self.currentItem()
         id_actual = current.data(0, ID_ROLE) if current else None
+        ids_seleccionados = {
+            it.data(0, ID_ROLE) for it in self.selectedItems()
+            if it.data(0, ID_ROLE) is not None
+        }
 
         self.blockSignals(True)
         try:
@@ -479,6 +511,11 @@ class TablaArbol(TreeTableWidget):
             item = self._buscar_item_por_id(id_actual)
             if item is not None:
                 self.setCurrentItem(item)
+        if ids_seleccionados:
+            for nid in ids_seleccionados:
+                item = self._buscar_item_por_id(nid)
+                if item is not None:
+                    item.setSelected(True)
 
         win = self.window()
         if hasattr(win, '_search_input') and hasattr(win, '_on_search'):

@@ -1,12 +1,22 @@
 from datetime import datetime
+
+
+def _parse_float(texto: str) -> float | None:
+    """Convierte texto a float o None si es cero."""
+    try:
+        v = float(texto.replace(",", "."))
+        return v if v else None
+    except ValueError:
+        return None
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QDoubleValidator
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QListWidget,
     QListWidgetItem, QLabel, QPushButton, QWidget, QFrame,
-    QTreeWidgetItem, QAbstractItemView,
+    QTreeWidgetItem, QAbstractItemView, QComboBox, QMessageBox,
+    QCheckBox, QGroupBox, QGridLayout,
 )
 from PySide6.QtCore import Qt
 
@@ -403,6 +413,20 @@ class DialogoSeleccionarInsumo(QDialog):
         fila_btns.addStretch()
         layout.addLayout(fila_btns)
 
+        # ── Toolbar: nuevo / editar insumo ─────────────────────────
+        tb = QHBoxLayout()
+        tb.setSpacing(4)
+        self._btn_nuevo = QPushButton("➕  Nuevo")
+        self._btn_nuevo.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_nuevo.clicked.connect(self._on_nuevo_insumo)
+        tb.addWidget(self._btn_nuevo)
+        self._btn_editar = QPushButton("✏️  Editar")
+        self._btn_editar.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_editar.clicked.connect(self._on_editar_insumo)
+        tb.addWidget(self._btn_editar)
+        tb.addStretch()
+        layout.addLayout(tb)
+
         # ── Results tree (usa TablaInsumos internamente) ────────
         from frontend.ventana.widgets.insumos import TablaInsumos, TIPO_NOMBRE, COLUMNAS_CATALOGO
         self._tree = TablaInsumos()
@@ -475,6 +499,30 @@ class DialogoSeleccionarInsumo(QDialog):
                 if tipo_id not in self._tipos_filtro:
                     item.setHidden(True)
 
+    def _on_nuevo_insumo(self):
+        """Abre el diálogo de nuevo insumo; recarga la lista si se creó uno."""
+        dlg = InsumoDialog(self._api, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self._cargar_insumos()
+            self._aplicar_filtros()
+            nuevo_id = dlg.insumo_id
+            if nuevo_id is not None:
+                self._selected_id = nuevo_id
+                self.accept()
+
+    def _on_editar_insumo(self):
+        """Abre el diálogo de edición para el insumo seleccionado."""
+        sel = self._tree.currentItem()
+        if not sel:
+            return
+        insumo_id = sel.data(0, Qt.ItemDataRole.UserRole)
+        if not insumo_id:
+            return
+        dlg = InsumoDialog(self._api, insumo_id=insumo_id, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self._cargar_insumos()
+            self._aplicar_filtros()
+
     def _on_aceptar(self):
         sel = self._tree.currentItem()
         if not sel:
@@ -486,3 +534,371 @@ class DialogoSeleccionarInsumo(QDialog):
     @property
     def insumo_seleccionado(self) -> int | None:
         return self._selected_id
+
+
+# ── Diálogo de nuevo / editar insumo ────────────────────────────────
+
+class InsumoDialog(QDialog):
+    """Diálogo para crear o editar un insumo.
+
+    Uso (crear):
+        dlg = InsumoDialog(api, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            nuevo_id = dlg.insumo_id   # int del insumo recién creado
+
+    Uso (editar):
+        dlg = InsumoDialog(api, insumo_id=42, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            pass  # insumo 42 actualizado
+    """
+
+    def __init__(self, api, insumo_id: int | None = None, parent=None):
+        super().__init__(parent)
+        self._api = api
+        self._insumo_id = insumo_id
+        self._resultado: int | None = insumo_id  # en edición se mantiene el mismo
+
+        self.setWindowTitle("Nuevo insumo" if insumo_id is None else "Editar insumo")
+        self.setMinimumWidth(480)
+        self.setModal(True)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(4)
+
+        # ── Tipo * + Unidad ──────────────────────────────────────
+        tipo_unidad_row = QHBoxLayout()
+        tipo_unidad_row.setSpacing(8)
+        tipo_col = QVBoxLayout()
+        tipo_col.setSpacing(2)
+        tipo_col.addWidget(QLabel("Tipo *:"))
+        self._tipo = QComboBox()
+        for tid in (32, 1, 2, 4, 8, 16, 64, 128):
+            icono = _TIPO_ICONO.get(tid, "")
+            nombre = _TIPO_NOMBRE.get(tid, f"Tipo {tid}")
+            self._tipo.addItem(f"{icono}  {nombre}", tid)
+        tipo_col.addWidget(self._tipo)
+        tipo_unidad_row.addLayout(tipo_col, 1)
+        unidad_col = QVBoxLayout()
+        unidad_col.setSpacing(2)
+        unidad_col.addWidget(QLabel("Unidad *:"))
+        from frontend.ventana.widgets.base import UNIDADES
+        self._unidad_warn = QLabel()
+        self._unidad_warn.setStyleSheet("color: #D5B39B; font-size: 11px;")
+        self._unidad_warn.hide()
+        self._unidad = QComboBox()
+        self._unidad.setEditable(True)
+        self._unidad.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self._unidad.lineEdit().textChanged.connect(self._checar_unidad)
+        for u in UNIDADES:
+            self._unidad.addItem(u)
+        self._unidad.setCurrentText("")
+        unidad_col.addWidget(self._unidad)
+        unidad_col.addWidget(self._unidad_warn)
+        tipo_unidad_row.addLayout(unidad_col, 1)
+        layout.addLayout(tipo_unidad_row)
+
+        # ── Descripción * ─────────────────────────────────────────
+        layout.addWidget(QLabel("Descripción *:"))
+        self._desc = QLineEdit()
+        self._desc.setPlaceholderText("Descripción del insumo")
+        layout.addWidget(self._desc)
+
+        # ── Desc. corta ──────────────────────────────────────────
+        layout.addWidget(QLabel("Desc. corta:"))
+        self._desc_corta = QLineEdit()
+        self._desc_corta.setPlaceholderText("Abreviatura")
+        layout.addWidget(self._desc_corta)
+
+        # ── Familia ──────────────────────────────────────────────
+        layout.addWidget(QLabel("Familia:"))
+        self._familia = QComboBox()
+        self._familia.setEditable(True)
+        self._familia.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self._familia.addItem("(Sin familia)", None)
+        for f in self._api.familias():
+            self._familia.addItem(f.get("nombre", "?"), f.get("id"))
+        self._familia.currentIndexChanged.connect(self._recargar_subfamilias)
+        layout.addWidget(self._familia)
+
+        # ── Subfamilia ───────────────────────────────────────────
+        layout.addWidget(QLabel("Subfamilia:"))
+        self._subfamilia = QComboBox()
+        self._subfamilia.setEditable(True)
+        self._subfamilia.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self._subfamilia.addItem("(Sin subfamilia)", None)
+        layout.addWidget(self._subfamilia)
+
+        # ── Precios ──────────────────────────────────────────────
+        precios_box = QGroupBox("Precios unitarios")
+        precios_layout = QGridLayout(precios_box)
+        precios_layout.setSpacing(6)
+
+        self._es_compuesto = QCheckBox("Insumo compuesto (tiene APU propio)")
+        precios_layout.addWidget(self._es_compuesto, 0, 0, 1, 2)
+
+        precios_layout.addWidget(QLabel("PU MN:"), 1, 0)
+        self._precio_mn = QLineEdit("0.00")
+        self._precio_mn.setValidator(QDoubleValidator(0.0, 1e12, 4))
+        precios_layout.addWidget(self._precio_mn, 1, 1)
+
+        precios_layout.addWidget(QLabel("PU ME:"), 2, 0)
+        self._precio_me = QLineEdit("0.00")
+        self._precio_me.setValidator(QDoubleValidator(0.0, 1e12, 4))
+        precios_layout.addWidget(self._precio_me, 2, 1)
+
+        layout.addWidget(precios_box)
+
+        self._es_compuesto.toggled.connect(self._alternar_precios)
+        self._alternar_precios(self._es_compuesto.isChecked())
+
+        # ── Opciones avanzadas (colapsable) ───────────────────────
+        self._avanzadas_btn = QPushButton("▶  Opciones avanzadas")
+        self._avanzadas_btn.setFlat(True)
+        self._avanzadas_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._avanzadas_btn.setStyleSheet("""
+            QPushButton { text-align: left; padding: 4px 0; font-weight: bold;
+                          color: #7FAFD6; border: none; }
+            QPushButton:hover { color: #9BC1E8; }
+        """)
+        self._avanzadas_btn.clicked.connect(self._alternar_avanzadas)
+        layout.addWidget(self._avanzadas_btn)
+
+        self._avanzadas_panel = QFrame()
+        self._avanzadas_panel.setVisible(False)
+        av_layout = QVBoxLayout(self._avanzadas_panel)
+        av_layout.setSpacing(6)
+        av_layout.setContentsMargins(0, 0, 0, 0)
+
+        av_layout.addWidget(QLabel("Comentarios / Notas:"))
+        self._comentarios = QLineEdit()
+        self._comentarios.setPlaceholderText("Notas internas del insumo")
+        av_layout.addWidget(self._comentarios)
+
+        adv_grid = QGridLayout()
+        adv_grid.setSpacing(6)
+        adv_grid.addWidget(QLabel("Clave OPUS:"), 0, 0)
+        self._clave_opus = QLineEdit()
+        self._clave_opus.setPlaceholderText("Código original OPUS")
+        adv_grid.addWidget(self._clave_opus, 0, 1)
+
+        adv_grid.addWidget(QLabel("Peso (kg):"), 0, 2)
+        self._peso_kg = QLineEdit("0.00")
+        self._peso_kg.setValidator(QDoubleValidator(0.0, 1e6, 4))
+        adv_grid.addWidget(self._peso_kg, 0, 3)
+
+
+        av_layout.addLayout(adv_grid)
+
+        layout.addWidget(self._avanzadas_panel)
+
+        # ── Pre-cargar si es edición ─────────────────────────────
+        if insumo_id is not None:
+            self._cargar()
+
+        # ── Botones ──────────────────────────────────────────────
+        bl = QHBoxLayout()
+        bl.setSpacing(8)
+        cancelar = QPushButton("Cancelar")
+        cancelar.clicked.connect(self.reject)
+        guardar = QPushButton("Guardar")
+        guardar.setDefault(True)
+        guardar.clicked.connect(self._guardar)
+        bl.addStretch()
+        bl.addWidget(guardar)
+        bl.addWidget(cancelar)
+        layout.addLayout(bl)
+
+    def _cargar(self):
+        """Pre-puebla los campos desde la BD (modo edición)."""
+        insumo = self._api.insumo_por_id(self._insumo_id)
+        if not insumo:
+            return
+        idx = self._tipo.findData(insumo.get("tipo_id"))
+        if idx >= 0:
+            self._tipo.setCurrentIndex(idx)
+        self._desc.setText(insumo.get("descripcion", ""))
+        u = insumo.get("unidad", "")
+        idx = self._unidad.findText(u)
+        if idx >= 0:
+            self._unidad.setCurrentIndex(idx)
+        else:
+            self._unidad.setEditText(u)
+        self._checar_unidad(insumo.get("unidad", ""))
+
+        comp = bool(insumo.get("es_compuesto"))
+        self._es_compuesto.setChecked(comp)
+
+        fid = insumo.get("familia_id")
+        if fid:
+            idx = self._familia.findData(fid)
+            if idx >= 0:
+                self._familia.setCurrentIndex(idx)
+            else:
+                self._familia.setEditText(insumo.get("familia_nombre") or "")
+            self._recargar_subfamilias()
+            sfid = insumo.get("subfamilia_id")
+            if sfid:
+                s_idx = self._subfamilia.findData(sfid)
+                if s_idx >= 0:
+                    self._subfamilia.setCurrentIndex(s_idx)
+                else:
+                    self._subfamilia.setEditText(insumo.get("subfamilia_nombre") or "")
+
+        self._precio_mn.setText(f"{insumo.get('costo_mn', 0):.2f}")
+        self._precio_me.setText(f"{insumo.get('costo_me', 0):.2f}")
+
+        self._desc_corta.setText(insumo.get("descripcion_corta") or "")
+        self._clave_opus.setText(insumo.get("clave_opus") or "")
+        self._peso_kg.setText(f"{insumo.get('peso_kg', 0):.4f}" if insumo.get('peso_kg') else "0.00")
+        self._comentarios.setText(insumo.get("comentarios") or "")
+
+    def _recargar_subfamilias(self):
+        """Recarga subfamilias al cambiar la familia seleccionada."""
+        self._subfamilia.clear()
+        self._subfamilia.addItem("(Sin subfamilia)", None)
+        fid = self._familia.currentData()
+        if fid:
+            for sf in self._api.subfamilias(fid):
+                self._subfamilia.addItem(sf.get("nombre", "?"), sf.get("id"))
+
+    def _alternar_avanzadas(self):
+        visible = self._avanzadas_panel.isVisible()
+        self._avanzadas_panel.setVisible(not visible)
+        self._avanzadas_btn.setText("▼  Opciones avanzadas" if not visible else "▶  Opciones avanzadas")
+        self.adjustSize()
+
+    def _alternar_precios(self, compuesto: bool):
+        """Habilita/deshabilita los campos de precio según es_compuesto."""
+        self._precio_mn.setDisabled(compuesto)
+        self._precio_me.setDisabled(compuesto)
+        color = "#555" if compuesto else ""
+        self._precio_mn.setStyleSheet(f"color: {color};" if compuesto else "")
+        self._precio_me.setStyleSheet(f"color: {color};" if compuesto else "")
+
+    def _checar_unidad(self, texto: str):
+        """Muestra advertencia si la unidad no está en el catálogo estándar."""
+        from frontend.ventana.widgets.base import UNIDADES
+        t = texto.strip()
+        if t and t not in UNIDADES:
+            self._unidad_warn.setText("⚠ Unidad no estándar (no aparece en el catálogo)")
+            self._unidad_warn.show()
+        else:
+            self._unidad_warn.hide()
+
+    def _resolver_familia(self) -> int | None:
+        """Crea la familia si el texto no coincide con ninguna existente."""
+        texto = self._familia.currentText().strip()
+        if not texto or texto == "(Sin familia)":
+            return None
+        existing = self._familia.findText(texto)
+        if existing >= 0:
+            return self._familia.itemData(existing)
+        fid = self._api.familia_insertar(texto)
+        self._familia.addItem(texto, fid)
+        self._familia.setCurrentIndex(self._familia.count() - 1)
+        return fid
+
+    def _resolver_subfamilia(self, familia_id: int) -> int | None:
+        """Crea la subfamilia si el texto no coincide con ninguna existente."""
+        texto = self._subfamilia.currentText().strip()
+        if not texto or texto == "(Sin subfamilia)" or familia_id is None:
+            return None
+        existing = self._subfamilia.findText(texto)
+        if existing >= 0:
+            return self._subfamilia.itemData(existing)
+        sfid = self._api.subfamilia_insertar(familia_id, texto)
+        self._subfamilia.addItem(texto, sfid)
+        self._subfamilia.setCurrentIndex(self._subfamilia.count() - 1)
+        return sfid
+
+    def _guardar(self):
+        desc = self._desc.text().strip()
+        if not desc:
+            QMessageBox.warning(self, "Campo requerido", "La descripción no puede estar vacía.")
+            return
+
+        tipo_id = self._tipo.currentData()
+        unidad = self._unidad.currentText().strip()
+        if not unidad:
+            QMessageBox.warning(self, "Campo requerido", "La unidad no puede estar vacía.")
+            return
+        es_compuesto = 1 if self._es_compuesto.isChecked() else 0
+        familia_id = self._resolver_familia()
+        subfamilia_id = self._resolver_subfamilia(familia_id) if familia_id else None
+
+        if not es_compuesto:
+            try:
+                costo_mn = float(self._precio_mn.text().replace(",", "."))
+                costo_me = float(self._precio_me.text().replace(",", "."))
+            except ValueError:
+                QMessageBox.warning(self, "Valor inválido", "Ingresa números válidos para los precios.")
+                return
+        else:
+            costo_mn = 0.0
+            costo_me = 0.0
+
+        from frontend.ventana.widgets.base import UNIDADES
+        if unidad and unidad not in UNIDADES:
+            resp = QMessageBox.question(
+                self, "Unidad no estándar",
+                f"'{unidad}' no es una unidad del catálogo estándar.\n¿Guardar de todas formas?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if resp != QMessageBox.StandardButton.Yes:
+                return
+
+        # ── Campos avanzados ──
+        extra = {
+            "clave_opus": self._clave_opus.text().strip() or None,
+            "descripcion_corta": self._desc_corta.text().strip() or None,
+            "peso_kg": _parse_float(self._peso_kg.text()),
+            "comentarios": self._comentarios.text().strip() or None,
+        }
+
+        if self._insumo_id is not None:
+            # ── Editar existente ──
+            iid = self._insumo_id
+            try:
+                self._api.insumo_actualizar_descripcion(iid, desc)
+            except ValueError as e:
+                QMessageBox.warning(self, "Descripción duplicada", str(e))
+                return
+            if unidad:
+                self._api.insumo_actualizar_campo(iid, "unidad", unidad)
+            self._api.insumo_actualizar_campo(iid, "es_compuesto", es_compuesto)
+            if familia_id:
+                self._api.insumo_actualizar_campo(iid, "familia_id", familia_id)
+            elif familia_id is None:
+                self._api.insumo_actualizar_campo(iid, "familia_id", None)
+                self._api.insumo_actualizar_campo(iid, "subfamilia_id", None)
+            elif subfamilia_id:
+                self._api.insumo_actualizar_campo(iid, "subfamilia_id", subfamilia_id)
+            self._api.insumo_actualizar_precios(iid, costo_mn, costo_me)
+            for campo, valor in extra.items():
+                if valor is not None:
+                    self._api.insumo_actualizar_campo(iid, campo, valor)
+        else:
+            # ── Crear nuevo ──
+            try:
+                self._resultado = self._api.insumo_insertar(
+                    tipo_id=tipo_id, descripcion=desc, unidad=unidad,
+                    costo=costo_mn, costo_me=costo_me,
+                    es_compuesto=es_compuesto,
+                    familia_id=familia_id, subfamilia_id=subfamilia_id,
+                )
+            except ValueError as e:
+                QMessageBox.warning(self, "Error", str(e))
+                return
+            # clave_usuario auto = "INS-{id}"
+            self._api.insumo_actualizar_campo(self._resultado, "clave_usuario", f"INS-{self._resultado}")
+            for campo, valor in extra.items():
+                if valor is not None:
+                    self._api.insumo_actualizar_campo(self._resultado, campo, valor)
+
+        self.accept()
+
+    @property
+    def insumo_id(self) -> int | None:
+        return self._resultado
