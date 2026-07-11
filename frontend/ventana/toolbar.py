@@ -91,6 +91,8 @@ _HANDLERS = {
     "Eliminar":          "_on_eliminar",
     "Agregar agrupador": "_on_agregar_agrupador",
     "Agregar concepto":  "_on_agregar_concepto",
+    "Deshacer":          "_on_deshacer",
+    "Rehacer":           "_on_rehacer",
 }
 
 _TOOLBAR_CFG = {

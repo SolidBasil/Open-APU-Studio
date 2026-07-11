@@ -68,6 +68,7 @@ class NodoEliminado(Evento):
 @dataclass
 class ProyectoRecalculado(Evento):
     proyecto_id: int
+    usuario_id: int = 1  # SRV-08: quién disparó el recálculo
 
 
 @dataclass
@@ -79,6 +80,29 @@ class NotaInsertada(Evento):
 @dataclass
 class NotaResuelta(Evento):
     nota_id: int
+
+
+@dataclass
+class ProyectoAbierto(Evento):
+    """Se emite cuando un proyecto queda completamente wireado (EventBus,
+    DataService, Api ya instalados) — al abrir, importar o duplicar y abrir
+    un .db. Ver GestionProyectosMixin._wire_servicios().
+
+    No sustituye a poblar()/conectar_eventos() de los widgets que arma cada
+    pestaña: esos ya reciben el Api/EventBus correctos al construirse. Este
+    evento es para subsistemas que necesiten reaccionar a "hay un proyecto
+    nuevo abierto" sin depender de que se reconstruya un widget en concreto
+    (p. ej. título de ventana, undo stack, barra de estado)."""
+    proyecto_id: int
+    db_path: str
+
+
+@dataclass
+class ProyectoCerrado(Evento):
+    """Se emite justo antes de desmontar los servicios (EventBus,
+    DataService, Api) del proyecto que se está cerrando. Ver
+    GestionProyectosMixin._on_cerrar_proyecto() / _on_eliminar_proyecto()."""
+    proyecto_id: int
 
 
 # ── Bus de eventos ─────────────────────────────────────────────────

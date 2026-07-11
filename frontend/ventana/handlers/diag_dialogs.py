@@ -25,7 +25,6 @@ class DiagDialogsMixin:
             QMessageBox.critical(self, "Error al recalcular", str(e))
             return
 
-        self._reload_presupuesto()
         n_iter = resultado.get("iteraciones_compuestos", 0)
         self._sb.showMessage(f"Presupuesto recalculado ({n_iter} iteración(es))", 4000)
 
@@ -206,6 +205,10 @@ class DiagDialogsMixin:
                     [(u, id_) for id_, u in cambios]
                 )
                 self._db.conn.commit()
+                from backend.database.event_bus import InsumoActualizado
+                for id_, u in cambios:
+                    registro = self._api.insumo_por_id(id_)
+                    self._event_bus.emit(InsumoActualizado(id_, {"unidad": u}, registro))
                 self._sb.showMessage(f"Unidades estandarizadas: {len(cambios)} insumos", 4000)
             dlg.accept()
             self._on_depurar_catalogos()
@@ -257,6 +260,10 @@ class DiagDialogsMixin:
                 cambios
             )
             self._db.conn.commit()
+            from backend.database.event_bus import InsumoActualizado
+            for u, id_ in cambios:
+                registro = self._api.insumo_por_id(id_)
+                self._event_bus.emit(InsumoActualizado(id_, {"unidad": u}, registro))
             self._sb.showMessage(f"Unidades corregidas: {len(cambios)} insumos", 4000)
             dlg.accept()
             self._on_depurar_catalogos()

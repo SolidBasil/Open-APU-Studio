@@ -40,6 +40,36 @@ class ApuMatricesRepo(RepoBase):
             ORDER BY ac.orden
         """, [matriz_id])
 
+    def conceptos_con_insumo_compuesto(self, proyecto_id: int) -> list[dict]:
+        """Conceptos del árbol cuyo insumo es compuesto (es_compuesto=1)."""
+        return self._lista("""
+            SELECT ep.id AS cid, ep.insumo_id
+            FROM estructura_presupuesto ep
+            JOIN insumos i ON i.id = ep.insumo_id
+            WHERE ep.proyecto_id = ? AND i.es_compuesto = 1
+        """, [proyecto_id])
+
+    def contar_por_matriz(self, matriz_id: int) -> int:
+        """Filas en apu_matrices para un matriz_id dado."""
+        row = self._uno(
+            "SELECT COUNT(*) AS n FROM apu_matrices WHERE matriz_id = ?",
+            [matriz_id],
+        )
+        return row["n"] if row else 0
+
+    def redirigir_matriz(self, origen: int, destino: int) -> None:
+        """Mueve todos los componentes de apu_matrices de origen a destino."""
+        self._conn.execute(
+            "UPDATE apu_matrices SET matriz_id = ? WHERE matriz_id = ?",
+            [destino, origen],
+        )
+
+    def eliminar_matriz(self, matriz_id: int) -> None:
+        """Borra todos los componentes de apu_matrices de un matriz_id."""
+        self._conn.execute(
+            "DELETE FROM apu_matrices WHERE matriz_id = ?", [matriz_id]
+        )
+
     def con_detalle(self, matriz_id: int) -> dict:
         """Devuelve el APU completo de una matriz (concepto o insumo compuesto):
         componentes con su insumo enriquecido + totales por tipo.

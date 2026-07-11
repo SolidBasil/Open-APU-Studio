@@ -17,26 +17,12 @@ class ExplosionMixin:
         from frontend.ventana.widgets.explosion import (
             DialogoExplosion, PestañaExplosion,
         )
-        from frontend.ventana.widgets.arbol import ID_ROLE, TIPO_ROLE
 
         if not self._db:
             return self._build_placeholder("📦 Explosión de insumos")
 
-        concepto_ids = []
         arbol = self._arbol_presupuesto
-        if arbol is not None:
-            for item in arbol.selectedItems():
-                tipo = item.data(0, TIPO_ROLE)
-                if tipo is None:
-                    continue
-                if tipo == "concepto":
-                    cid = item.data(0, ID_ROLE)
-                    if cid is not None:
-                        concepto_ids.append(cid)
-                elif tipo == "capitulo":
-                    cid = item.data(0, ID_ROLE)
-                    if cid is not None:
-                        concepto_ids.extend(self._api.conceptos_bajo_nodo(cid))
+        concepto_ids = arbol.conceptos_seleccionados() if arbol is not None else []
 
         if not concepto_ids:
             concepto_ids = self._api.todos_concepto_ids()
@@ -78,39 +64,28 @@ class ExplosionMixin:
             "tipos_nombres": tipos_nombres,
         }
 
-        return PestañaExplosion(
+        pestaña = PestañaExplosion(
             filas, total_g, resumen,
             on_apu_click=self._abrir_apu_insumo,
             on_rastrear=self._on_rastrear_insumo,
         )
+        pestaña.conectar_eventos(self._event_bus, self._api)
+        return pestaña
 
     def _build_matriz_explosion(self):
         """Construye árbol expandible con APU de cada concepto."""
         from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QAbstractItemView, QHeaderView, QMessageBox, QTreeWidgetItem
         from PySide6.QtGui import QBrush, QColor, QFont
         from frontend.ventana.widgets.base import TreeTableWidget
-        from frontend.ventana.widgets.arbol import COLORES_NIVEL, ID_ROLE, TIPO_ROLE
+        from frontend.ventana.widgets.arbol import COLORES_NIVEL, ID_ROLE
 
         _DEPTH_ROLE = ID_ROLE + 1
 
         if not self._db:
             return self._build_placeholder("📦 Explosión de matrices")
 
-        concepto_ids = []
         arbol = self._arbol_presupuesto
-        if arbol is not None:
-            for item in arbol.selectedItems():
-                tipo = item.data(0, TIPO_ROLE)
-                if tipo is None:
-                    continue
-                if tipo == "concepto":
-                    cid = item.data(0, ID_ROLE)
-                    if cid is not None:
-                        concepto_ids.append(cid)
-                elif tipo == "capitulo":
-                    cid = item.data(0, ID_ROLE)
-                    if cid is not None:
-                        concepto_ids.extend(self._api.conceptos_bajo_nodo(cid))
+        concepto_ids = arbol.conceptos_seleccionados() if arbol is not None else []
         if not concepto_ids:
             concepto_ids = self._api.todos_concepto_ids()
         if not concepto_ids:
@@ -139,7 +114,7 @@ class ExplosionMixin:
         total_conceptos = 0
         for cid in concepto_ids:
             total = self._api.nodo_total(cid)
-            nodo = self._api._resolver_matriz(nodo_id=cid)
+            nodo = self._api.resolver_matriz(nodo_id=cid)
             descripcion = nodo[1] if nodo[1] else ""
 
             raiz = QTreeWidgetItem(tree, [
@@ -310,7 +285,6 @@ class ExplosionMixin:
         try:
             valores = {k: s.value() for k, s in spinboxes.items()}
             self._api.factores_sobrecosto_guardar(valores)
-            self._reload_presupuesto()
             self._sb.showMessage("Factores guardados y presupuesto recalculado.", 5000)
         except Exception as e:
             from PySide6.QtWidgets import QMessageBox

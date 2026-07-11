@@ -11,12 +11,14 @@ Los eventos se emiten después del COMMIT exitoso.
 
 from __future__ import annotations
 
+import uuid
 from typing import Any, TYPE_CHECKING
 
 from backend.database.event_bus import (
     EventBus, Evento,
     InsumoActualizado, ConceptoActualizado, ApuComponenteActualizado,
     FactoresSobrecostoActualizados, NodoInsertado, NodoEliminado,
+    ProyectoRecalculado,
 )
 from backend.database.schema_registry import SchemaRegistry
 from backend.database.exceptions import (
@@ -54,13 +56,33 @@ class DataService:
         self._registry = registry
         self._schema = SchemaRegistry()
         self._event_bus = event_bus
+        self._sesion: str | None = None  # SRV-09: sesión activa para agrupar
+
+    # ── SRV-09: Sesión de undo ──────────────────────────────────────
+
+    def iniciar_sesion(self) -> str:
+        """Genera una nueva sesión UUID para agrupar cambios de undo."""
+        self._sesion = str(uuid.uuid4())
+        return self._sesion
+
+    def cerrar_sesion(self):
+        """Cierra la sesión activa."""
+        self._sesion = None
 
     # ── Actualizar ──────────────────────────────────────────────────
 
-    def actualizar(self, entidad: str, registro_id: int, **campos: Any) -> None:
+    def actualizar(self, entidad: str, registro_id: int,
+                   usuario_id: int = 1, limpiar_redo: bool = True,
+                   **campos: Any) -> None:
         """Actualiza campos de un registro y emite evento post-commit.
 
-        Flujo: validar → transacción → repo.update() → repo.buscar() → commit → emit
+        SRV-09: captura valor_anterior de cada campo modificado en
+        historial ANTES del UPDATE, dentro de la misma transacción.
+
+        usuario_id: id del usuario que realiza la operación (SRV-06).
+        limpiar_redo: True = limpia sesiones deshechas (nueva escritura
+                      invalida redo). Poner False en recálculos internos
+                      o durante deshacer/rehacer.
         """
         try:
             self._schema.validate(entidad, campos)
@@ -72,6 +94,22 @@ class DataService:
         repo = self._registry.obtener(entidad)
         try:
             with self._db.transaction():
+                # SRV-09: leer valores ANTES del UPDATE
+                from backend.database.repos.historial import HistorialRepo
+                h_repo = HistorialRepo(self._db.conn)
+                # SRV-10: nueva escritura invalida el redo stack
+                if limpiar_redo:
+                    h_repo.limpiar_deshachadas(usuario_id)
+                sesion = self._sesion or str(uuid.uuid4())
+                for campo, nuevo_valor in campos.items():
+                    viejo = h_repo.valor_campo(entidad, registro_id, campo)
+                    if str(viejo) != str(nuevo_valor):
+                        h_repo.capturar(
+                            tabla=entidad, registro_id=registro_id,
+                            campo=campo, valor_anterior=viejo,
+                            valor_nuevo=nuevo_valor, usuario_id=usuario_id,
+                            sesion=sesion,
+                        )
                 repo.update(registro_id, campos)
                 registro = repo.buscar(registro_id)
         except Exception as e:
@@ -82,10 +120,11 @@ class DataService:
 
     # ── Insertar ────────────────────────────────────────────────────
 
-    def insertar(self, entidad: str, **campos: Any) -> int:
+    def insertar(self, entidad: str, usuario_id: int = 1, **campos: Any) -> int:
         """Inserta un registro y emite evento post-commit.
 
         Retorna: id del registro insertado.
+        usuario_id: id del usuario que realiza la operación (SRV-06).
         """
         try:
             self._schema.validate(entidad, campos)
@@ -106,8 +145,11 @@ class DataService:
 
     # ── Eliminar ────────────────────────────────────────────────────
 
-    def eliminar(self, entidad: str, registro_id: int) -> None:
-        """Elimina (soft-delete) un registro y emite evento post-commit."""
+    def eliminar(self, entidad: str, registro_id: int,
+                 usuario_id: int = 1) -> None:
+        """Elimina (soft-delete) un registro y emite evento post-commit.
+        usuario_id: id del usuario que realiza la operación (SRV-06).
+        """
         repo = self._registry.obtener(entidad)
         try:
             with self._db.transaction():
@@ -117,7 +159,132 @@ class DataService:
 
         self._event_bus.emit(NodoEliminado(registro_id, entidad))
 
-    # ── Emisión manual (operaciones masivas / campos calculados) ─────
+    # ── Transacciones compuestas (write + recalc + commit atómico) ───
+
+    def transaccion(self):
+        """Context manager para agrupar escritura + recálculo en una
+        transacción atómica. El caller pone aquí la escritura principal
+        (vía actualizar/insertar/eliminar) y el recálculo; el commit
+        ocurre al salir del bloque, y los eventos se emiten después.
+
+        Uso típico desde api.py:
+            with self._ds.transaccion():
+                self._ds.actualizar(...)
+                RecalculoRepo(conn).recalcular_proyecto(pid)
+            self._ds.emitir(ProyectoRecalculado(pid))
+        """
+        return self._db.transaction()
+
+    # ── SRV-10: Deshacer / Rehacer ─────────────────────────────────
+
+    def deshacer(self, usuario_id: int = 1,
+                  proyecto_id: int | None = None) -> bool:
+        """Deshace la última operación del usuario.
+
+        Lee la última sesión no deshecha, invierte cada campo
+        (valor_nuevo → valor_anterior) escribiendo directo al repo,
+        la marca como deshecha (para poder rehacerla), recalcula
+        y limpia el redo stack de otras sesiones.
+
+        proyecto_id: se infiere del primer cambio si no se provee.
+        Devuelve True si había algo que deshacer.
+        """
+        from backend.database.repos.historial import HistorialRepo
+        from backend.database.repos import RecalculoRepo
+
+        h_repo = HistorialRepo(self._db.conn)
+        sesion = h_repo.ultima_sesion_usuario(usuario_id)
+        if not sesion:
+            return False
+
+        cambios = h_repo.cambios_sesion(sesion)
+        if not cambios:
+            return False
+
+        # Inferir proyecto_id del primer cambio si no se dio
+        pid = proyecto_id
+        if pid is None:
+            for c in cambios:
+                repo_tmp = self._registry.obtener(c["tabla"])
+                reg = repo_tmp.buscar(c["registro_id"])
+                if reg and "proyecto_id" in reg:
+                    pid = reg["proyecto_id"]
+                    break
+            if pid is None:
+                pid = 1  # fallback
+
+        with self._db.transaction():
+            for c in cambios:
+                valor = c["valor_anterior"]
+                if valor is None:
+                    continue
+                if c["tabla"] in ("insumos", "estructura_presupuesto", "apu_matrices"):
+                    try:
+                        valor = float(valor)
+                    except (ValueError, TypeError):
+                        pass
+                repo = self._registry.obtener(c["tabla"])
+                repo.update(c["registro_id"], {c["campo"]: valor})
+
+            # Marcar como deshecha (redo stack). NO limpiar aquí:
+            # limpiar_deshachadas solo corre en actualizar() cuando
+            # el usuario hace una escritura nueva (invalida redo).
+            h_repo.marcar_deshachada(sesion)
+            RecalculoRepo(self._db.conn).recalcular_proyecto(pid)
+
+        self._event_bus.emit(ProyectoRecalculado(pid))
+        return True
+
+    def rehacer(self, usuario_id: int = 1,
+                proyecto_id: int | None = None) -> bool:
+        """Rehace la última operación deshecha del usuario.
+
+        Busca la última sesión deshecha, re-aplica valor_nuevo de cada
+        cambio (restaurando el valor original), la des-marca, recalcula.
+
+        Devuelve True si había algo que rehacer.
+        """
+        from backend.database.repos.historial import HistorialRepo
+        from backend.database.repos import RecalculoRepo
+
+        h_repo = HistorialRepo(self._db.conn)
+        sesion = h_repo.ultima_sesion_deshecha(usuario_id)
+        if not sesion:
+            return False
+
+        cambios = h_repo.cambios_sesion(sesion)
+        if not cambios:
+            return False
+
+        pid = proyecto_id
+        if pid is None:
+            for c in cambios:
+                repo_tmp = self._registry.obtener(c["tabla"])
+                reg = repo_tmp.buscar(c["registro_id"])
+                if reg and "proyecto_id" in reg:
+                    pid = reg["proyecto_id"]
+                    break
+            if pid is None:
+                pid = 1
+
+        with self._db.transaction():
+            for c in cambios:
+                valor = c["valor_nuevo"]
+                if valor is None:
+                    continue
+                if c["tabla"] in ("insumos", "estructura_presupuesto", "apu_matrices"):
+                    try:
+                        valor = float(valor)
+                    except (ValueError, TypeError):
+                        pass
+                repo = self._registry.obtener(c["tabla"])
+                repo.update(c["registro_id"], {c["campo"]: valor})
+
+            h_repo.desmarcar_sesion(sesion)
+            RecalculoRepo(self._db.conn).recalcular_proyecto(pid)
+
+        self._event_bus.emit(ProyectoRecalculado(pid))
+        return True
 
     def emitir(self, evento: Evento) -> None:
         """Emite un evento ya construido por el caller.

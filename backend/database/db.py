@@ -21,7 +21,7 @@ Uso:
     # Abrir un proyecto
     db = Database.abrir(db_path)
     conn = db.conn
-    Database.cerrar()
+    db.close()
 """
 
 # ── imports / platformdirs ──
@@ -190,13 +190,17 @@ class Config:
 # =============================================================================
 
 class Database:
-    """
-    Gestiona la conexión SQLite activa.
-    Singleton — una sola conexión abierta a la vez.
-    Aplica schema.sql automáticamente si la DB es nueva.
-    """
+    """Gestiona la conexión SQLite activa de un proyecto.
 
-    _instancia = None
+    Cada instancia controla su propia conexión. No hay singleton — el
+    caller es responsable de guardar la referencia y cerrarla cuando
+    ya no se necesite.
+
+    Uso:
+        db = Database.abrir(db_path)
+        conn = db.conn
+        db.close()
+    """
 
     def __init__(self, db_path=None):
         """Database vacía o que abre conexión si se pasa db_path."""
@@ -210,7 +214,7 @@ class Database:
     # ── abrir conexión a SQLite ──
     def _abrir(self, db_path: str | Path):
         """Abre (o reabre) conexión SQLite, aplica pragmas y schema, guarda como último proyecto."""
-        self._cerrar()
+        self.close()
         self._db_path = str(db_path)
         self._conn = sqlite3.connect(self._db_path)
         self._conn.execute("PRAGMA foreign_keys = ON")
@@ -221,7 +225,7 @@ class Database:
         return self
 
     # ── cerrar conexión SQLite ──
-    def _cerrar(self):
+    def close(self):
         """Cierra la conexión activa y limpia el estado."""
         if self._conn:
             self._conn.close()
@@ -247,28 +251,23 @@ class Database:
             raise FileNotFoundError(f"No se encontró el schema en {schema_path}")
         sql = schema_path.read_text(encoding="utf-8")
         self._conn.executescript(sql)
+        # SRV-10: agregar columna deshachado_en a historial si falta (proyectos viejos)
+        try:
+            self._conn.execute(
+                "ALTER TABLE historial ADD COLUMN deshachado_en TEXT"
+            )
+        except Exception:
+            pass  # columna ya existe
         self._conn.commit()
 
-    # ── Singleton ─────────────────────────────────────────────────────────
-
-    @classmethod
-    def instancia(cls) -> "Database":
-        """Singleton: devuelve la instancia única de Database, creándola si no existe."""
-        if cls._instancia is None:
-            cls._instancia = cls()
-        return cls._instancia
+    # ── Instanciación ────────────────────────────────────────────────
 
     @classmethod
     def abrir(cls, db_path: str | Path) -> "Database":
-        """Método de clase: obtiene singleton y abre conexión al .db."""
-        inst = cls.instancia()
+        """Crea una nueva instancia de Database y abre conexión al .db."""
+        inst = cls()
         inst._abrir(db_path)
         return inst
-
-    @classmethod
-    def cerrar(cls):
-        """Método de clase: cierra la conexión activa desde el singleton."""
-        cls.instancia()._cerrar()
 
     # ── Transacciones ────────────────────────────────────────────────
 

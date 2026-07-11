@@ -542,6 +542,26 @@ class TablaExplosion(TreeTableWidget):
         for c in range(item.columnCount()):
             item.setFont(c, f)
 
+    def conectar_eventos(self, event_bus, api):
+        """Engancha esta tabla al ciclo de vida estándar (ver
+        GUIA_INTERFAZ.md §7.6 y TablaArbol.conectar_eventos()).
+
+        Stub deliberado: hoy la explosión es una foto fija tomada al
+        momento de abrir la pestaña (ver PLAN_REPARACION.md #22-23), no se
+        recalcula sola si cambian los datos de origen — el usuario vuelve
+        a pedir "Explosión de insumos" para una foto nueva. Guardamos
+        event_bus/api para que, si en el futuro se decide refrescar en
+        caliente (p. ej. ante ProyectoRecalculado), solo haga falta
+        agregar la suscripción aquí sin tocar los call sites.
+        """
+        self._event_bus = event_bus
+        self._api = api
+
+    def desconectar_eventos(self):
+        """Idempotente: no falla si nunca se conectó o ya se desconectó."""
+        self._event_bus = None
+        self._api = None
+
 
 # =============================================================================
 # WIDGET CONTENEDOR (pestaña completa)
@@ -636,3 +656,27 @@ class PestañaExplosion(QWidget):
     def copy_selection(self):
         """Delega copia al portapapeles a la tabla interna."""
         return self._tabla.copy_selection()
+
+    def poblar(self, filas: list[dict], total_global: float):
+        """Delega a TablaExplosion.poblar() — ver GUIA_INTERFAZ.md §7.6.
+
+        __init__ ya puebla la tabla una vez con los datos de construcción
+        (la explosión llega calculada de antemano desde ExplosionMixin);
+        este método queda disponible para repoblar sin recrear el widget,
+        p. ej. si conectar_eventos() empieza a escuchar cambios más
+        adelante (ver nota en TablaExplosion.conectar_eventos()).
+        """
+        self._tabla.poblar(filas, total_global)
+
+    def conectar_eventos(self, event_bus, api):
+        """Delega a TablaExplosion.conectar_eventos()."""
+        self._tabla.conectar_eventos(event_bus, api)
+
+    def desconectar_eventos(self):
+        """Delega a TablaExplosion.desconectar_eventos().
+
+        _cerrar_tab_widget() (ver handlers/__init__.py) ya llama esto
+        automáticamente en cualquier widget que lo tenga al cerrar una
+        pestaña — no requiere wiring adicional.
+        """
+        self._tabla.desconectar_eventos()

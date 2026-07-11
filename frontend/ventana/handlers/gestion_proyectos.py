@@ -11,7 +11,112 @@ Se mezcla en VentanaPrincipal via herencia múltiple.
 class GestionProyectosMixin:
     """Mixin de lifecycle de proyectos — se mezcla en VentanaPrincipal."""
 
-    def _wire_servicios(self, db):
+    # ── Servidor embebido (SRV-11) ─────────────────────────────────
+
+    def _ensure_server(self) -> str | None:
+        """Devuelve la URL del servidor, arrancándolo bajo demanda (lazy)."""
+        proc = getattr(self, "_server_proc", None)
+        if proc is not None and proc.poll() is None:
+            return self._servidor_url
+        url = self._start_server()
+        if url:
+            self._start_ws_client(url)
+        return url
+
+    def _start_ws_client(self, server_url: str):
+        """Arranca el cliente WebSocket para recibir eventos en vivo (SRV-05)."""
+        self._stop_ws_client()
+        from pathlib import Path
+        from frontend.ventana.ws_client import WebSocketClient
+        nombre = Path(self._db.db_path).stem if self._db else None
+        if not nombre:
+            return
+        self._ws_client = WebSocketClient(server_url, nombre, parent=self)
+        self._ws_client.evento_recibido.connect(self._on_ws_evento)
+        self._ws_client.start()
+
+    def _stop_ws_client(self):
+        client = getattr(self, "_ws_client", None)
+        if client is not None:
+            client.detener()
+            client.wait(3000)
+            self._ws_client = None
+
+    def _on_ws_evento(self, nombre_evento: str, data: dict):
+        """Handler de eventos WS — re-emite en el EventBus local (SRV-05)."""
+        from backend.database.event_bus import (
+            InsumoActualizado, ConceptoActualizado, ApuComponenteActualizado,
+            FactoresSobrecostoActualizados, NodoInsertado, NodoEliminado,
+            ProyectoRecalculado,
+        )
+        _map = {
+            "InsumoActualizado": lambda d: InsumoActualizado(
+                d.get("insumo_id", 0), d.get("cambios", {}),
+                d.get("registro", {})),
+            "ConceptoActualizado": lambda d: ConceptoActualizado(
+                d.get("concepto_id", 0), d.get("cambios", {}),
+                d.get("registro", {})),
+            "ApuComponenteActualizado": lambda d: ApuComponenteActualizado(
+                d.get("componente_id", 0), d.get("cambios", {}),
+                d.get("registro", {})),
+            "FactoresSobrecostoActualizados": lambda d: FactoresSobrecostoActualizados(
+                d.get("proyecto_id", 0), d.get("registro", {})),
+            "NodoInsertado": lambda d: NodoInsertado(
+                d.get("nodo_id", 0), d.get("tipo", ""), d.get("padre_id")),
+            "NodoEliminado": lambda d: NodoEliminado(
+                d.get("nodo_id", 0), d.get("tipo", "")),
+            "ProyectoRecalculado": lambda d: ProyectoRecalculado(
+                d.get("proyecto_id", 0), d.get("usuario_id", 1)),
+        }
+        ctor = _map.get(nombre_evento)
+        if ctor and self._event_bus:
+            try:
+                self._event_bus.emit(ctor(data))
+            except Exception:
+                pass
+
+    def _start_server(self) -> str | None:
+        """Arranca el servidor embebido como subprocess (SRV-11).
+        Devuelve la URL base o None si falla."""
+        import sys, subprocess, time
+        cmd = [sys.executable, "-u", "-m", "server.servidor", "--embedded", "--port", "0"]
+        try:
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                                    stderr=subprocess.DEVNULL, text=True, bufsize=1)
+        except Exception:
+            return None
+        self._server_proc = proc
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            line = proc.stdout.readline()
+            if not line:
+                if proc.poll() is not None:
+                    self._server_proc = None
+                    return None
+                continue
+            if line.strip().startswith("PUERTO:"):
+                port = int(line.strip().split(":", 1)[1])
+                self._servidor_url = f"http://127.0.0.1:{port}"
+                return self._servidor_url
+        self._server_proc = None
+        return None
+
+    def _stop_server(self):
+        """Detiene el servidor embebido y el cliente WS (SRV-13)."""
+        self._stop_ws_client()
+        proc = getattr(self, "_server_proc", None)
+        if proc is None:
+            return
+        proc.terminate()
+        try:
+            proc.wait(timeout=3)
+        except Exception:
+            proc.kill()
+            proc.wait(timeout=2)
+        self._server_proc = None
+        self._servidor_url = None
+
+    def _wire_servicios(self, db, servidor_url=None):
         """Ensambla EventBus → RepositoryRegistry → DataService → Api para
         el proyecto recién abierto y los deja instalados en self.
 
@@ -40,7 +145,12 @@ class GestionProyectosMixin:
         self._registry = registry
 
         self._data_service = DataService(db, registry, self._event_bus)
-        self._api = Api(db.conn, db.db_path, data_service=self._data_service)
+        self._api = Api(db.conn, db.db_path, data_service=self._data_service,
+                        servidor_url=None,
+                        ensure_server=getattr(self, "_ensure_server", None))
+
+        from backend.database.event_bus import ProyectoAbierto
+        self._event_bus.emit(ProyectoAbierto(self._api.proyecto_actual_id(), str(db.db_path)))
 
     def eventFilter(self, obj, event):
         """Captura clics en el placeholder 'Sin proyecto' para abrir el ProjectDialog."""
@@ -72,7 +182,8 @@ class GestionProyectosMixin:
             return
         try:
             if self._db:
-                Database.cerrar()
+                self._db.close()
+                self._stop_server()
             self._db = Database.abrir(db_path)
             self._wire_servicios(self._db)
             self._api.unificar_matrices_apu()
@@ -102,7 +213,11 @@ class GestionProyectosMixin:
         if msg.clickedButton() != btn_ok:
             return
 
-        Database.cerrar()
+        from backend.database.event_bus import ProyectoCerrado
+        self._event_bus.emit(ProyectoCerrado(self._api.proyecto_actual_id()))
+
+        self._db.close()
+        self._stop_server()
         self._db = None
         self._api = None
         self._data_service = None
@@ -187,11 +302,9 @@ class GestionProyectosMixin:
 
         original = Rutas.db_proyecto(source_name)
         if self._db and self._db.db_path and Path(self._db.db_path).resolve() == original.resolve():
-            Database.cerrar()
+            self._db.close()
+            self._stop_server()
             self._db = Database.abrir(dest)
-            # Database.cerrar()+abrir() crea una conexión SQLite nueva.
-            # Los repos del registry quedaron apuntando a la conexión vieja
-            # (ya cerrada), así que hay que re-wirear todo, no solo Api.
             self._wire_servicios(self._db)
             self._update_statusbar()
 
@@ -231,7 +344,11 @@ class GestionProyectosMixin:
             return
 
         if self._db and self._db.db_path and Path(self._db.db_path).resolve() == ruta.resolve():
-            Database.cerrar()
+            from backend.database.event_bus import ProyectoCerrado
+            self._event_bus.emit(ProyectoCerrado(self._api.proyecto_actual_id()))
+
+            self._db.close()
+            self._stop_server()
             self._db = None
             self._api = None
             self._data_service = None
@@ -285,7 +402,8 @@ class GestionProyectosMixin:
         try:
             result = importar(dir_path, db_path, nombre)
             if self._db:
-                Database.cerrar()
+                self._db.close()
+                self._stop_server()
             self._db = Database.abrir(db_path)
             self._wire_servicios(self._db)
             self._api.unificar_matrices_apu()

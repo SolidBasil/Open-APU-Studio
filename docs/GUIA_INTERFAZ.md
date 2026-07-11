@@ -545,6 +545,19 @@ Un builder inline normalmente no supera ~30 líneas; si contiene lógica de nego
 | Api devuelve estructuras de datos simples (`dict`, `list`, `int`, `float`, `str`, `None`). | Nunca objetos de dominio — ver sección 5.2. |
 | Api recibe una conexión a la base de datos en el constructor. | La UI no conoce el mecanismo de persistencia; `Api` encapsula el acceso a los servicios, que actualmente utilizan SQLite. |
 
+**Excepción aceptada — `tuple`:** `Api.explotar()` y `Api.resolver_matriz()`
+devuelven `tuple` en vez de uno de los tipos de la lista de arriba. Es una
+excepción deliberada, no una violación pendiente de corregir: en ambos
+casos el método siempre devuelve el mismo número fijo de valores
+heterogéneos (p. ej. `resolver_matriz()` → `(matriz_id: int | None,
+descripcion: str)`), y todos los callers los desestructuran directamente
+(`matriz_id, descripcion = api.resolver_matriz(...)`). Envolverlos en un
+`dict` de una sola entrada no ganaría nada y obligaría a acceder por
+clave en cada caller. Si un método nuevo necesita devolver más de un
+valor, seguir este mismo criterio: `tuple` solo si el shape es fijo y se
+desestructura siempre igual; `dict` en cualquier otro caso (shape
+variable, claves opcionales, o más de 2-3 valores).
+
 ### Convenciones de nomenclatura para métodos de `Api`
 
 | Prefijo | Uso | Ejemplo |

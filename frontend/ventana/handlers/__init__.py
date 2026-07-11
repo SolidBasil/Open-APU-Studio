@@ -60,13 +60,14 @@ class HandlersMixin:
 
     def _reload_presupuesto(self):
         """Recarga la pestaña de presupuesto con los datos nuevos."""
+        idx_actual = self._tabs.currentIndex()
         for i in range(self._tabs.count()):
             if "Presupuesto" in self._tabs.tabText(i):
                 self._cerrar_tab_widget(i)
                 break
         new_widget = self._build_presupuesto()
         self._tabs.insertTab(0, new_widget, "📋 Presupuesto programable")
-        self._tabs.setCurrentIndex(0)
+        self._tabs.setCurrentIndex(min(idx_actual, self._tabs.count() - 1))
 
     def _on_copy_toolbar(self):
         """Delega copia al widget activo en la pestaña actual."""
@@ -541,6 +542,26 @@ class HandlersMixin:
             hermanos = repo.hermanos_de(padre_id, proyecto_id)
             nuevo = repo.reordenar_grupo(hermanos, ids_sel, direccion)
             if nuevo != hermanos:
+                # SRV-10: capturar orden ANTES de escribir para undo
+                from backend.database.repos.historial import HistorialRepo
+                h_repo = HistorialRepo(conn)
+                h_repo.limpiar_deshachadas(1)
+                import uuid as _uuid
+                sesion = str(_uuid.uuid4())
+                viejos = conn.execute(
+                    "SELECT id, orden FROM estructura_presupuesto "
+                    "WHERE id IN ({})".format(",".join("?" * len(nuevo))),
+                    nuevo
+                ).fetchall()
+                viejos_map = {r["id"]: r["orden"] for r in viejos}
+                for pos, nid in enumerate(nuevo, start=1):
+                    viejo = viejos_map.get(nid)
+                    if viejo is not None and viejo != pos:
+                        h_repo.capturar(
+                            tabla="estructura_presupuesto", registro_id=nid,
+                            campo="orden", valor_anterior=viejo,
+                            valor_nuevo=pos, usuario_id=1, sesion=sesion,
+                        )
                 repo.escribir_orden(nuevo)
                 hubo_cambio = True
 
@@ -741,6 +762,36 @@ class HandlersMixin:
                 return
             for nid, tipo in nodos:
                 api.eliminar_nodo(nid)
+
+    def _on_deshacer(self):
+        """Ctrl+Z: deshace la última operación (SRV-10)."""
+        api = getattr(self, '_api', None)
+        if not api:
+            return
+        try:
+            ok = api.deshacer()
+            if ok:
+                # ponytail: ProyectoRecalculado ya refresca el árbol in-place
+                # preservando selección y scroll (ver arbol.py:_on_proyecto_recalculado)
+                self._sb.showMessage("Operación deshecha", 2000)
+            else:
+                self._sb.showMessage("Nada que deshacer", 2000)
+        except Exception as e:
+            self._sb.showMessage(f"Error al deshacer: {e}", 4000)
+
+    def _on_rehacer(self):
+        """Ctrl+Y: rehace la última operación deshecha (SRV-10)."""
+        api = getattr(self, '_api', None)
+        if not api:
+            return
+        try:
+            ok = api.rehacer()
+            if ok:
+                self._sb.showMessage("Operación rehecha", 2000)
+            else:
+                self._sb.showMessage("Nada que rehacer", 2000)
+        except Exception as e:
+            self._sb.showMessage(f"Error al rehacer: {e}", 4000)
 
     def _on_agregar_agrupador(self):
         """Agrega un capítulo/agrupador nuevo al presupuesto."""

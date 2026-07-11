@@ -626,7 +626,7 @@ def importar(
         print(f"  {k:<15}: {v}")
 
     if cerrar_al_terminar:
-        Database.cerrar()
+        db.close()
     return stats
 
 

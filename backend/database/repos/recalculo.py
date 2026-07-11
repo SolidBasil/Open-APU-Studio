@@ -74,7 +74,7 @@ class RecalculoRepo(RepoBase):
                   AND tipo = 'capitulo' AND activo = 1
             """, (proyecto_id, nivel))
 
-        self._conn.commit()
+        # ponytail: commit removido — el repo no commitea, lo hace el servicio
         return {"iteraciones_compuestos": n_iter}
 
     def _sincronizar_precios_componentes(self, cur, proyecto_id):

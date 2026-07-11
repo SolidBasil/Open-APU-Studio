@@ -186,7 +186,7 @@ class DiagnosticoRepo(RepoBase):
             "UPDATE insumos SET hash = ? WHERE id = ?",
             [(h, id_) for id_, _, _, h in cambios]
         )
-        self._conn.commit()
+        # ponytail: commit removido — el repo no commitea, lo hace el servicio
 
     def nodos_huerfanos(self, proyecto_id):
         """Nodos del presupuesto cuyo padre_id apunta a un id que no existe."""

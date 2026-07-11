@@ -92,7 +92,10 @@ class PanelesMixin:
         QShortcut(QKeySequence("Alt+Left"),  self).activated.connect(self._on_izquierda)
         QShortcut(QKeySequence("Alt+Right"), self).activated.connect(self._on_derecha)
         QShortcut(QKeySequence("Delete"),    self).activated.connect(self._on_eliminar)
-        QShortcut(QKeySequence("Insert"),    self).activated.connect(self._on_agregar_concepto)
+        QShortcut(QKeySequence("Insert"),        self).activated.connect(self._on_agregar_concepto)
+        QShortcut(QKeySequence("Ctrl+Z"),         self).activated.connect(self._on_deshacer)
+        QShortcut(QKeySequence("Ctrl+Y"),         self).activated.connect(self._on_rehacer)
+        QShortcut(QKeySequence("Ctrl+Shift+Z"),   self).activated.connect(self._on_rehacer)
 
         return self._tabs
 

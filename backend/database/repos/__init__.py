@@ -28,6 +28,7 @@ from .recalculo   import RecalculoRepo
 from .catalogos   import FamiliaRepo, SubfamiliaRepo, NotaRepo
 from .explosion   import ExplosionRepo
 from .diagnostico import DiagnosticoRepo
+from .historial   import HistorialRepo
 
 __all__ = [
     "RepoBase",
@@ -39,4 +40,5 @@ __all__ = [
     "FamiliaRepo", "SubfamiliaRepo", "NotaRepo",
     "ExplosionRepo",
     "DiagnosticoRepo",
+    "HistorialRepo",
 ]

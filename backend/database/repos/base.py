@@ -53,6 +53,19 @@ class RepoBase:
         ).fetchone()
         return dict(row) if row else None
 
+    def _buscar_campo(self, tabla: str, campo: str, registro_id: int) -> dict | None:
+        """SELECT de un único campo por id, como {campo: valor} o None si
+        no existe la fila.
+
+        tabla/campo se interpolan directo en el SQL porque SQLite no
+        permite parametrizar identificadores — por eso ambos DEBEN ser
+        literales controlados por el código que llama (nunca texto que
+        venga de un usuario o de un campo de UI). Pensado para el caso
+        genérico "necesito un solo valor de una tabla ya conocida", como
+        revertir un item de UI tras un error de validación.
+        """
+        return self._uno(f"SELECT {campo} FROM {tabla} WHERE id = ?", (registro_id,))
+
     # ── Escritura (sin commit — la transacción la controla el servicio) ──
 
     def _update(self, tabla: str, registro_id: int, campos: dict[str, Any]) -> None:

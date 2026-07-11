@@ -63,6 +63,7 @@ class VentanaPrincipal(
         self._registry   = None                          # RepositoryRegistry — se crea al abrir proyecto
         self._event_bus  = None                           # EventBus — se crea al abrir proyecto
         self._arbol_presupuesto = None                   # ref al TablaArbol activo
+        self._server_proc = None                          # subprocess del servidor embebido
 
         self._build_central()
         self._build_statusbar()
@@ -77,6 +78,7 @@ class VentanaPrincipal(
                 w._save_header_state()
             for hijo in w.findChildren(TreeTableWidget):
                 hijo._save_header_state()
+        self._stop_server()
         super().closeEvent(event)
 
     def _build_central(self):

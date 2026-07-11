@@ -478,7 +478,8 @@ CREATE TABLE IF NOT EXISTS historial (
     valor_anterior  TEXT,
     valor_nuevo     TEXT,
     usuario_id      INTEGER NOT NULL DEFAULT 1 REFERENCES usuarios(id),
-    cambiado_en     TEXT    NOT NULL DEFAULT (datetime('now'))
+    cambiado_en     TEXT    NOT NULL DEFAULT (datetime('now')),
+    deshachado_en   TEXT    -- SRV-10: timestamp cuando se deshace (NULL = activo)
 );
 
 CREATE INDEX IF NOT EXISTS idx_historial_registro ON historial(tabla, registro_id);

@@ -395,6 +395,37 @@ class TablaArbol(TreeTableWidget):
         bus.desuscribir(ProyectoRecalculado, self._on_proyecto_recalculado)
         self._event_bus = None
 
+    def conceptos_seleccionados(self) -> list[int]:
+        """IDs de concepto (estructura_presupuesto) implicados en la
+        selección actual del árbol.
+
+        Si el ítem seleccionado es un capítulo, expande a todos los
+        conceptos bajo ese nodo (requiere que el árbol ya esté conectado
+        vía conectar_eventos(), de donde viene self._api). Devuelve []
+        si no hay selección o si el árbol no está conectado.
+
+        Reemplaza el patrón que antes vivía duplicado en
+        ExplosionMixin._build_explosion()/_build_matriz_explosion(), que
+        leía item.data(0, TIPO_ROLE)/ID_ROLE directamente desde fuera de
+        esta clase (ver PLAN_REPARACION.md #7).
+        """
+        if self._api is None:
+            return []
+        concepto_ids: list[int] = []
+        for item in self.selectedItems():
+            tipo = item.data(0, TIPO_ROLE)
+            if tipo is None:
+                continue
+            if tipo == "concepto":
+                cid = item.data(0, ID_ROLE)
+                if cid is not None:
+                    concepto_ids.append(cid)
+            elif tipo == "capitulo":
+                cid = item.data(0, ID_ROLE)
+                if cid is not None:
+                    concepto_ids.extend(self._api.conceptos_bajo_nodo(cid))
+        return concepto_ids
+
     def _buscar_item_por_id(self, nodo_id: int):
         """Búsqueda recursiva de la fila cuyo ID_ROLE == nodo_id."""
         def _rec(item):

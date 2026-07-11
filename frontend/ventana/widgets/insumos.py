@@ -183,7 +183,7 @@ class TablaInsumos(TreeTableWidget):
         clave_opus = ins.get("clave_opus") or ""
         tipo_id    = ins.get("tipo_id") or ins.get("tipo", 0)
         tipo_txt   = TIPO_NOMBRE.get(tipo_id) or ins.get("tipo_nombre") or f"Tipo {tipo_id}"
-        precio     = ins.get("costo_final", 0) or 0
+        precio     = ins.get("costo_directo", 0) or 0
         desc       = ins.get("descripcion") or ins.get("descripcion_corta") or ""
         if tiene_sub_apu:
             desc = f"\u25b6 {desc}"
