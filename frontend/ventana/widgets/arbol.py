@@ -521,18 +521,8 @@ class TablaArbol(TreeTableWidget):
     def _on_proyecto_recalculado(self, evento):
         """ProyectoRecalculado: repuebla desde la fuente de verdad.
 
-        Una cascada de recálculo puede alterar el total de un número
-        arbitrario de conceptos y capítulos ancestro — no hay forma barata
-        de saber cuáles sin repetir el propio cálculo del backend. Repoblar
-        preservando scroll y selección es el equivalente in-place razonable
-        para este caso (igual a lo que hacía _refrescar_tab_activa(), pero
-        ahora decidido por el propio widget, no por un router central).
-
-        Preserva la selección MÚLTIPLE completa (no solo currentItem) —
-        necesario para que Subir/Bajar/Izquierda/Derecha con varios nodos
-        seleccionados (Shift/Ctrl+click) sigan viéndose seleccionados tras
-        cada movimiento, ya que poblar() reconstruye todas las filas desde
-        cero y por tanto pierde cualquier selección previa de Qt.
+        Preserva selección, scroll y estado expandido/colapsado
+        de los agrupadores.
         """
         if self._api is None:
             return
@@ -543,6 +533,9 @@ class TablaArbol(TreeTableWidget):
             it.data(0, ID_ROLE) for it in self.selectedItems()
             if it.data(0, ID_ROLE) is not None
         }
+        # ponytail: capturar nodos expandidos antes de repoblar
+        ids_expandidos = set()
+        self._collect_expanded_ids(self.invisibleRootItem(), ids_expandidos)
 
         self.blockSignals(True)
         try:
@@ -550,6 +543,12 @@ class TablaArbol(TreeTableWidget):
             self.poblar(nodos)
         finally:
             self.blockSignals(False)
+
+        # Restaurar expansión
+        for nid in ids_expandidos:
+            item = self._buscar_item_por_id(nid)
+            if item is not None:
+                item.setExpanded(True)
 
         self.verticalScrollBar().setValue(scroll_y)
         if id_actual is not None:
@@ -565,3 +564,12 @@ class TablaArbol(TreeTableWidget):
         win = self.window()
         if hasattr(win, '_search_input') and hasattr(win, '_on_search'):
             win._on_search(win._search_input.text())
+
+    def _collect_expanded_ids(self, parent, ids: set):
+        """Recorre el árbol recursivamente y recolecta IDs de nodos expandidos."""
+        for i in range(parent.childCount()):
+            child = parent.child(i)
+            nid = child.data(0, ID_ROLE)
+            if child.isExpanded() and nid is not None:
+                ids.add(nid)
+            self._collect_expanded_ids(child, ids)
