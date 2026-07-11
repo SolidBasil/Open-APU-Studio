@@ -362,6 +362,9 @@ class TablaInsumos(TreeTableWidget):
             item = self._item_por_insumo(id_actual)
             if item is not None:
                 self.setCurrentItem(item)
+                # ponytail: setCurrentItem → scrollTo async, restaurar después
+                from PySide6.QtCore import QTimer
+                QTimer.singleShot(0, lambda: self.verticalScrollBar().setValue(scroll_y))
 
         win = self.window()
         if hasattr(win, '_search_input') and hasattr(win, '_on_search'):

@@ -137,9 +137,11 @@ class NodoRepo(RepoBase):
                 n.notas_rapidas,
                 n.modificado_en,
                 n.creado_en,
-                n.estado
+                n.estado,
+                t.id AS tipo_id
             FROM estructura_presupuesto n
             LEFT JOIN insumos i ON i.id = n.insumo_id
+            LEFT JOIN tipos_insumo t ON t.id = i.tipo_id
             WHERE n.proyecto_id = ? AND n.activo = 1
             ORDER BY n.padre_id, n.orden, n.id
         """, [proyecto_id])

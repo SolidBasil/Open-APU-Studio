@@ -17,6 +17,18 @@ from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef
 
 # ── Icono desde emoji ───────────────────────────────────────────
 
+_ICONOS_TIPO = {
+    1:   "🧱",  # Material
+    2:   "👷",  # Mano de obra
+    4:   "🔧",  # Herramienta
+    8:   "🚜",  # Equipo
+    16:  "⚙️",  # Auxiliar
+    32:  "📄",  # Concepto compuesto
+    64:  "🚛",  # Flete
+    128: "🏗️",  # Trabajo
+}
+
+
 def _emoji_icon(char, size=20):
     pix = QPixmap(size, size)
     pix.fill(Qt.GlobalColor.transparent)
@@ -315,7 +327,8 @@ class TablaArbol(TreeTableWidget):
         item.setData(0, ID_ROLE, n.get("id"))
         item.setData(0, TIPO_ROLE, "concepto")
         item.setData(0, INSUMO_ROLE, n.get("insumo_id"))
-        item.setIcon(0, _emoji_icon("\U0001F4C4", 20))  # 📄 leaf
+        tid = n.get("tipo_id")
+        item.setIcon(0, _emoji_icon(_ICONOS_TIPO.get(tid, "\U0001F4C4"), 20))
         return item
 
     # ── Poblado del árbol ─────────────────────────────────────────
@@ -544,11 +557,8 @@ class TablaArbol(TreeTableWidget):
         finally:
             self.blockSignals(False)
 
-        # Restaurar expansión
-        for nid in ids_expandidos:
-            item = self._buscar_item_por_id(nid)
-            if item is not None:
-                item.setExpanded(True)
+        # Restaurar expansión: colapsar todo lo que estaba cerrado
+        self._restore_expansion(self.invisibleRootItem(), ids_expandidos)
 
         self.verticalScrollBar().setValue(scroll_y)
         if id_actual is not None:
@@ -566,10 +576,19 @@ class TablaArbol(TreeTableWidget):
             win._on_search(win._search_input.text())
 
     def _collect_expanded_ids(self, parent, ids: set):
-        """Recorre el árbol recursivamente y recolecta IDs de nodos expandidos."""
+        """Recolecta IDs de nodos expandidos recursivamente."""
         for i in range(parent.childCount()):
             child = parent.child(i)
             nid = child.data(0, ID_ROLE)
             if child.isExpanded() and nid is not None:
                 ids.add(nid)
             self._collect_expanded_ids(child, ids)
+
+    def _restore_expansion(self, parent, ids_expandidos: set):
+        """Restaura expansión: expande los que estaban abiertos, colapsa los demás."""
+        for i in range(parent.childCount()):
+            child = parent.child(i)
+            nid = child.data(0, ID_ROLE)
+            if nid is not None:
+                child.setExpanded(nid in ids_expandidos)
+            self._restore_expansion(child, ids_expandidos)
