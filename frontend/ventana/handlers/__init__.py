@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 from .gestion_proyectos import GestionProyectosMixin
 from .informes          import InformesMixin
 from .diag_dialogs      import DiagDialogsMixin
+from frontend.ventana.paneles import INSUMOS_TITLES
 
 
 class HandlersMixin:
@@ -77,41 +78,25 @@ class HandlersMixin:
 
     def _on_select_all_toolbar(self):
         """Selecciona todas las filas visibles del widget activo."""
-        from frontend.ventana.widgets.base import TreeTableWidget
-        tab = self._tabs.currentWidget()
-        if tab is None:
-            return
-        if isinstance(tab, TreeTableWidget):
-            tab.selectAll()
-            return
-        tree = tab.findChild(TreeTableWidget)
-        if tree is not None:
-            tree.selectAll()
+        t = self._get_active_table()
+        if t:
+            t.selectAll()
 
     def _on_modificar_toolbar(self):
         """Activa edición en la celda actual (equivalente a F2)."""
-        from frontend.ventana.widgets.base import TreeTableWidget
-        tab = self._tabs.currentWidget()
-        if tab is None:
-            return
-        tree = tab if isinstance(tab, TreeTableWidget) else tab.findChild(TreeTableWidget)
-        if tree is None:
-            return
-        idx = tree.currentIndex()
-        if idx.isValid():
-            tree.edit(idx)
+        t = self._get_active_table()
+        if t:
+            idx = t.currentIndex()
+            if idx.isValid():
+                t.edit(idx)
 
     def _on_desglozar_toolbar(self):
         """Abre APU del ítem seleccionado (equivalente a doble clic en P.U.)."""
-        from frontend.ventana.widgets.base import TreeTableWidget
         from frontend.ventana.widgets.arbol import ID_ROLE
-        tab = self._tabs.currentWidget()
-        if tab is None:
+        t = self._get_active_table()
+        if not t:
             return
-        tree = tab if isinstance(tab, TreeTableWidget) else tab.findChild(TreeTableWidget)
-        if tree is None:
-            return
-        item = tree.currentItem()
+        item = t.currentItem()
         if not item:
             return
         insumo_id = item.data(0, Qt.ItemDataRole.UserRole)
@@ -229,11 +214,6 @@ class HandlersMixin:
                 self._cerrar_tab_widget(idx)
             self._tab_temp = None
 
-        insumos_titles = {
-            "📚 Todos", "📐 Conceptos", "🧱 Materiales", "👷 Mano de obra",
-            "🔧 Herramienta", "🚜 Equipo", "⚙️ Auxiliares",
-            "🧮 Matrices", "🚛 Fletes", "🏗️ Trabajos",
-        }
         if title == "📋 Presupuesto programable":
             content = self._build_presupuesto()
         elif title == "🔍 Buscar partidas":
@@ -250,7 +230,7 @@ class HandlersMixin:
             content = self._build_matriz_explosion()
             if content is None:
                 return
-        elif title in insumos_titles:
+        elif title in INSUMOS_TITLES:
             content = self._build_insumos(title)
         else:
             content = self._build_placeholder(title)
@@ -280,14 +260,9 @@ class HandlersMixin:
 
     def _on_search(self, text):
         """Filtra filas del TreeTableWidget activo."""
-        from frontend.ventana.widgets.base import TreeTableWidget
-        w = self._tabs.currentWidget()
-        if isinstance(w, TreeTableWidget):
-            w.filter_rows(text)
-            return
-        tree = w.findChild(TreeTableWidget) if w else None
-        if tree is not None:
-            tree.filter_rows(text)
+        t = self._get_active_table()
+        if t:
+            t.filter_rows(text)
 
     def _on_tab_changed(self, idx):
         """Re-aplica el filtro de búsqueda al cambiar de pestaña."""
@@ -403,6 +378,22 @@ class HandlersMixin:
         if isinstance(w, TreeTableWidget):
             return w
         return w.findChild(TreeTableWidget) if w else None
+
+    def _get_move_context(self):
+        """Contexto común para operaciones de mover/indent/outdent.
+        Devuelve (t, ds, conn, proyecto_id, repo, seleccionados) o
+        (None, …) si no hay tabla activa, proyecto o selección."""
+        from backend.database.repos import NodoRepo
+        t = self._get_active_table()
+        ds = getattr(self, '_data_service', None)
+        api = getattr(self, '_api', None)
+        conn = getattr(self, '_conn', None)
+        if not t or not conn or not ds or not api:
+            return None, None, None, None, None, None
+        seleccionados = t.selectedItems()
+        if not seleccionados:
+            return t, ds, conn, None, None, None
+        return t, ds, conn, api.proyecto_actual_id(), NodoRepo(conn), seleccionados
 
     def _on_ajustar_columnas(self):
         """Auto-ajusta ancho de columnas al contenido (solo si no hay estado guardado)."""
@@ -520,21 +511,11 @@ class HandlersMixin:
         grupo de hermanos afectado (si la selección abarca más de un
         padre) se procesa por separado — ver NodoRepo.reordenar_grupo()."""
         from frontend.ventana.widgets.arbol import ID_ROLE
-        from backend.database.repos import NodoRepo
         from backend.database.event_bus import ProyectoRecalculado
 
-        t = self._get_active_table()
-        ds = getattr(self, '_data_service', None)
-        api = getattr(self, '_api', None)
-        conn = getattr(self, '_conn', None)
-        if not t or not conn or not ds or not api:
+        t, ds, conn, proyecto_id, repo, seleccionados = self._get_move_context()
+        if not repo or not seleccionados:
             return
-        seleccionados = t.selectedItems()
-        if not seleccionados:
-            return
-
-        proyecto_id = api.proyecto_actual_id()
-        repo = NodoRepo(conn)
         grupos = self._grupos_por_padre(t, seleccionados, ID_ROLE)
 
         hubo_cambio = False
@@ -548,12 +529,7 @@ class HandlersMixin:
                 h_repo.limpiar_deshachadas(1)
                 import uuid as _uuid
                 sesion = str(_uuid.uuid4())
-                viejos = conn.execute(
-                    "SELECT id, orden FROM estructura_presupuesto "
-                    "WHERE id IN ({})".format(",".join("?" * len(nuevo))),
-                    nuevo
-                ).fetchall()
-                viejos_map = {r["id"]: r["orden"] for r in viejos}
+                viejos_map = repo.orden_antes_de(nuevo)
                 for pos, nid in enumerate(nuevo, start=1):
                     viejo = viejos_map.get(nid)
                     if viejo is not None and viejo != pos:
@@ -583,21 +559,11 @@ class HandlersMixin:
         padre salen juntos, preservando su orden relativo original entre
         sí, aunque no hayan estado contiguos dentro de ese padre."""
         from frontend.ventana.widgets.arbol import ID_ROLE
-        from backend.database.repos import NodoRepo
         from backend.database.event_bus import ProyectoRecalculado
 
-        t = self._get_active_table()
-        ds = getattr(self, '_data_service', None)
-        api = getattr(self, '_api', None)
-        conn = getattr(self, '_conn', None)
-        if not t or not conn or not ds or not api:
+        t, ds, conn, proyecto_id, repo, seleccionados = self._get_move_context()
+        if not repo or not seleccionados:
             return
-        seleccionados = t.selectedItems()
-        if not seleccionados:
-            return
-
-        proyecto_id = api.proyecto_actual_id()
-        repo = NodoRepo(conn)
 
         # Solo agrupa seleccionados que SÍ tienen padre (los que ya están
         # en la raíz no tienen adónde "salir" y se ignoran en silencio).
@@ -616,10 +582,7 @@ class HandlersMixin:
 
         hubo_cambio = False
         for padre_id, ids_sel in grupos.items():
-            fila_padre = conn.execute(
-                "SELECT padre_id, orden FROM estructura_presupuesto WHERE id=?",
-                (padre_id,)
-            ).fetchone()
+            fila_padre = repo.info_nodo(padre_id)
             if not fila_padre:
                 continue
             abuelo_id = fila_padre["padre_id"]
@@ -658,21 +621,11 @@ class HandlersMixin:
         a un mismo nuevo padre, en vez de que cada nodo busque su propio
         "hermano anterior" (que tras mover el primero ya habría cambiado)."""
         from frontend.ventana.widgets.arbol import ID_ROLE
-        from backend.database.repos import NodoRepo
         from backend.database.event_bus import ProyectoRecalculado
 
-        t = self._get_active_table()
-        ds = getattr(self, '_data_service', None)
-        api = getattr(self, '_api', None)
-        conn = getattr(self, '_conn', None)
-        if not t or not conn or not ds or not api:
+        t, ds, conn, proyecto_id, repo, seleccionados = self._get_move_context()
+        if not repo or not seleccionados:
             return
-        seleccionados = t.selectedItems()
-        if not seleccionados:
-            return
-
-        proyecto_id = api.proyecto_actual_id()
-        repo = NodoRepo(conn)
         grupos = self._grupos_por_padre(t, seleccionados, ID_ROLE)
 
         hubo_cambio = False

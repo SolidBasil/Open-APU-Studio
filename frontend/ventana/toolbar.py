@@ -27,11 +27,12 @@ def _icon(char, size=20, font_size=None):
     """Genera un QIcon desde un carácter (emoji/unicode) pintado sobre un pixmap transparente.
     Útil para botones de toolbar sin depender de archivos de imagen.
     """
+    from frontend.ventana.colores import TEXT
     pix = QPixmap(size, size)
     pix.fill(Qt.GlobalColor.transparent)
     p = QPainter(pix)
     p.setRenderHint(QPainter.RenderHint.TextAntialiasing)
-    p.setPen(QColor("#E8EDF2"))
+    p.setPen(QColor(TEXT))
     f = QFont("Segoe UI Symbol", font_size or size - 4)
     p.setFont(f)
     p.drawText(QRect(0, 0, size, size), Qt.AlignmentFlag.AlignCenter, char)
@@ -448,7 +449,8 @@ class ToolbarMixin:
         self._tb.setCurrentIndex(self._tb_pages[name])
 
     def _update_label_colors(self):
-        color = "#E8EDF2" if getattr(self, '_tema_modo', 'oscuro') == 'oscuro' else "#1A1F24"
+        from frontend.ventana.colores import TEXT
+        color = TEXT if getattr(self, '_tema_modo', 'oscuro') == 'oscuro' else "#1A1F24"
         for lbl in self._tb_labels:
             lbl.setStyleSheet(
                 f"color: {color}; background-color: transparent;"

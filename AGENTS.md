@@ -1,8 +1,11 @@
 # Open APU Studio — AGENTS.md
 
-Actualizado: 2026-07-03 19:45 (hora local)
+Actualizado: 2026-07-11 12:00 (hora local)
 ## Regla DE DESARROLLO
 no conservar codigo viejo o migraciones de bases de datos con codigo antiguo si no funciona se rehace no se conserva nada antiguo
+## Regla: NO subir a GitHub sin pedido expreso
+Nunca hacer git push (ni commit) a menos que el usuario lo pida explícitamente.
+Primero hacer los cambios, compilar/verificar, y esperar confirmación del usuario.
 ## Regla .md: fecha de modificación
 Todo archivo .md generado debe incluir la fecha y hora de su última modificación
 (ISO 8601, hora local) para que sea posible detectar cuándo el contenido está

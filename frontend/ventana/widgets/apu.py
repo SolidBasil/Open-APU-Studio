@@ -84,6 +84,7 @@ class TablaApuDetalle(TreeTableWidget):
     _HEADER_KEY = "apu_header_state"
     _CATALOGO_KEY = "apu_columnas_favoritas"
     COLUMNAS_CATALOGO = COLUMNAS_CATALOGO
+    _search_cols = {1, 2}
 
     resumen_actualizado = Signal(str)  # texto enriquecido para el encabezado del contenedor
 
@@ -215,12 +216,15 @@ class TablaApuDetalle(TreeTableWidget):
         )
 
         def _on_evento(evento):
-            def _refrescar_seguro():
-                try:
-                    self._refrescar()
-                except RuntimeError:
-                    pass  # la pestaña se cerró antes de que corriera el timer
-            QTimer.singleShot(0, _refrescar_seguro)
+            try:
+                def _refrescar_seguro():
+                    try:
+                        self._refrescar()
+                    except Exception as e:
+                        print(f"[eventbus] _refrescar_seguro: {type(e).__name__}: {e}")
+                QTimer.singleShot(0, _refrescar_seguro)
+            except Exception as e:
+                print(f"[eventbus] _on_evento: {type(e).__name__}: {e}")
 
         self._handlers = {
             ApuComponenteActualizado: _on_evento,

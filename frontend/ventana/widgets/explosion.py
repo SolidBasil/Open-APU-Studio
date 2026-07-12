@@ -27,38 +27,11 @@ from frontend.ventana.widgets.base import TreeTableWidget
 # CONSTANTES
 # =============================================================================
 
-TIPO_ICONO = {
-    1:   "🧱",
-    2:   "👷",
-    4:   "🔧",
-    8:   "🚜",
-    16:  "⚙️",
-    32:  "📄",
-    64:  "🚛",
-    128: "🏗️",
-}
-
-TIPO_DESC = {
-    1:   "Materiales y artículos fundamentales del proyecto.",
-    2:   "Mano de obra directa e indirecta.",
-    4:   "Herramienta menor y especializada.",
-    8:   "Maquinaria y equipo de construcción.",
-    16:  "Insumos auxiliares de apoyo.",
-    32:  "Conceptos generales y administrativos.",
-    64:  "Transporte y fletes de materiales.",
-    128: "Trabajos y subcontratos.",
-}
-
-TIPOS_INSUMO = [
-    (1,   "Materiales",    "material"),
-    (2,   "Mano de obra",  "mano_obra"),
-    (4,   "Herramienta",   "herramienta"),
-    (8,   "Equipo",        "equipo"),
-    (16,  "Auxiliares",    "auxiliar"),
-    (32,  "Conceptos",     "concepto"),
-    (64,  "Fletes",        "flete"),
-    (128, "Trabajos",      "trabajo"),
-]
+from frontend.ventana.tipos_insumo import (
+    ICONO as TIPO_ICONO,
+    DESC as TIPO_DESC,
+    TIPOS_INSUMO,
+)
 
 COLUMNAS_EXP = ["Tipo", "Clave", "Descripción", "Unidad", "Cantidad", "P.U.", "Total", "%"]
 EDITABLE_EXP = frozenset()

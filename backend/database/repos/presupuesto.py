@@ -350,7 +350,7 @@ class NodoRepo(RepoBase):
             [(i, nid) for i, nid in enumerate(ids_en_orden, start=1)]
         )
 
-    def actualizar_cantidad(self, concepto_id, cantidad, usuario_id=1):
+    def actualizar_cantidad(self, concepto_id, cantidad):
         """Actualiza la cantidad de un concepto y recalcula totales."""
         self._update("estructura_presupuesto", concepto_id, {"cantidad": cantidad})
         self.recalcular_desde(concepto_id)
@@ -394,6 +394,25 @@ class NodoRepo(RepoBase):
                 "SELECT padre_id FROM estructura_presupuesto WHERE id = ?", (actual,)
             ).fetchone()
             actual = row["padre_id"] if row else None
+
+    def orden_antes_de(self, ids: list[int]) -> dict[int, int]:
+        """Devuelve {id: orden} para los IDs dados. Usado para capturar
+        el orden previo antes de reordenar (undo)."""
+        if not ids:
+            return {}
+        filas = self._lista(
+            "SELECT id, orden FROM estructura_presupuesto "
+            "WHERE id IN ({})".format(",".join("?" * len(ids))),
+            ids
+        )
+        return {r["id"]: r["orden"] for r in filas}
+
+    def info_nodo(self, nodo_id: int) -> dict | None:
+        """Devuelve {padre_id, orden} de un nodo, o None si no existe."""
+        return self._uno(
+            "SELECT padre_id, orden FROM estructura_presupuesto WHERE id = ?",
+            (nodo_id,)
+        )
 
 
 # =============================================================================

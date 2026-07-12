@@ -44,25 +44,6 @@ class HistorialRepo(RepoBase):
             "cambiado_en":    datetime.now().isoformat(),
         })
 
-    def capturar_batch(self, cambios: list[dict], usuario_id: int = 1,
-                       sesion: str | None = None) -> str:
-        """Registra múltiples cambios bajo la misma sesión.
-
-        cambios: lista de dicts con tabla, registro_id, campo,
-                 valor_anterior, valor_nuevo.
-        Devuelve el sesion UUID usado.
-        """
-        if sesion is None:
-            sesion = str(uuid.uuid4())
-        for c in cambios:
-            self.capturar(
-                tabla=c["tabla"], registro_id=c["registro_id"],
-                campo=c["campo"], valor_anterior=c.get("valor_anterior"),
-                valor_nuevo=c.get("valor_nuevo"), usuario_id=usuario_id,
-                sesion=sesion,
-            )
-        return sesion
-
     # ── SRV-10: Deshacer / Rehacer ────────────────────────────────
 
     def ultima_sesion_usuario(self, usuario_id: int) -> str | None:
@@ -104,14 +85,6 @@ class HistorialRepo(RepoBase):
             "AND deshachado_en IS NOT NULL", (usuario_id,)
         )
 
-    def sesiones_usuario(self, usuario_id: int) -> list[str]:
-        """Devuelve las sesiones distintas de un usuario, ordenadas cronológicamente."""
-        rows = self._lista(
-            "SELECT DISTINCT sesion FROM historial "
-            "WHERE usuario_id = ? ORDER BY MIN(id)", (usuario_id,)
-        )
-        return [r["sesion"] for r in rows]
-
     def cambios_sesion(self, sesion: str) -> list[dict]:
         """Todos los cambios de una sesión, ordenados cronológicamente."""
         return self._lista(
@@ -129,22 +102,9 @@ class HistorialRepo(RepoBase):
         )
         return self._cursor.rowcount
 
-    def limpiar_sesion(self, sesion: str) -> None:
-        """Elimina todos los registros de una sesión (usado tras deshacer completo)."""
-        self._cursor.execute(
-            "DELETE FROM historial WHERE sesion = ?", (sesion,)
-        )
-
     def valor_campo(self, tabla: str, registro_id: int, campo: str):
         """Lee el valor actual de un campo específico de una tabla."""
         row = self._uno(
             f"SELECT {campo} FROM {tabla} WHERE id = ?", (registro_id,)
         )
         return row[campo] if row else None
-
-    def existe_registro(self, tabla: str, registro_id: int) -> bool:
-        """Verifica si un registro existe y está activo."""
-        row = self._uno(
-            f"SELECT 1 FROM {tabla} WHERE id = ? AND activo = 1", (registro_id,)
-        )
-        return row is not None

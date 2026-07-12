@@ -73,13 +73,26 @@ class ExplosionMixin:
         return pestaña
 
     def _build_matriz_explosion(self):
-        """Construye árbol expandible con APU de cada concepto."""
-        from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QAbstractItemView, QHeaderView, QMessageBox, QTreeWidgetItem
-        from PySide6.QtGui import QBrush, QColor, QFont
+        """Construye árbol expandible con APU de cada concepto.
+
+        Sin conectores jerárquicos. Cada concepto tiene una línea
+        superior del color del nivel + fondo coloreado. Componentes
+        se cargan bajo demanda al expandir.
+        """
+        from PySide6.QtWidgets import (
+            QWidget, QVBoxLayout, QLabel, QAbstractItemView,
+            QHeaderView, QMessageBox, QTreeWidgetItem, QTreeWidget,
+            QStyledItemDelegate,
+        )
+        from PySide6.QtGui import QBrush, QColor, QFont, QPen
+        from PySide6.QtCore import Qt
         from frontend.ventana.widgets.base import TreeTableWidget
         from frontend.ventana.widgets.arbol import COLORES_NIVEL, ID_ROLE
 
         _DEPTH_ROLE = ID_ROLE + 1
+        _BORDER_ROLE = Qt.ItemDataRole.UserRole + 50
+        _LOADED_ROLE = Qt.ItemDataRole.UserRole + 51
+        _SECTION_BG = QColor("#1E2A3A")
 
         if not self._db:
             return self._build_placeholder("📦 Explosión de matrices")
@@ -94,9 +107,33 @@ class ExplosionMixin:
             return None
 
         cols = ["Nivel", "Clave", "Descripción", "Unidad", "P.U.", "Op", "Valor", "Importe", "Tipo"]
-        tree = TreeTableWidget(cols)
+
+        # ponytail: subclass — sin conectores jerárquicos
+        class _TablaMatriz(TreeTableWidget):
+            def drawBranches(self, painter, rect, index):
+                QTreeWidget.drawBranches(self, painter, rect, index)
+
+        # ponytail: delegado que hereda _Delegate y agrega línea superior coloreada
+        from frontend.ventana.widgets.base import _Delegate
+        class _BorderDelegate(_Delegate):
+            def paint(self, painter, option, index):
+                super().paint(painter, option, index)
+                if index.column() != 0:
+                    return
+                color = index.data(_BORDER_ROLE)
+                if color is not None:
+                    painter.save()
+                    painter.setPen(QPen(QColor(color), 2))
+                    y = option.rect.top() + 1
+                    last = tree.columnCount() - 1
+                    right = tree.columnViewportPosition(last) + tree.columnWidth(last) - option.rect.left()
+                    painter.drawLine(option.rect.left(), y, right, y)
+                    painter.restore()
+
+        tree = _TablaMatriz(cols)
         tree.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         tree.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        tree.setItemDelegate(_BorderDelegate(tree, frozenset(), None))
 
         tree.set_column_modes({
             0: (QHeaderView.ResizeMode.Interactive, 60),
@@ -112,33 +149,32 @@ class ExplosionMixin:
         tree.header().setMaximumSectionSize(400)
 
         total_conceptos = 0
-        for cid in concepto_ids:
+        nivel_color = COLORES_NIVEL[0]
+        for idx_c, cid in enumerate(concepto_ids, 1):
             total = self._api.nodo_total(cid)
             nodo = self._api.resolver_matriz(nodo_id=cid)
             descripcion = nodo[1] if nodo[1] else ""
 
             raiz = QTreeWidgetItem(tree, [
-                "", "", descripcion,
+                f"  {idx_c}", "", f"  {descripcion}",
                 "", "", "", "",
-                f"{total:,.2f}",
+                f"  {total:,.2f}",
                 "",
             ])
-            color = QBrush(QColor(COLORES_NIVEL[0]))
-            f = QFont()
-            f.setBold(True)
             for c in range(tree.columnCount()):
-                raiz.setForeground(c, color)
+                raiz.setBackground(c, _SECTION_BG)
+                raiz.setForeground(c, QBrush(QColor(nivel_color)))
+                f = QFont()
+                f.setBold(True)
                 raiz.setFont(c, f)
+                raiz.setData(c, _BORDER_ROLE, nivel_color)
 
             apu = self._api.apu(nodo_id=cid)
             if apu:
                 for comp in apu["detalle"]:
                     item = self._add_comp_row(raiz, comp, "", 1, _DEPTH_ROLE)
-                    if comp.get("tiene_sub_apu"):
-                        QTreeWidgetItem(item, [""] * len(cols))
                     total_conceptos += 1
             raiz.setExpanded(True)
-            QTreeWidgetItem(tree, [""] * len(cols))
 
         if total_conceptos == 0:
             QMessageBox.information(self, "Sin APU",
@@ -146,23 +182,32 @@ class ExplosionMixin:
             return None
 
         def _on_expanded(item):
-            if item.childCount() == 1 and not item.child(0).text(1):
-                placeholder = item.child(0)
-                item.removeChild(placeholder)
-                insumo_id = item.data(0, ID_ROLE)
-                if insumo_id is None:
-                    return
-                depth = item.data(0, _DEPTH_ROLE) or 0
-                apu = self._api.apu(insumo_id=insumo_id)
-                if apu:
-                    for comp in apu["detalle"]:
-                        sub = self._add_comp_row(item, comp, "", depth + 1, _DEPTH_ROLE)
-                        if comp.get("tiene_sub_apu"):
-                            QTreeWidgetItem(sub, [""] * len(cols))
+            if item.data(0, _LOADED_ROLE):
+                return
+            item.setData(0, _LOADED_ROLE, True)
+            insumo_id = item.data(0, ID_ROLE)
+            if insumo_id is None:
+                return
+            depth = item.data(0, _DEPTH_ROLE) or 0
+            apu = self._api.apu(insumo_id=insumo_id)
+            if apu:
+                for comp in apu["detalle"]:
+                    self._add_comp_row(item, comp, "", depth + 1, _DEPTH_ROLE)
 
         tree.itemExpanded.connect(_on_expanded)
 
-        w = QWidget()
+        # ponytail: contenedor con proxy de show_* para que toolbar funcione
+        class _MatrizContainer(QWidget):
+            def show_primer_nivel(self):
+                tree.show_primer_nivel()
+            def show_solo_agrupadores(self):
+                tree.show_solo_agrupadores()
+            def show_todo(self):
+                tree.show_todo()
+            def show_nivel(self, depth):
+                tree.show_nivel(depth)
+
+        w = _MatrizContainer()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(4)

@@ -148,7 +148,7 @@ class DiagDialogsMixin:
         title = f"🔧 Depurar catálogos ({total})"
         for i in range(self._tabs.count()):
             if self._tabs.tabText(i).startswith("🔧 Depurar"):
-                self._tabs.removeTab(i)
+                self._cerrar_tab_widget(i)
                 break
         self._tabs.addTab(w, title)
         self._tabs.setCurrentWidget(w)
@@ -198,15 +198,13 @@ class DiagDialogsMixin:
             for r in items:
                 combo = combos.get(r["unidad"])
                 if combo and combo.currentText() != "(mantener)":
-                    cambios.append((r["id"], combo.currentText()))
+                    cambios.append((combo.currentText(), r["id"]))
             if cambios:
-                self._db.conn.executemany(
-                    "UPDATE insumos SET unidad = ? WHERE id = ?",
-                    [(u, id_) for id_, u in cambios]
-                )
+                from backend.database.repos import InsumoRepo
+                InsumoRepo(self._db.conn).actualizar_unidades_batch(cambios)
                 self._db.conn.commit()
                 from backend.database.event_bus import InsumoActualizado
-                for id_, u in cambios:
+                for u, id_ in cambios:
                     registro = self._api.insumo_por_id(id_)
                     self._event_bus.emit(InsumoActualizado(id_, {"unidad": u}, registro))
                 self._sb.showMessage(f"Unidades estandarizadas: {len(cambios)} insumos", 4000)
@@ -255,10 +253,8 @@ class DiagDialogsMixin:
             cambios = [(r["canonical"], r["id"]) for r in items]
             if not cambios:
                 return
-            self._db.conn.executemany(
-                "UPDATE insumos SET unidad = ? WHERE id = ?",
-                cambios
-            )
+            from backend.database.repos import InsumoRepo
+            InsumoRepo(self._db.conn).actualizar_unidades_batch(cambios)
             self._db.conn.commit()
             from backend.database.event_bus import InsumoActualizado
             for u, id_ in cambios:
@@ -326,8 +322,9 @@ class DiagDialogsMixin:
             msgs = []
             for h, ids in colisiones.items():
                 msgs.append(f"<b>{h}</b> → IDs {ids}")
+            from frontend.ventana.colores import ERROR
             warn = QLabel(
-                f"<b style='color:#A06A6A;'>⚠ Colisiones detectadas:</b><br>"
+                f"<b style='color:{ERROR};'>⚠ Colisiones detectadas:</b><br>"
                 + "<br>".join(msgs)
             )
             warn.setTextFormat(Qt.TextFormat.RichText)

@@ -150,10 +150,10 @@ class PersonalizarColumnasDialog(QDialog):
         star.setText("★" if es_fav else "☆")
         star.setStyleSheet(
             "QLabel { color: #F0C060; font-size: 18px; padding: 2px 4px; border-radius: 3px; }"
-            "QLabel:hover { background-color: #2A4158; }"
+            f"QLabel:hover {{ background-color: {SEL_BG}; }}"
             if es_fav else
             "QLabel { color: #6B7884; font-size: 18px; padding: 2px 4px; border-radius: 3px; }"
-            "QLabel:hover { background-color: #2A4158; }"
+            f"QLabel:hover {{ background-color: {SEL_BG}; }}"
         )
 
     def _toggle_star(self, star: QLabel, col_idx: int):
@@ -179,16 +179,25 @@ class PersonalizarColumnasDialog(QDialog):
 
 # ── Expresiones regulares ──────────────────────────────────────────
 
-SISTEMA_PREFIJOS = re.compile(rf"^[{re.escape('▶🧱👷🔧🚜⚙️📄📚')}]\s?")
+# Derivado de tipos_insumo.ICONO — no hardcodear emojis aquí.
+from frontend.ventana.colores import TEXT, SEL_BG, LINE
+from frontend.ventana.tipos_insumo import ICONO as _TIPO_ICONO
+_PREFIJOS = "▶" + "".join(_TIPO_ICONO.values())
+SISTEMA_PREFIJOS = re.compile(rf"^[{re.escape(_PREFIJOS)}]\s?")
 
 
 def _menu_icon(char: str, size: int = 16):
     """Icono Unicode para acciones de menú contextual."""
+    return make_icon(char, size)
+
+
+def make_icon(char: str, size: int = 20, font_size: int | None = None):
+    """Genera QIcon desde un carácter Unicode pintado sobre pixmap transparente."""
     pix = QPixmap(size, size)
     pix.fill(Qt.GlobalColor.transparent)
     p = QPainter(pix)
-    p.setPen(QColor("#E8EDF2"))
-    p.setFont(QFont("Segoe UI Symbol", size - 4))
+    p.setPen(QColor(TEXT))
+    p.setFont(QFont("Segoe UI Symbol", font_size or size - 4))
     p.drawText(QRect(0, 0, size, size), Qt.AlignmentFlag.AlignCenter, char)
     p.end()
     return QIcon(pix)
@@ -196,7 +205,7 @@ def _menu_icon(char: str, size: int = 16):
 
 # ── Constantes de conectores ──────────────────────────────────────
 
-LINE_COLOR = QColor("#5E92B8")
+LINE_COLOR = QColor(LINE)
 LINE_WIDTH  = 1.5
 
 

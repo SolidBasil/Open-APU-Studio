@@ -5,15 +5,14 @@ Lógica de negocio pura para Open APU Studio.
 No sabe nada de presentación (sin HTML, sin PyQt, sin Flask) ni de SQL.
 
 Fase 4 (ver docs/ARQUITECTURA_SERVICIOS.md): este módulo se redujo a solo
-las dos funciones que no tienen hogar natural en un repositorio, porque
-no leen la base de datos — son transformaciones puras sobre datos ya en
+la función que no tiene hogar natural en un repositorio, porque
+no lee la base de datos — es una transformación pura sobre datos ya en
 memoria:
     generar_hash(descripcion)  → hash de deduplicación de insumos
-    flatten(nodes)             → aplana un árbol ya construido
 
 Todo lo que antes vivía aquí y sí hacía SQL se movió a los repos:
     build_budget_tree() → NodoRepo.arbol()
-    get_proyecto()      → ProyectoRepo.obtener()
+    get_proyecto()      → ProyectoRepo.buscar()
     get_apu()           → ApuMatricesRepo.con_detalle()
     validar()           → DiagnosticoRepo.resumen_integridad()
     count_nodes(), count_concepts(), total_obra() → sin uso en ningún
@@ -64,18 +63,4 @@ def generar_hash(descripcion: str) -> str:
     return "".join(reversed(result)).zfill(8)
 
 
-# =============================================================================
-# ÁRBOL: APLANADO
-# =============================================================================
 
-def flatten(nodes: list[dict]) -> list[dict]:
-    """
-    Aplana un árbol (ya construido por NodoRepo.arbol()) en una lista
-    ordenada por WBS. Útil para exportar a Excel o para vistas tabulares.
-    Cada nodo conserva su campo 'hijos' pero no está anidado.
-    """
-    resultado = []
-    for n in nodes:
-        resultado.append(n)
-        resultado.extend(flatten(n.get("hijos", [])))
-    return resultado

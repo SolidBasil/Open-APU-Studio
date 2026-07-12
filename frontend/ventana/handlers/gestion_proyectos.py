@@ -7,6 +7,8 @@ eliminar e importar desde OPUS.
 Se mezcla en VentanaPrincipal via herencia múltiple.
 """
 
+from frontend.ventana.colores import SUCCESS, WARNING, ERROR
+
 
 class GestionProyectosMixin:
     """Mixin de lifecycle de proyectos — se mezcla en VentanaPrincipal."""
@@ -242,7 +244,7 @@ class GestionProyectosMixin:
             return
         actual = Path(self._db.db_path).stem if self._db and self._db.db_path else None
         dlg = ProjectDialog(proyectos, "Duplicar proyecto", "Duplicar",
-                            accion_color="#5B8A72", seleccionado=actual,
+                            accion_color=SUCCESS, seleccionado=actual,
                             parent=self)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
@@ -279,7 +281,7 @@ class GestionProyectosMixin:
                                     "No hay proyectos guardados.")
             return
         dlg = ProjectDialog(proyectos, "Renombrar proyecto", "Renombrar",
-                            accion_color="#D5B39B", parent=self)
+                            accion_color=WARNING, parent=self)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
         source_name = dlg.proyecto_seleccionado
@@ -302,11 +304,9 @@ class GestionProyectosMixin:
 
         original = Rutas.db_proyecto(source_name)
         if self._db and self._db.db_path and Path(self._db.db_path).resolve() == original.resolve():
-            self._db.close()
-            self._stop_server()
-            self._db = Database.abrir(dest)
-            self._wire_servicios(self._db)
-            self._update_statusbar()
+            QMessageBox.warning(self, "Obra ya abierta",
+                                f"'{source_name}' ya está abierta. Ciérrala antes de renombrar.")
+            return
 
         original.rename(dest)
         self._sb.showMessage(f"Renombrado a '{name}'", 4000)
@@ -324,7 +324,7 @@ class GestionProyectosMixin:
                                     "No hay proyectos guardados.")
             return
         dlg = ProjectDialog(proyectos, "Eliminar proyecto", "Eliminar",
-                            accion_color="#A06A6A", parent=self)
+                            accion_color=ERROR, parent=self)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
         nombre = dlg.proyecto_seleccionado
@@ -344,19 +344,9 @@ class GestionProyectosMixin:
             return
 
         if self._db and self._db.db_path and Path(self._db.db_path).resolve() == ruta.resolve():
-            from backend.database.event_bus import ProyectoCerrado
-            self._event_bus.emit(ProyectoCerrado(self._api.proyecto_actual_id()))
-
-            self._db.close()
-            self._stop_server()
-            self._db = None
-            self._api = None
-            self._data_service = None
-            self._registry = None
-            self._event_bus = None
-            for i in range(self._tabs.count() - 1, -1, -1):
-                self._cerrar_tab_widget(i)
-            self._tabs.addTab(self._build_presupuesto(), "📋 Presupuesto programable")
+            QMessageBox.warning(self, "Obra ya abierta",
+                                f"'{nombre}' ya está abierta. Ciérrala antes de eliminar.")
+            return
         ruta.unlink()
         self._sb.showMessage(f"'{nombre}' eliminado", 4000)
 
@@ -376,6 +366,11 @@ class GestionProyectosMixin:
         from pathlib import Path
         nombre  = Path(dir_path).name
         db_path = Rutas.db_proyecto(nombre)
+
+        if self._db and Path(self._db.db_path).resolve() == Path(db_path).resolve():
+            QMessageBox.warning(self, "Obra ya abierta",
+                                f"'{nombre}' ya está abierta. Ciérrala antes de importar.")
+            return
 
         if Path(db_path).exists():
             from datetime import datetime

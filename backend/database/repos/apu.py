@@ -19,10 +19,6 @@ class ApuMatricesRepo(RepoBase):
     def delete(self, registro_id: int) -> None:
         return self._delete(self.TABLA, registro_id)
 
-    def buscar(self, comp_id: int) -> dict | None:
-        """Busca un componente APU por su id."""
-        return super().buscar(comp_id)
-
     def por_matriz(self, matriz_id):
         """Devuelve los componentes del APU de una matriz (concepto o compuesto)."""
         return self._lista("""

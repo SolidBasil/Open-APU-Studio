@@ -19,6 +19,23 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QFont, QShortcut, QKeySequence
 
+# ── Sidebar: títulos de pestañas de insumos ──────────────────────
+# Una sola fuente de verdad para el sidebar, tipo_map y routing.
+# El emoji forma parte del title (se usa como key en el routing de handlers).
+INSUMOS_ITEMS = [
+    ("📚 Todos",        None),
+    ("📐 Conceptos",   "concepto"),
+    ("🧱 Materiales",  "material"),
+    ("👷 Mano de obra", "mano_obra"),
+    ("🔧 Herramienta",  "herramienta"),
+    ("🚜 Equipo",       "equipo"),
+    ("⚙️ Auxiliares",  "auxiliar"),
+    ("🧮 Matrices",    None),       # flag especial, no es tipo de insumo
+    ("🚛 Fletes",      "flete"),
+    ("🏗️ Trabajos",    "trabajo"),
+]
+INSUMOS_TITLES = {title for title, _ in INSUMOS_ITEMS}
+
 
 class PanelesMixin:
     """Mixin de paneles — se mezcla en VentanaPrincipal."""
@@ -46,10 +63,7 @@ class PanelesMixin:
                 "👷 Personal en indirectos",
                 "📊 Cálculo de sobrecostos",
             ]),
-            ("📁 Insumos", [
-                "📚 Todos","📐 Conceptos", "🧱 Materiales", "👷 Mano de obra", "🔧 Herramienta",
-                "🚜 Equipo", "⚙️ Auxiliares", "🧮 Matrices", "🚛 Fletes", "🏗️ Trabajos",
-            ]),
+            ("📁 Insumos", [title for title, _ in INSUMOS_ITEMS]),
             ("📁 Ejecución", [
                 "📝 Estimaciones", "➕ Conceptos fuera de catálogo", "📈 Ajustes de costos",
             ]),
@@ -174,19 +188,9 @@ class PanelesMixin:
 
     def _build_insumos(self, title: str):
         """Catálogo de insumos filtrable por tipo."""
-        from frontend.ventana.widgets.insumos import TablaInsumos
+        from frontend.ventana.widgets.insumos import TablaInsumos, EDITABLE
 
-        tipo_map = {
-            "📚 Todos":       None,
-            "📐 Conceptos":   "concepto",
-            "🧱 Materiales":  "material",
-            "👷 Mano de obra": "mano_obra",
-            "🔧 Herramienta": "herramienta",
-            "🚜 Equipo":      "equipo",
-            "⚙️ Auxiliares":  "auxiliar",
-            "🚛 Fletes":      "flete",
-            "🏗️ Trabajos":    "trabajo",
-        }
+        tipo_map = {title: key for title, key in INSUMOS_ITEMS}
         tabla = TablaInsumos()
         tabla._insumos_tipo = tipo_map.get(title)
         tabla._insumos_matrices = (title == "🧮 Matrices")
@@ -208,6 +212,10 @@ class PanelesMixin:
             tabla.conectar_eventos(self._event_bus, self._api)
 
         def _on_insumo_dblclick(item, column):
+            # ponytail: columnas editables (Descripción, Unidad, Precio)
+            # deben permitir edición inline — no interceptar
+            if column in EDITABLE:
+                return
             insumo_id = item.data(0, Qt.ItemDataRole.UserRole)
             if not insumo_id:
                 return

@@ -80,16 +80,7 @@ COLUMNAS_CATALOGO = [
     ColumnaDef(28, "Modificado Por",    "Auditoría",      favorita_default=False, visible_default=False),
 ]
 
-TIPO_NOMBRE = {
-    1:  "🧱 Material",
-    2:  "👷 Mano de obra",
-    4:  "🔧 Herramienta",
-    8:  "🚜 Equipo",
-    16: "⚙️ Auxiliar",
-    32: "📄 Concepto",
-    64: "🚛 Flete",
-    128:"🏗️ Trabajo",
-}
+from frontend.ventana.tipos_insumo import ICONO_NOMBRE as TIPO_NOMBRE
 
 TIPO_TRABAJO_NOMBRE = {
     "subcontrato": "Subcontrato",
@@ -290,82 +281,85 @@ class TablaInsumos(TreeTableWidget):
         return True
 
     def _on_insumo_actualizado(self, evento):
-        """InsumoActualizado: actualiza in-place la fila de este insumo, si
-        está presente en esta tabla. No recalcula Total (esta tabla no lo
-        muestra); ProyectoRecalculado se encarga de insumos compuestos cuyo
-        costo_final cambia en cascada por este mismo edit."""
-        item = self._item_por_insumo(evento.insumo_id)
-        if item is None:
-            return
-        registro = evento.registro or {}
-        prefijo = "\u25b6 " if item.text(1).startswith("\u25b6 ") else ""
-        tiene_sub_apu = bool(prefijo)
-        self.blockSignals(True)
+        """InsumoActualizado: actualiza in-place la fila de este insumo."""
         try:
-            for c, val in enumerate(self._valores_fila(registro, tiene_sub_apu)):
-                item.setText(c, val)
-        finally:
-            self.blockSignals(False)
+            item = self._item_por_insumo(evento.insumo_id)
+            if item is None:
+                return
+            registro = evento.registro or {}
+            prefijo = "\u25b6 " if item.text(1).startswith("\u25b6 ") else ""
+            tiene_sub_apu = bool(prefijo)
+            self.blockSignals(True)
+            try:
+                for c, val in enumerate(self._valores_fila(registro, tiene_sub_apu)):
+                    item.setText(c, val)
+            finally:
+                self.blockSignals(False)
+        except Exception as e:
+            print(f"[eventbus] _on_insumo_actualizado: {type(e).__name__}: {e}")
 
     def _on_nodo_insertado(self, evento):
         """NodoInsertado (entidad='insumos'): agrega la fila si coincide
         con el filtro de esta tabla."""
-        if evento.tipo != "insumos" or self._api is None:
-            return
-        insumo = self._api.insumo_por_id(evento.nodo_id)
-        if not insumo or not self._coincide_filtro(insumo):
-            return
-        row_item = self.add_row(self._valores_fila(insumo, tiene_sub_apu=False), editable=True)
-        if row_item is not None:
-            row_item.setData(0, Qt.ItemDataRole.UserRole, evento.nodo_id)
+        try:
+            if evento.tipo != "insumos" or self._api is None:
+                return
+            insumo = self._api.insumo_por_id(evento.nodo_id)
+            if not insumo or not self._coincide_filtro(insumo):
+                return
+            row_item = self.add_row(self._valores_fila(insumo, tiene_sub_apu=False), editable=True)
+            if row_item is not None:
+                row_item.setData(0, Qt.ItemDataRole.UserRole, evento.nodo_id)
+        except Exception as e:
+            print(f"[eventbus] _on_nodo_insertado: {type(e).__name__}: {e}")
 
     def _on_nodo_eliminado(self, evento):
         """NodoEliminado (entidad='insumos'): quita la fila si está presente."""
-        if evento.tipo != "insumos":
-            return
-        item = self._item_por_insumo(evento.nodo_id)
-        if item is None:
-            return
-        idx = self.indexOfTopLevelItem(item)
-        if idx >= 0:
-            self.takeTopLevelItem(idx)
+        try:
+            if evento.tipo != "insumos":
+                return
+            item = self._item_por_insumo(evento.nodo_id)
+            if item is None:
+                return
+            idx = self.indexOfTopLevelItem(item)
+            if idx >= 0:
+                self.takeTopLevelItem(idx)
+        except Exception as e:
+            print(f"[eventbus] _on_nodo_eliminado: {type(e).__name__}: {e}")
 
     def _on_proyecto_recalculado(self, evento):
         """ProyectoRecalculado: repuebla desde la fuente de verdad,
-        preservando scroll y selección.
-
-        Necesario porque una cascada de recálculo puede cambiar el
-        costo_final de insumos compuestos que no recibieron su propio
-        InsumoActualizado (RecalculoRepo escribe directo, sin pasar por
-        DataService) — no hay forma barata de saber cuáles sin repetir el
-        cálculo del backend."""
-        if self._api is None:
-            return
-        scroll_y = self.verticalScrollBar().value()
-        current = self.currentItem()
-        id_actual = current.data(0, Qt.ItemDataRole.UserRole) if current else None
-
-        self.blockSignals(True)
+        preservando scroll y selección."""
         try:
-            tipo = getattr(self, '_insumos_tipo', None)
-            ids = self._api.insumo_ids_con_apu()
-            if getattr(self, '_insumos_matrices', False):
-                insumos = self._api.insumos_con_matrices(tipo)
-            else:
-                insumos = self._api.insumos(tipo)
-            self.poblar(insumos, ids)
-        finally:
-            self.blockSignals(False)
+            if self._api is None:
+                return
+            scroll_y = self.verticalScrollBar().value()
+            current = self.currentItem()
+            id_actual = current.data(0, Qt.ItemDataRole.UserRole) if current else None
 
-        self.verticalScrollBar().setValue(scroll_y)
-        if id_actual is not None:
-            item = self._item_por_insumo(id_actual)
-            if item is not None:
-                self.setCurrentItem(item)
-                # ponytail: setCurrentItem → scrollTo async, restaurar después
-                from PySide6.QtCore import QTimer
-                QTimer.singleShot(0, lambda: self.verticalScrollBar().setValue(scroll_y))
+            self.blockSignals(True)
+            try:
+                tipo = getattr(self, '_insumos_tipo', None)
+                ids = self._api.insumo_ids_con_apu()
+                if getattr(self, '_insumos_matrices', False):
+                    insumos = self._api.insumos_con_matrices(tipo)
+                else:
+                    insumos = self._api.insumos(tipo)
+                self.poblar(insumos, ids)
+            finally:
+                self.blockSignals(False)
 
-        win = self.window()
-        if hasattr(win, '_search_input') and hasattr(win, '_on_search'):
-            win._on_search(win._search_input.text())
+            self.verticalScrollBar().setValue(scroll_y)
+            if id_actual is not None:
+                item = self._item_por_insumo(id_actual)
+                if item is not None:
+                    self.setCurrentItem(item)
+                    # ponytail: setCurrentItem → scrollTo async, restaurar después
+                    from PySide6.QtCore import QTimer
+                    QTimer.singleShot(0, lambda: self.verticalScrollBar().setValue(scroll_y))
+
+            win = self.window()
+            if hasattr(win, '_search_input') and hasattr(win, '_on_search'):
+                win._on_search(win._search_input.text())
+        except Exception as e:
+            print(f"[eventbus] _on_proyecto_recalculado: {type(e).__name__}: {e}")

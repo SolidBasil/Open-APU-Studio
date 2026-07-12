@@ -18,9 +18,8 @@ from PySide6.QtWidgets import (
     QTreeWidgetItem, QAbstractItemView, QComboBox, QMessageBox,
     QCheckBox, QGroupBox, QGridLayout,
 )
-from PySide6.QtCore import Qt
 
-_SEL_BG = "#2A4158"
+from frontend.ventana.colores import ACCENT, SEL_BG as _SEL_BG, WARNING
 
 
 # ── Diálogo de selección de proyecto ──────────────────────────────
@@ -225,7 +224,7 @@ class EditarDescripcionDialog(QDialog):
         # ── Preview del hash ──────────────────────────────────────
         self._lbl_hash = QLabel()
         self._lbl_hash.setObjectName("hashPreview")
-        self._lbl_hash.setStyleSheet("color: #7FAFD6; font-family: monospace; font-size: 11px;")
+        self._lbl_hash.setStyleSheet(f"color: {ACCENT}; font-family: monospace; font-size: 11px;")
         layout.addWidget(self._lbl_hash)
         self._actualizar_hash(descripcion_actual)
         self._campo.textChanged.connect(self._actualizar_hash)
@@ -330,26 +329,11 @@ class EditarPrecioDialog(QDialog):
 
 # ── Tipos de insumo para filtros ──────────────────────────────────
 
-_TIPO_ICONO = {
-    1: "🧱", 2: "👷", 4: "🔧", 8: "🚜",
-    16: "⚙️", 32: "📄", 64: "🚛", 128: "🏗️",
-}
-
-_TIPO_NOMBRE = {
-    1: "Materiales", 2: "Mano de obra", 4: "Herramienta", 8: "Equipo",
-    16: "Auxiliares", 32: "Conceptos", 64: "Fletes", 128: "Trabajos",
-}
-
-_FILTROS_TIPO = [
-    (32, "📄",  "Conceptos"),
-    (1,  "🧱",  "Materiales"),
-    (2,  "👷",  "Mano de obra"),
-    (4,  "🔧",  "Herramienta"),
-    (8,  "🚜",  "Equipo"),
-    (16, "⚙️",  "Auxiliares"),
-    (64, "🚛",  "Fletes"),
-    (128,"🏗️", "Trabajos"),
-]
+from frontend.ventana.tipos_insumo import (
+    ICONO as _TIPO_ICONO,
+    NOMBRES as _TIPO_NOMBRE,
+    FILTROS as _FILTROS_TIPO,
+)
 
 
 # ── Diálogo de selección de insumo ─────────────────────────────────
@@ -405,7 +389,7 @@ class DialogoSeleccionarInsumo(QDialog):
             btn.setFont(fnt)
             btn.setStyleSheet(
                 "QPushButton { padding: 0; margin: 0; }"
-                "QPushButton:checked { background-color: #7FAFD6; color: #12161D; }"
+                f"QPushButton:checked {{ background-color: {ACCENT}; color: #12161D; }}"
             )
             btn.clicked.connect(lambda _, t=tipo_id: self._on_tipo_click(t))
             self._btns_tipo[tipo_id] = btn
@@ -584,7 +568,7 @@ class InsumoDialog(QDialog):
         unidad_col.addWidget(QLabel("Unidad *:"))
         from frontend.ventana.widgets.base import UNIDADES
         self._unidad_warn = QLabel()
-        self._unidad_warn.setStyleSheet("color: #D5B39B; font-size: 11px;")
+        self._unidad_warn.setStyleSheet(f"color: {WARNING}; font-size: 11px;")
         self._unidad_warn.hide()
         self._unidad = QComboBox()
         self._unidad.setEditable(True)
@@ -656,9 +640,9 @@ class InsumoDialog(QDialog):
         self._avanzadas_btn = QPushButton("▶  Opciones avanzadas")
         self._avanzadas_btn.setFlat(True)
         self._avanzadas_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._avanzadas_btn.setStyleSheet("""
-            QPushButton { text-align: left; padding: 4px 0; font-weight: bold;
-                          color: #7FAFD6; border: none; }
+        self._avanzadas_btn.setStyleSheet(f"""
+            QPushButton {{ text-align: left; padding: 4px 0; font-weight: bold;
+                          color: {ACCENT}; border: none; }}
             QPushButton:hover { color: #9BC1E8; }
         """)
         self._avanzadas_btn.clicked.connect(self._alternar_avanzadas)

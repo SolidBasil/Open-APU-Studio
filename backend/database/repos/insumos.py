@@ -109,6 +109,15 @@ class InsumoRepo(RepoBase):
         """, [proyecto_id])
         return {r["id"] for r in rows}
 
+    def actualizar_unidades_batch(self, cambios: list[tuple[str, int]]) -> None:
+        """Actualiza unidad para múltiples insumos en un solo execute.
+        cambios: lista de (nueva_unidad, insumo_id)."""
+        if cambios:
+            self._cursor.executemany(
+                "UPDATE insumos SET unidad = ? WHERE id = ?",
+                cambios
+            )
+
 
 # =============================================================================
 # APU COMPONENTES (antes: apu_detalle)

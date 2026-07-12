@@ -16,16 +16,7 @@ from datetime import date
 # TIPOSINS.DBF  — 8 registros fijos
 # ---------------------------------------------------------------------------
 
-TIPOSINS_ROWS = [
-    {'PREFIJO': 1,   'STRTIPO': 'Materiales'},
-    {'PREFIJO': 2,   'STRTIPO': 'Mano de obra'},
-    {'PREFIJO': 4,   'STRTIPO': 'Herramienta'},
-    {'PREFIJO': 8,   'STRTIPO': 'Equipo'},
-    {'PREFIJO': 16,  'STRTIPO': 'Auxiliar'},
-    {'PREFIJO': 32,  'STRTIPO': 'Concepto compuesto'},
-    {'PREFIJO': 64,  'STRTIPO': 'Flete'},
-    {'PREFIJO': 128, 'STRTIPO': 'Trabajo'},
-]
+from frontend.ventana.tipos_insumo import OPUS_ROWS as TIPOSINS_ROWS
 
 # ---------------------------------------------------------------------------
 # CONFIG.DBF  — campos fijos (no vienen del proyecto)

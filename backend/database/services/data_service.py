@@ -23,8 +23,6 @@ from backend.database.event_bus import (
 from backend.database.schema_registry import SchemaRegistry
 from backend.database.exceptions import (
     DataServiceError, ValidationError, RepositoryError,
-    ConflictError,  # noqa: F401 — no se lanza aún internamente (reservado
-                    # para control de concurrencia optimista, ver exceptions.py)
 )
 
 if TYPE_CHECKING:

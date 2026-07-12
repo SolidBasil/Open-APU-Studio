@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from backend.database.services.data_service import DataService
 
 # ponytail: constante global — evita recrear el dict en cada llamada a apu()
-_EMOJI = {1: "🧱", 2: "👷", 4: "🔧", 8: "🚜", 16: "⚙️", 32: "📄"}
+from frontend.ventana.tipos_insumo import ICONO as _EMOJI
 
 
 # =============================================================================

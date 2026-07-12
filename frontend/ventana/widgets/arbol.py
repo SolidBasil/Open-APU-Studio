@@ -8,8 +8,8 @@ Uso:
 """
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QBrush, QFont, QIcon, QPixmap, QPainter
-from PySide6.QtCore import QRect
+from PySide6.QtGui import QColor, QBrush
+
 from PySide6.QtWidgets import QHeaderView
 
 from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef
@@ -17,27 +17,9 @@ from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef
 
 # ── Icono desde emoji ───────────────────────────────────────────
 
-_ICONOS_TIPO = {
-    1:   "🧱",  # Material
-    2:   "👷",  # Mano de obra
-    4:   "🔧",  # Herramienta
-    8:   "🚜",  # Equipo
-    16:  "⚙️",  # Auxiliar
-    32:  "📄",  # Concepto compuesto
-    64:  "🚛",  # Flete
-    128: "🏗️",  # Trabajo
-}
-
-
-def _emoji_icon(char, size=20):
-    pix = QPixmap(size, size)
-    pix.fill(Qt.GlobalColor.transparent)
-    p = QPainter(pix)
-    p.setPen(QColor("#E8EDF2"))
-    p.setFont(QFont("Segoe UI Symbol", size - 6))
-    p.drawText(QRect(0, 0, size, size), Qt.AlignmentFlag.AlignCenter, char)
-    p.end()
-    return QIcon(pix)
+from frontend.ventana.tipos_insumo import ICONO as _ICONOS_TIPO
+from frontend.ventana.widgets.base import make_icon
+from frontend.ventana.colores import ACCENT, SUCCESS, WARNING, ERROR
 
 
 # ── Roles de datos ────────────────────────────────────────────────
@@ -124,20 +106,14 @@ def _editable_cols_arbol(item) -> set[int]:
 
 COLORES_NIVEL = [
     "#8B6FB5",  # 0: púrpura  — capítulo raíz
-    "#7FAFD6",  # 1: azul
+    ACCENT,     # 1: azul
     "#5E9CA0",  # 2: teal
-    "#D5B39B",  # 3: beige cálido
-    "#5B8A72",  # 4: verde
-    "#A06A6A",  # 5+: vino
+    WARNING,    # 3: beige cálido
+    SUCCESS,    # 4: verde
+    ERROR,      # 5+: vino
 ]
 
-# Estado de revisión de un concepto (0-3, ver NodoRepo.arbol()).
-ESTADO_NOMBRE = {
-    0: "Sin revisar",
-    1: "En revisión",
-    2: "Verificado",
-    3: "Cuestionado",
-}
+from backend.database.repos.presupuesto import ESTADO_NOMBRE
 
 
 # ── Formateo de valores ───────────────────────────────────────────
@@ -303,7 +279,7 @@ class TablaArbol(TreeTableWidget):
         item.setData(0, WBS_ROLE, wbs)
         item.setData(0, ID_ROLE, n.get("id"))
         item.setData(0, TIPO_ROLE, "capitulo")
-        item.setIcon(0, _emoji_icon("\U0001F4C2", 20))  # 📂 folder
+        item.setIcon(0, make_icon("\U0001F4C2", 20, 14))  # 📂 folder
         color = COLORES_NIVEL[min(nivel, len(COLORES_NIVEL) - 1)]
         brush = QBrush(QColor(color))
         f     = item.font(0)
@@ -328,7 +304,7 @@ class TablaArbol(TreeTableWidget):
         item.setData(0, TIPO_ROLE, "concepto")
         item.setData(0, INSUMO_ROLE, n.get("insumo_id"))
         tid = n.get("tipo_id")
-        item.setIcon(0, _emoji_icon(_ICONOS_TIPO.get(tid, "\U0001F4C4"), 20))
+        item.setIcon(0, make_icon(_ICONOS_TIPO.get(tid, "\U0001F4C4"), 20, 14))
         return item
 
     # ── Poblado del árbol ─────────────────────────────────────────
@@ -477,59 +453,57 @@ class TablaArbol(TreeTableWidget):
         return encontrados
 
     def _on_concepto_actualizado(self, evento):
-        """ConceptoActualizado: actualiza in-place la fila propia del nodo.
-
-        Cubre descripción de agrupadores (el único campo de
-        estructura_presupuesto editable directamente desde la UI que no
-        depende del insumo ligado). El total mostrado aquí puede quedar
-        momentáneamente desactualizado si el cambio también dispara una
-        cascada — el ProyectoRecalculado que le sigue lo deja consistente.
-        """
-        item = self._buscar_item_por_id(evento.concepto_id)
-        if item is None:
-            return
-        registro = evento.registro or {}
-        if "descripcion" in evento.cambios:
-            item.setText(4, registro.get("descripcion", "") or "")
-        if "cantidad" in evento.cambios:
-            item.setText(6, _num(registro.get("cantidad")))
-        if "total" in registro:
-            item.setText(8, _fmt(registro.get("total")))
+        """ConceptoActualizado: actualiza in-place la fila propia del nodo."""
+        try:
+            item = self._buscar_item_por_id(evento.concepto_id)
+            if item is None:
+                return
+            registro = evento.registro or {}
+            if "descripcion" in evento.cambios:
+                item.setText(4, registro.get("descripcion", "") or "")
+            if "cantidad" in evento.cambios:
+                item.setText(6, _num(registro.get("cantidad")))
+            if "total" in registro:
+                item.setText(8, _fmt(registro.get("total")))
+        except Exception as e:
+            print(f"[eventbus] _on_concepto_actualizado: {type(e).__name__}: {e}")
 
     def _on_insumo_actualizado(self, evento):
         """InsumoActualizado: actualiza in-place todas las filas de concepto
         ligadas a este insumo (descripción, unidad, P.U.).
-
-        El Total no se recalcula aquí: cambiar el precio de un insumo
-        siempre dispara RecalculoRepo.recalcular_proyecto() en api.py, que
-        emite ProyectoRecalculado a continuación con los totales correctos.
         """
-        items = self._buscar_items_por_insumo(evento.insumo_id)
-        if not items:
-            return
-        registro = evento.registro or {}
-        for item in items:
-            if "descripcion" in evento.cambios:
-                item.setText(4, registro.get("descripcion", "") or "")
-            if "unidad" in evento.cambios:
-                item.setText(5, registro.get("unidad", "") or "")
-            if any(c in evento.cambios for c in ("costo_final", "costo_mn", "costo_directo")):
-                item.setText(7, _fmt(registro.get("costo_final")))
+        try:
+            items = self._buscar_items_por_insumo(evento.insumo_id)
+            if not items:
+                return
+            registro = evento.registro or {}
+            for item in items:
+                if "descripcion" in evento.cambios:
+                    item.setText(4, registro.get("descripcion", "") or "")
+                if "unidad" in evento.cambios:
+                    item.setText(5, registro.get("unidad", "") or "")
+                if any(c in evento.cambios for c in ("costo_final", "costo_mn", "costo_directo")):
+                    item.setText(7, _fmt(registro.get("costo_final")))
+        except Exception as e:
+            print(f"[eventbus] _on_insumo_actualizado: {type(e).__name__}: {e}")
 
     def _on_nodo_eliminado(self, evento):
         """NodoEliminado (entidad='estructura_presupuesto'): quita la fila."""
-        if evento.tipo != "estructura_presupuesto":
-            return
-        item = self._buscar_item_por_id(evento.nodo_id)
-        if item is None:
-            return
-        parent = item.parent()
-        if parent:
-            parent.removeChild(item)
-        else:
-            idx = self.indexOfTopLevelItem(item)
-            if idx >= 0:
-                self.takeTopLevelItem(idx)
+        try:
+            if evento.tipo != "estructura_presupuesto":
+                return
+            item = self._buscar_item_por_id(evento.nodo_id)
+            if item is None:
+                return
+            parent = item.parent()
+            if parent:
+                parent.removeChild(item)
+            else:
+                idx = self.indexOfTopLevelItem(item)
+                if idx >= 0:
+                    self.takeTopLevelItem(idx)
+        except Exception as e:
+            print(f"[eventbus] _on_nodo_eliminado: {type(e).__name__}: {e}")
 
     def _on_proyecto_recalculado(self, evento):
         """ProyectoRecalculado: repuebla desde la fuente de verdad.
@@ -537,43 +511,46 @@ class TablaArbol(TreeTableWidget):
         Preserva selección, scroll y estado expandido/colapsado
         de los agrupadores.
         """
-        if self._api is None:
-            return
-        scroll_y = self.verticalScrollBar().value()
-        current = self.currentItem()
-        id_actual = current.data(0, ID_ROLE) if current else None
-        ids_seleccionados = {
-            it.data(0, ID_ROLE) for it in self.selectedItems()
-            if it.data(0, ID_ROLE) is not None
-        }
-        # ponytail: capturar nodos expandidos antes de repoblar
-        ids_expandidos = set()
-        self._collect_expanded_ids(self.invisibleRootItem(), ids_expandidos)
-
-        self.blockSignals(True)
         try:
-            nodos = self._api.presupuesto_arbol()
-            self.poblar(nodos)
-        finally:
-            self.blockSignals(False)
+            if self._api is None:
+                return
+            scroll_y = self.verticalScrollBar().value()
+            current = self.currentItem()
+            id_actual = current.data(0, ID_ROLE) if current else None
+            ids_seleccionados = {
+                it.data(0, ID_ROLE) for it in self.selectedItems()
+                if it.data(0, ID_ROLE) is not None
+            }
+            # ponytail: capturar nodos expandidos antes de repoblar
+            ids_expandidos = set()
+            self._collect_expanded_ids(self.invisibleRootItem(), ids_expandidos)
 
-        # Restaurar expansión: colapsar todo lo que estaba cerrado
-        self._restore_expansion(self.invisibleRootItem(), ids_expandidos)
+            self.blockSignals(True)
+            try:
+                nodos = self._api.presupuesto_arbol()
+                self.poblar(nodos)
+            finally:
+                self.blockSignals(False)
 
-        self.verticalScrollBar().setValue(scroll_y)
-        if id_actual is not None:
-            item = self._buscar_item_por_id(id_actual)
-            if item is not None:
-                self.setCurrentItem(item)
-        if ids_seleccionados:
-            for nid in ids_seleccionados:
-                item = self._buscar_item_por_id(nid)
+            # Restaurar expansión: colapsar todo lo que estaba cerrado
+            self._restore_expansion(self.invisibleRootItem(), ids_expandidos)
+
+            self.verticalScrollBar().setValue(scroll_y)
+            if id_actual is not None:
+                item = self._buscar_item_por_id(id_actual)
                 if item is not None:
-                    item.setSelected(True)
+                    self.setCurrentItem(item)
+            if ids_seleccionados:
+                for nid in ids_seleccionados:
+                    item = self._buscar_item_por_id(nid)
+                    if item is not None:
+                        item.setSelected(True)
 
-        win = self.window()
-        if hasattr(win, '_search_input') and hasattr(win, '_on_search'):
-            win._on_search(win._search_input.text())
+            win = self.window()
+            if hasattr(win, '_search_input') and hasattr(win, '_on_search'):
+                win._on_search(win._search_input.text())
+        except Exception as e:
+            print(f"[eventbus] _on_proyecto_recalculado: {type(e).__name__}: {e}")
 
     def _collect_expanded_ids(self, parent, ids: set):
         """Recolecta IDs de nodos expandidos recursivamente."""
