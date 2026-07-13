@@ -125,16 +125,30 @@ class SchemaRegistry:
             "pct_utilidad": FloatField(min=0, max=100),
             "pct_cargos_adicionales": FloatField(min=0, max=100),
         },
-        "notas": {
-            "texto": StringField(required=True),
-            "resuelta": BoolField(),
-        },
         "familias": {
             "nombre": StringField(required=True),
         },
         "subfamilias": {
             "familia_id": IntField(min=1),
             "nombre": StringField(required=True),
+        },
+        "proyectos": {
+            "nombre": StringField(required=True),
+            "iva_porcentaje": FloatField(min=0, max=100),
+            "horas_dia": FloatField(min=0),
+            "tasa_seguro": FloatField(min=0, max=100),
+            "tasa_interes": FloatField(min=0, max=100),
+            "tipo_cambio": FloatField(min=0),
+            "duracion_obra_dias": IntField(min=0),
+            "obra_latitud": FloatField(min=-90, max=90),
+            "obra_longitud": FloatField(min=-180, max=180),
+        },
+        "indirectos": {
+            "tipo": StringField(choices=("campo", "oficina")),
+            "periodo_dias": FloatField(min=0),
+            "importe": FloatField(min=0),
+            "pct_participacion": FloatField(min=0, max=100),
+            "total": FloatField(),
         },
     }
 

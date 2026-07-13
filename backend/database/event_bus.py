@@ -72,17 +72,6 @@ class ProyectoRecalculado(Evento):
 
 
 @dataclass
-class NotaInsertada(Evento):
-    nota_id: int
-    concepto_id: int
-
-
-@dataclass
-class NotaResuelta(Evento):
-    nota_id: int
-
-
-@dataclass
 class ProyectoAbierto(Evento):
     """Se emite cuando un proyecto queda completamente wireado (EventBus,
     DataService, Api ya instalados) — al abrir, importar o duplicar y abrir

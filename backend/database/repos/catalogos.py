@@ -1,5 +1,5 @@
 """catalogos.py
-Repositorios de catálogos auxiliares: familias, subfamilias y notas.
+Repositorios de catálogos auxiliares: familias y subfamilias.
 """
 from .base import RepoBase
 
@@ -49,21 +49,3 @@ class SubfamiliaRepo(RepoBase):
     def buscar(self, subfamilia_id):
         """Busca una subfamilia por su ID."""
         return self._uno("SELECT * FROM subfamilias WHERE id = ?", [subfamilia_id])
-
-
-# =============================================================================
-# NOTAS
-# =============================================================================
-
-class NotaRepo(RepoBase):
-
-    TABLA = "notas"
-
-    def update(self, registro_id: int, campos: dict) -> None:
-        return self._update(self.TABLA, registro_id, campos)
-
-    def insert(self, campos: dict) -> int:
-        return self._insert(self.TABLA, campos)
-
-    def delete(self, registro_id: int) -> None:
-        return self._delete(self.TABLA, registro_id)

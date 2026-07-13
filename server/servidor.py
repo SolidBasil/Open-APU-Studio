@@ -32,7 +32,7 @@ from backend.database.services.repository_registry import RepositoryRegistry
 from backend.database.services.data_service import DataService
 from backend.database.repos import (
     InsumoRepo, NodoRepo, ApuMatricesRepo, ProyectoRepo,
-    FactoresSobrecostoRepo, FamiliaRepo, SubfamiliaRepo, NotaRepo,
+    FactoresSobrecostoRepo, FamiliaRepo, SubfamiliaRepo,
     RecalculoRepo, ExplosionRepo, HistorialRepo,
 )
 from backend.database.exceptions import (
@@ -165,7 +165,6 @@ def _obtener_servicios(nombre: str) -> dict:
     registry.registrar("factores_sobrecosto", FactoresSobrecostoRepo)
     registry.registrar("familias", FamiliaRepo)
     registry.registrar("subfamilias", SubfamiliaRepo)
-    registry.registrar("notas", NotaRepo)
     ds = DataService(db, registry, event_bus)
 
     servicios = {"db": db, "ds": ds, "event_bus": event_bus, "registry": registry}

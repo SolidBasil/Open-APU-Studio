@@ -130,7 +130,7 @@ class GestionProyectosMixin:
         from backend.database.services.data_service import DataService
         from backend.database.repos import (
             InsumoRepo, NodoRepo, ApuMatricesRepo, ProyectoRepo,
-            FactoresSobrecostoRepo, FamiliaRepo, SubfamiliaRepo, NotaRepo,
+            FactoresSobrecostoRepo, FamiliaRepo, SubfamiliaRepo,
         )
         from frontend.ventana.api import Api
 
@@ -143,7 +143,6 @@ class GestionProyectosMixin:
         registry.registrar("factores_sobrecosto", FactoresSobrecostoRepo)
         registry.registrar("familias", FamiliaRepo)
         registry.registrar("subfamilias", SubfamiliaRepo)
-        registry.registrar("notas", NotaRepo)
         self._registry = registry
 
         self._data_service = DataService(db, registry, self._event_bus)
@@ -195,6 +194,10 @@ class GestionProyectosMixin:
         except Exception as e:
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.critical(self, "Error al abrir proyecto", str(e))
+
+    def _on_nuevo_proyecto(self):
+        """Abre formulario vacío; al guardar se crea el .db con el nombre indicado."""
+        self._on_info_proyecto(nuevo=True)
 
     def _on_cerrar_proyecto(self):
         """Cierra el proyecto actual con confirmación."""
@@ -403,7 +406,7 @@ class GestionProyectosMixin:
             self._wire_servicios(self._db)
             self._api.unificar_matrices_apu()
             print(f"[import] {nombre}: nodos={result['nodos']}, insumos={result['insumos']}, "
-                  f"apu_matrices={result['apu_matrices']}, apu_resumen_totales={result['apu_resumen_totales']}, "
+                  f"apu_matrices={result['apu_matrices']}, "
                   f"insumos_compuestos={result['insumos_compuestos']}")
             QMessageBox.information(self, "Importación exitosa",
                                     f"'{nombre}' importado correctamente.")

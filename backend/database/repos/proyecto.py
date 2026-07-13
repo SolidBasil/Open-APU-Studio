@@ -26,7 +26,7 @@ class ProyectoRepo(RepoBase):
 # =============================================================================
 # FACTORES DE SOBRECOSTO
 # =============================================================================
-# costo_final = costo_directo * COALESCE(factor_total, 1.0)
+# costo_final = costo_directo * COALESCE(factor_fsr, 1.0) * COALESCE(factor_total, 1.0)
 # factor_total = producto de (1 + pct/100) para los 5 factores
 
 class FactoresSobrecostoRepo(RepoBase):

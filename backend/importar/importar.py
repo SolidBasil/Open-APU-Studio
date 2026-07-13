@@ -192,7 +192,7 @@ def importar(
                             frontend pueda seguir usandola sin reconectar.
 
     Returns:
-        Dict con estadisticas: estructura_presupuesto, insumos, apu_matrices, apu_resumen_totales, etc.
+        Dict con estadisticas: estructura_presupuesto, insumos, apu_matrices, etc.
     """
     carpeta = Path(carpeta)
     if not carpeta.is_dir():
@@ -234,17 +234,14 @@ def importar(
     cur.execute("""
         INSERT INTO proyectos
             (nombre, clave_opus, moneda_nombre, moneda_simbolo,
-             moneda_abrev, iva_porcentaje, creado_por)
-        VALUES (?, ?, 'Peso mexicano', '$', 'MXN', 16.0, 1)
-    """, (nombre_proyecto, prefijo))
+             moneda_abrev, iva_porcentaje,
+             horas_dia, tasa_seguro, tasa_interes, creado_por)
+        VALUES (?, ?, 'Peso mexicano', '$', 'MXN', 16.0, ?, ?, ?, 1)
+    """, (nombre_proyecto, prefijo,
+          _f(cfg.get("HORASDIA"), 8),
+          _f(cfg.get("SEGURO")),
+          _f(cfg.get("TASA_INTER"))))
     proyecto_id = cur.lastrowid
-
-    cur.execute("""
-        INSERT INTO configuracion_proyecto
-            (proyecto_id, horas_dia, tasa_seguro, tasa_interes)
-        VALUES (?, ?, ?, ?)
-    """, (proyecto_id, _f(cfg.get("HORASDIA"), 8),
-          _f(cfg.get("SEGURO")), _f(cfg.get("TASA_INTER"))))
 
     con.commit()
     print(f"  → proyecto '{nombre_proyecto}' (id={proyecto_id})")
@@ -316,7 +313,7 @@ def importar(
 
     # ── Insumos ───────────────────────────────────────────────────────────
     # Campos importados: clave, tipo, descripcion, unidad, precio, basico,
-    #                    fecha, es_compuesto, fsr (salario_real para MO),
+    #                    fecha, es_compuesto, factor_fsr,
     #                    clave_usuario, peso_kg, familia_id, subfamilia_id
     #                    comentarios → tabla notas
     insumo_id_por_clave:   dict[str, int] = {}
@@ -345,8 +342,7 @@ def importar(
             n_compuestos += 1
 
         # FSR (Factor Salario Real) — solo aplica a mano de obra (tipo_id=2)
-        fsr           = _f(r.get("FSR") or r.get("FASAR"))
-        salario_real  = _f(r.get("PRECIO")) * fsr if fsr else None
+        fsr = _f(r.get("FSR") or r.get("FASAR"))
 
         comentario = _s(r.get("COMENTARIO") or r.get("COMEN") or r.get("MEMO"))
 
@@ -373,14 +369,23 @@ def importar(
 
         if not ya_existe:
             tipo_id = _tipo_id(prefijo)
+            precio = _f(r.get("PRECIO"))
+            if tipo_id == 2:
+                costo_mn = _f(r.get("PBASEMN")) or (precio / fsr if fsr else precio)
+                costo_final = costo_mn * fsr if fsr else costo_mn
+            else:
+                costo_mn = _f(r.get("PRECIOMN")) or precio
+                costo_final = costo_mn
+            costo_me = _f(r.get("PRECIOME")) or 0.0
+            costo_directo = costo_mn  # base sin FSR; FSR se aplica en recálculo
             cur.execute("""
                 INSERT INTO insumos
                     (proyecto_id, clave_opus, tipo_id, descripcion, descripcion_corta,
-                     unidad, costo_mn, costo_directo, costo_final, es_compuesto,
+                     unidad, costo_mn, costo_me, costo_directo, costo_final, es_compuesto,
                      fecha_precio, clave_usuario, peso_kg,
                      familia_id, subfamilia_id,
-                     salario_real, hash, creado_por)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                     factor_fsr, hash, creado_por)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
             """, (
                 proyecto_id,
                 clave,
@@ -388,16 +393,17 @@ def importar(
                 _desc,
                 _s(r.get("DESCCORTA")),
                 _s(r.get("UNIDAD")),
-                _f(r.get("PRECIO")),
-                _f(r.get("PRECIO")),
-                _f(r.get("PRECIO")),
+                costo_mn,
+                costo_me,
+                costo_directo,
+                costo_final,
                 es_compuesto,
                 _s(r.get("FECHA")),
                 _s(r.get("CLAVE_USU") or r.get("CLVUSUARIO") or r.get("CLV_USU")),
                 _f(r.get("PESO")) or None,
                 familia_id,
                 subfamilia_id,
-                salario_real,
+                fsr or None,
                 _hash,
             ))
         else:
@@ -562,32 +568,7 @@ def importar(
     if n_skip_ins:   msg += f"  |  {n_skip_ins} sin insumo"
     print(msg)
 
-        # ── APU resumen totales ──────────────────────────────────────────────
-    n_tot        = 0
-    n_skip_tot   = 0
-    for r in regs_n:
-        conceptos_ids = clave_a_conceptos.get(_s(r.get("NOMBRE")), [])
-        if not conceptos_ids:
-            n_skip_tot += 1
-            continue
-        cd = sum(_f(r.get(k)) for k in ["MM","OO","HH","EE","AA","SUBCONT"])
-        for cid in conceptos_ids:
-            cur.execute("""
-                INSERT OR REPLACE INTO apu_resumen_totales
-                    (matriz_id, materiales, mano_obra, herramienta, equipo,
-                     auxiliares, subcontratos, costo_directo,
-                     indirectos_pct, financiamiento_pct, utilidad_pct, precio_venta)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (cid, _f(r.get("MM")), _f(r.get("OO")),
-                  _f(r.get("HH")), _f(r.get("EE")), _f(r.get("AA")),
-                  _f(r.get("SUBCONT")), cd, _f(r.get("INDIRECTOS")),
-                  _f(r.get("FINANCIA")), _f(r.get("UTILIDAD")), _f(r.get("PP"))))
-            n_tot += 1
-
-    con.commit()
-    msg = f"  → apu_resumen_totales: {n_tot}"
-    if n_skip_tot: msg += f"  |  {n_skip_tot} sin concepto"
-    print(msg)
+    # ponytail: apu_resumen_totales eliminado — subtotales se calculan al vuelo
 
     # ── Totales bottom-up ──────────────────────────────────────────
     print("  → Recalculando totales...")
@@ -617,7 +598,6 @@ def importar(
         "nodos":       len(nodo_id_sqlite),
         "insumos":     len(insumo_id_por_clave),
         "apu_matrices":          n_comp,
-        "apu_resumen_totales":   n_tot,
         "insumos_compuestos":    n_compuestos,
         "factores_sobrecosto":   n_sobrecosto,
     }

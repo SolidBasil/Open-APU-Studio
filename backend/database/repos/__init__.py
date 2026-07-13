@@ -10,7 +10,7 @@ Cada archivo agrupa repositorios por dominio funcional:
     insumos.py     — InsumoRepo
     apu.py         — ApuMatricesRepo
     recalculo.py   — RecalculoRepo
-    catalogos.py   — FamiliaRepo, SubfamiliaRepo, NotaRepo
+    catalogos.py   — FamiliaRepo, SubfamiliaRepo
     explosion.py   — ExplosionRepo
     diagnostico.py — DiagnosticoRepo
 
@@ -25,10 +25,11 @@ from .presupuesto import NodoRepo, ESTADO_COLOR, ESTADO_NOMBRE
 from .insumos     import InsumoRepo
 from .apu         import ApuMatricesRepo
 from .recalculo   import RecalculoRepo
-from .catalogos   import FamiliaRepo, SubfamiliaRepo, NotaRepo
+from .catalogos   import FamiliaRepo, SubfamiliaRepo
 from .explosion   import ExplosionRepo
 from .diagnostico import DiagnosticoRepo
 from .historial   import HistorialRepo
+from .indirectos  import IndirectoRepo, PLANTILLA_CAMPO, PLANTILLA_OFICINA
 
 __all__ = [
     "RepoBase",
@@ -37,8 +38,9 @@ __all__ = [
     "InsumoRepo",
     "ApuMatricesRepo",
     "RecalculoRepo",
-    "FamiliaRepo", "SubfamiliaRepo", "NotaRepo",
+    "FamiliaRepo", "SubfamiliaRepo",
     "ExplosionRepo",
     "DiagnosticoRepo",
     "HistorialRepo",
+    "IndirectoRepo", "PLANTILLA_CAMPO", "PLANTILLA_OFICINA",
 ]

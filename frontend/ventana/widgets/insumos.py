@@ -32,12 +32,12 @@ COLUMNAS = [
     "Clave", "Descripción", "Unidad", "Precio", "Tipo",
     "Familia", "Proveedor", "F. Precio", "Desc. Corta", "Costo MN", "Costo ME", "Hash",
     "Costo Directo", "Clave Usuario", "Compuesto",
-    "Salario Nominal", "Salario Real", "Usar Hoja FASAR", "CatFSR", "Factor FSR", "FSR Mínimo",
+    "Usar Hoja FASAR", "Factor FSR",
     "Tipo de Trabajo",
-    "Peso (kg)", "Comentarios", "Índice INEGI",
+    "Peso (kg)", "Comentarios",
     "Creado", "Creado Por", "Modificado", "Modificado Por",
 ]
-EDITABLE = frozenset({1, 2, 3})  # Descripción, Unidad, Precio
+EDITABLE = frozenset({1, 2, 3, 4, 5})  # Descripción, Unidad, Precio, Tipo, Familia
 
 # Catálogo para el esquema de favoritas + "Personalizar columnas…" (ver
 # widgets/base.py PersonalizarColumnasDialog). idx debe coincidir con la
@@ -60,24 +60,19 @@ COLUMNAS_CATALOGO = [
     ColumnaDef(10, "Costo ME",          "Costos",         favorita_default=True,  visible_default=False),
     ColumnaDef(12, "Costo Directo",     "Costos",         favorita_default=False, visible_default=False),
 
-    ColumnaDef(15, "Salario Nominal",   "Mano de obra",   favorita_default=False, visible_default=False),
-    ColumnaDef(16, "Salario Real",      "Mano de obra",   favorita_default=False, visible_default=False),
-    ColumnaDef(17, "Usar Hoja FASAR",   "Mano de obra",   favorita_default=False, visible_default=False),
-    ColumnaDef(18, "CatFSR",            "Mano de obra",   favorita_default=False, visible_default=False),
-    ColumnaDef(19, "Factor FSR",        "Mano de obra",   favorita_default=False, visible_default=False),
-    ColumnaDef(20, "FSR Mínimo",        "Mano de obra",   favorita_default=False, visible_default=False),
+    ColumnaDef(15, "Usar Hoja FASAR",   "Mano de obra",   favorita_default=False, visible_default=False),
+    ColumnaDef(16, "Factor FSR",        "Mano de obra",   favorita_default=False, visible_default=False),
 
-    ColumnaDef(21, "Tipo de Trabajo",   "Trabajo",        favorita_default=False, visible_default=False),
+    ColumnaDef(17, "Tipo de Trabajo",   "Trabajo",        favorita_default=False, visible_default=False),
 
-    ColumnaDef(22, "Peso (kg)",         "Datos adicionales", favorita_default=False, visible_default=False),
-    ColumnaDef(23, "Comentarios",       "Datos adicionales", favorita_default=False, visible_default=False),
-    ColumnaDef(24, "Índice INEGI",      "Datos adicionales", favorita_default=False, visible_default=False),
+    ColumnaDef(18, "Peso (kg)",         "Datos adicionales", favorita_default=False, visible_default=False),
+    ColumnaDef(19, "Comentarios",       "Datos adicionales", favorita_default=False, visible_default=False),
 
     ColumnaDef(11, "Hash",              "Auditoría",      favorita_default=True,  visible_default=False),
-    ColumnaDef(25, "Creado",            "Auditoría",      favorita_default=False, visible_default=False),
-    ColumnaDef(26, "Creado Por",        "Auditoría",      favorita_default=False, visible_default=False),
-    ColumnaDef(27, "Modificado",        "Auditoría",      favorita_default=False, visible_default=False),
-    ColumnaDef(28, "Modificado Por",    "Auditoría",      favorita_default=False, visible_default=False),
+    ColumnaDef(22, "Creado",            "Auditoría",      favorita_default=False, visible_default=False),
+    ColumnaDef(24, "Creado Por",        "Auditoría",      favorita_default=False, visible_default=False),
+    ColumnaDef(25, "Modificado",        "Auditoría",      favorita_default=False, visible_default=False),
+    ColumnaDef(26, "Modificado Por",    "Auditoría",      favorita_default=False, visible_default=False),
 ]
 
 from frontend.ventana.tipos_insumo import ICONO_NOMBRE as TIPO_NOMBRE
@@ -109,8 +104,11 @@ class TablaInsumos(TreeTableWidget):
     COLUMNAS_CATALOGO = COLUMNAS_CATALOGO
     rastrear_insumo = Signal(int)
     desglozar_insumo = Signal(int)
+    nuevo_insumo = Signal()
 
     def __init__(self, parent=None):
+        from frontend.ventana.tipos_insumo import ICONO as _TIPO_ICONO
+
         def _combo_unidad(parent):
             from PySide6.QtWidgets import QComboBox
             from frontend.ventana.widgets.base import UNIDADES
@@ -119,8 +117,31 @@ class TablaInsumos(TreeTableWidget):
             combo.addItems(UNIDADES)
             return combo
 
+        def _combo_tipo(parent):
+            from PySide6.QtWidgets import QComboBox
+            from frontend.ventana.tipos_insumo import NOMBRE as _NOMBRE
+            combo = QComboBox(parent)
+            combo.setEditable(False)
+            for tid in (32, 1, 2, 4, 8, 16, 64, 128):
+                icono = _TIPO_ICONO.get(tid, "")
+                nombre = _NOMBRE.get(tid, f"Tipo {tid}")
+                combo.addItem(f"{icono} {nombre}", tid)
+            return combo
+
+        def _combo_familia(parent):
+            from PySide6.QtWidgets import QComboBox
+            combo = QComboBox(parent)
+            combo.setEditable(False)
+            combo.addItem("(Sin familia)", None)
+            api = getattr(self, '_api', None)
+            if api:
+                for f in api.familias():
+                    combo.addItem(f.get("nombre", "?"), f.get("id"))
+            return combo
+
         super().__init__(COLUMNAS, EDITABLE, flat=True, parent=parent,
-                         column_editors={2: _combo_unidad})
+                         column_editors={2: _combo_unidad, 4: _combo_tipo,
+                                         5: _combo_familia})
         anchos = [90, 250, 60, 100, 120, 120, 140, 85, 140, 95, 95, 90]
         anchos += [100] * (len(COLUMNAS) - len(anchos))  # columnas nuevas: ancho por defecto
         self.set_column_modes({
@@ -146,6 +167,8 @@ class TablaInsumos(TreeTableWidget):
     def _context_menu_actions(self, menu):
         from frontend.ventana.widgets.base import _menu_icon
         items = self.selectedItems()
+        act_nuevo = menu.addAction(_menu_icon("➕"), "Nuevo insumo")
+        act_nuevo.triggered.connect(self._emit_nuevo)
         if len(items) == 1:
             item = items[0]
             insumo_id = item.data(0, Qt.ItemDataRole.UserRole)
@@ -165,6 +188,9 @@ class TablaInsumos(TreeTableWidget):
     def _emit_desglozar(self, insumo_id):
         if insumo_id:
             self.desglozar_insumo.emit(insumo_id)
+
+    def _emit_nuevo(self):
+        self.nuevo_insumo.emit()
 
     @staticmethod
     def _valores_fila(ins: dict, tiene_sub_apu: bool) -> list[str]:
@@ -198,16 +224,11 @@ class TablaInsumos(TreeTableWidget):
             f"${ins.get('costo_directo', 0) or 0:,.2f}",
             ins.get("clave_usuario") or "",
             _si_no(ins.get("es_compuesto")),
-            _num_opcional(ins.get("salario_nominal")),
-            _num_opcional(ins.get("salario_real")),
             _si_no(ins.get("usar_hoja_fasar")),
-            ins.get("catfsr") or "",
             _num_opcional(ins.get("factor_fsr"), decimales=4),
-            _si_no(ins.get("fsr_minimo")),
             TIPO_TRABAJO_NOMBRE.get(tipo_trabajo, tipo_trabajo),
             _num_opcional(ins.get("peso_kg"), decimales=3),
             ins.get("comentarios") or "",
-            ins.get("indice_inegi") or "",
             ins.get("creado_en") or "",
             ins.get("creado_por_nombre") or "",
             ins.get("modificado_en") or "",
@@ -281,20 +302,28 @@ class TablaInsumos(TreeTableWidget):
         return True
 
     def _on_insumo_actualizado(self, evento):
-        """InsumoActualizado: actualiza in-place la fila de este insumo."""
+        """InsumoActualizado: actualiza in-place la fila, o muestre entre pestañas si cambia de tipo."""
         try:
-            item = self._item_por_insumo(evento.insumo_id)
-            if item is None:
-                return
             registro = evento.registro or {}
-            prefijo = "\u25b6 " if item.text(1).startswith("\u25b6 ") else ""
-            tiene_sub_apu = bool(prefijo)
-            self.blockSignals(True)
-            try:
-                for c, val in enumerate(self._valores_fila(registro, tiene_sub_apu)):
-                    item.setText(c, val)
-            finally:
-                self.blockSignals(False)
+            item = self._item_por_insumo(evento.insumo_id)
+            if item is not None:
+                if not self._coincide_filtro(registro):
+                    idx = self.indexOfTopLevelItem(item)
+                    if idx >= 0:
+                        self.takeTopLevelItem(idx)
+                    return
+                tiene_sub_apu = bool(registro.get("es_compuesto"))
+                self.blockSignals(True)
+                try:
+                    for c, val in enumerate(self._valores_fila(registro, tiene_sub_apu)):
+                        item.setText(c, val)
+                finally:
+                    self.blockSignals(False)
+            elif self._coincide_filtro(registro):
+                tiene_sub_apu = bool(registro.get("es_compuesto"))
+                row_item = self.add_row(self._valores_fila(registro, tiene_sub_apu), editable=True)
+                if row_item is not None:
+                    row_item.setData(0, Qt.ItemDataRole.UserRole, evento.insumo_id)
         except Exception as e:
             print(f"[eventbus] _on_insumo_actualizado: {type(e).__name__}: {e}")
 
@@ -307,7 +336,8 @@ class TablaInsumos(TreeTableWidget):
             insumo = self._api.insumo_por_id(evento.nodo_id)
             if not insumo or not self._coincide_filtro(insumo):
                 return
-            row_item = self.add_row(self._valores_fila(insumo, tiene_sub_apu=False), editable=True)
+            tiene_sub_apu = bool(insumo.get("es_compuesto"))
+            row_item = self.add_row(self._valores_fila(insumo, tiene_sub_apu=tiene_sub_apu), editable=True)
             if row_item is not None:
                 row_item.setData(0, Qt.ItemDataRole.UserRole, evento.nodo_id)
         except Exception as e:

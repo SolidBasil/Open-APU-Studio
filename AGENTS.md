@@ -133,7 +133,7 @@ docs/
 - **Esquema:** Single `schema.sql` aplicado por `db.py`. Si hay cambios futuros: migraciones numeradas en SQL (ver `docs/SCHEMA.md` sección migraciones)
 - **Recálculo:** Bottom-up en Python desde `backend/database/repos/presupuesto.py::actualizar_total()` — `capítulos.total = SUM(hijos.total)`, sin bifurcación `importe`/`subtotal`
 - **Total:** Columna unificada en `estructura_presupuesto` — reemplaza la antigua dualidad `importe` (GENERATED) + `subtotal`. Para conceptos se calcula como `cantidad × precio` (precio desde insumo o APU); para capítulos es `SUM(hijos.total)`.
-- **FSR:** Dos modos: calculado desde `insumos.catfsr → factores_fsr` o manual (`insumos.factor_fsr`). `salario_real = salario_nominal × COALESCE(factor_fsr, 1.0)`
+- **FSR:** Manual via `insumos.factor_fsr`. `costo_directo` = base sin FSR. Fórmula: `costo_final = costo_directo × factor_fsr × factor_total`.
 - **Fórmulas:** `simpleeval` vendereado como `backend/formulas.py`. Evaluación recursiva de variables desde `variables_formula`. Aplica en `apu_matrices.formula` y `estructura_presupuesto.formula`.
 
 ## MVP vs v1.x

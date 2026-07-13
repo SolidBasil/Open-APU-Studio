@@ -103,17 +103,6 @@ CREATE TABLE IF NOT EXISTS proyectos (
     descripcion             TEXT,
     clave_opus              TEXT,       -- prefijo original de OPUS, ej 'D60JALISCOT'
 
-    -- Concursante
-    concursante_nombre      TEXT,
-    concursante_domicilio   TEXT,
-    concursante_ciudad      TEXT,
-    concursante_cp          TEXT,
-    concursante_pais        TEXT    DEFAULT 'México',
-    concursante_email       TEXT,
-    concursante_tel         TEXT,
-    rep_legal_nombre        TEXT,
-    rep_legal_cargo         TEXT,
-
     -- Cliente
     cliente_nombre          TEXT,
     cliente_domicilio       TEXT,
@@ -123,31 +112,63 @@ CREATE TABLE IF NOT EXISTS proyectos (
     cliente_email           TEXT,
     cliente_tel             TEXT,
 
-    -- Licitación
-    licitacion_desc         TEXT,
-    licitacion_fecha        TEXT,
-    licitacion_numero       TEXT,
-    licitacion_tipo         TEXT,   -- 'publica','directa','restringida','otra'
-
-    -- Divisiones organizacionales (gobierno / grandes empresas)
-    division_1              TEXT,
-    division_2              TEXT,
-    division_3              TEXT,
-    division_4              TEXT,
-    division_5              TEXT,
-    division_6              TEXT,
-    division_7              TEXT,
-
     -- Financiero
     moneda_nombre           TEXT    NOT NULL DEFAULT 'Peso mexicano',
     moneda_simbolo          TEXT    NOT NULL DEFAULT '$',
     moneda_abrev            TEXT    NOT NULL DEFAULT 'MXN',
     iva_nombre              TEXT    NOT NULL DEFAULT 'IVA',
     iva_porcentaje          REAL    NOT NULL DEFAULT 16.0,
-    tiie_nombre             TEXT    NOT NULL DEFAULT 'TIIE',
-    tiie_tasa               REAL    NOT NULL DEFAULT 0.0,
-    puntos_bancarios_pagar  REAL    NOT NULL DEFAULT 0.0,
-    puntos_bancarios_favor  REAL    NOT NULL DEFAULT 0.0,
+
+    -- Configuración técnica (fusionado desde configuracion_proyecto)
+    horas_dia               REAL    NOT NULL DEFAULT 8.0,
+    tasa_seguro             REAL    NOT NULL DEFAULT 0.0,
+    tasa_interes            REAL    NOT NULL DEFAULT 0.0,
+    capturar_rendimientos   INTEGER NOT NULL DEFAULT 0,
+    unidad_cantidad_agrup   INTEGER NOT NULL DEFAULT 0,
+
+    -- Ubicación de la obra
+    obra_domicilio          TEXT,
+    obra_ciudad             TEXT,
+    obra_estado             TEXT,
+    obra_cp                 TEXT,
+    obra_pais               TEXT    DEFAULT 'México',
+    obra_latitud            REAL,
+    obra_longitud           REAL,
+    obra_descripcion        TEXT,
+
+    -- Contacto
+    contacto_nombre         TEXT,
+    contacto_cargo          TEXT,
+    contacto_email          TEXT,
+    contacto_tel            TEXT,
+
+    -- Constructora
+    constructora_nombre     TEXT,
+    constructora_rfc        TEXT,
+    constructora_domicilio  TEXT,
+    constructora_ciudad     TEXT,
+    constructora_estado     TEXT,
+    constructora_cp         TEXT,
+    constructora_pais       TEXT    DEFAULT 'México',
+    constructora_tel        TEXT,
+    constructora_email      TEXT,
+    constructora_sitio_web  TEXT,
+    constructora_logo_path  TEXT,
+
+    -- Moneda extranjera
+    moneda_ext_nombre       TEXT    DEFAULT 'Dólar USD',
+    moneda_ext_simbolo      TEXT    DEFAULT '$',
+    moneda_ext_abrev        TEXT    DEFAULT 'USD',
+    tipo_cambio             REAL    NOT NULL DEFAULT 1.0,
+
+    -- Programa de obra
+    duracion_obra_dias      INTEGER,
+
+    -- Reportes
+    reporte_responsable     TEXT,
+    reporte_version         TEXT    DEFAULT '1.0',
+    reporte_observaciones   TEXT,
+    reporte_fecha           TEXT,
 
     -- Total (actualizado por Python al recalcular)
     total_obra              REAL    NOT NULL DEFAULT 0.0,
@@ -161,18 +182,8 @@ CREATE TABLE IF NOT EXISTS proyectos (
     importado_en            TEXT
 );
 
--- Configuración técnica del proyecto
-CREATE TABLE IF NOT EXISTS configuracion_proyecto (
-    proyecto_id             INTEGER PRIMARY KEY REFERENCES proyectos(id) ON DELETE CASCADE,
-    horas_dia               REAL    NOT NULL DEFAULT 8.0,
-    tasa_seguro             REAL    NOT NULL DEFAULT 0.0,
-    tasa_interes            REAL    NOT NULL DEFAULT 0.0,
-    capturar_rendimientos   INTEGER NOT NULL DEFAULT 0,
-    unidad_cantidad_agrup   INTEGER NOT NULL DEFAULT 0
-);
-
 -- Factores de sobrecosto para cascada sobre insumos (indirectos, utilidad, etc.)
--- costo_final = costo_directo * COALESCE(factor_total, 1.0)
+-- costo_final = costo_directo * COALESCE(factor_fsr, 1.0) * COALESCE(factor_total, 1.0)
 CREATE TABLE IF NOT EXISTS factores_sobrecosto (
     proyecto_id             INTEGER PRIMARY KEY REFERENCES proyectos(id) ON DELETE CASCADE,
     pct_indirectos_campo    REAL NOT NULL DEFAULT 0.0,
@@ -338,12 +349,8 @@ CREATE TABLE IF NOT EXISTS insumos (
     costo_final         REAL    NOT NULL DEFAULT 0.0,
 
     -- Mano de obra
-    salario_nominal     REAL,
-    salario_real        REAL,
     usar_hoja_fasar     INTEGER NOT NULL DEFAULT 0,
-    catfsr              TEXT,
     factor_fsr          REAL,
-    fsr_minimo          INTEGER NOT NULL DEFAULT 0,
 
     -- Trabajo (tipo_id = 128)
     -- 'subcontrato' incluye todos los recursos
@@ -353,7 +360,6 @@ CREATE TABLE IF NOT EXISTS insumos (
 
     -- Datos adicionales (todos los tipos)
     fecha_precio        TEXT,
-    indice_inegi        TEXT,
     peso_kg             REAL,
     comentarios         TEXT,
 
@@ -378,9 +384,8 @@ CREATE INDEX IF NOT EXISTS idx_insumos_activo     ON insumos(activo);
 
 -- =============================================================================
 -- BLOQUE 7: APU (Análisis de Precio Unitario)
--- apu_auxiliares: insumos compuestos con APU propio que no son nodos del árbol
--- apu_componentes: desglose de insumos por concepto (ligado por id entero)
--- apu_resumen: subtotales por tipo (actualizado por Python)
+-- apu_matrices: desglose de insumos por concepto (ligado por matriz_id)
+-- Los subtotales por tipo se calculan al vuelo en Python (no se persisten).
 -- =============================================================================
 
 -- Componentes del APU — matriz_id referencia al item padre (concepto del árbol
@@ -408,27 +413,6 @@ CREATE TABLE IF NOT EXISTS apu_matrices (
 CREATE INDEX IF NOT EXISTS idx_apu_mat_matriz    ON apu_matrices(matriz_id);
 CREATE INDEX IF NOT EXISTS idx_apu_mat_insumo    ON apu_matrices(insumo_id);
 
--- Resumen APU por tipo de costo
-CREATE TABLE IF NOT EXISTS apu_resumen_totales (
-    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    matriz_id           INTEGER NOT NULL UNIQUE,
-    materiales          REAL    NOT NULL DEFAULT 0.0,
-    mano_obra           REAL    NOT NULL DEFAULT 0.0,
-    herramienta         REAL    NOT NULL DEFAULT 0.0,
-    equipo              REAL    NOT NULL DEFAULT 0.0,
-    auxiliares          REAL    NOT NULL DEFAULT 0.0,
-    subcontratos        REAL    NOT NULL DEFAULT 0.0,
-    fletes              REAL    NOT NULL DEFAULT 0.0,
-    trabajos            REAL    NOT NULL DEFAULT 0.0,
-    costo_directo       REAL    NOT NULL DEFAULT 0.0,
-    indirectos_pct      REAL    NOT NULL DEFAULT 0.0,
-    financiamiento_pct  REAL    NOT NULL DEFAULT 0.0,
-    utilidad_pct        REAL    NOT NULL DEFAULT 0.0,
-    cargo_adicional_pct REAL    NOT NULL DEFAULT 0.0,
-    precio_venta        REAL    NOT NULL DEFAULT 0.0,
-    modificado_en       TEXT    NOT NULL DEFAULT (datetime('now'))
-);
-
 -- =============================================================================
 -- BLOQUE 8: FÓRMULAS Y VARIABLES
 -- variables nombradas que pueden referenciarse desde formulas en apu_matrices o
@@ -449,22 +433,36 @@ CREATE INDEX IF NOT EXISTS idx_varf_proyecto ON variables_formula(proyecto_id);
 
 
 -- =============================================================================
--- BLOQUE 9: COLABORACIÓN
--- historial: base para Ctrl+Z colaborativo — ver DECISIONES_PENDIENTES.md FE-02
--- notas: comentarios inline por nodo del presupuesto
+-- BLOQUE 8.1: INDIRECTOS
+-- Gastos indirectos de campo y oficina. El total se calcula:
+--   periodo_dias = 0  → total = importe × pct_participacion/100
+--   periodo_dias > 0  → total = importe × (duracion_obra_dias / periodo_dias) × pct_participacion/100
 -- =============================================================================
 
-CREATE TABLE IF NOT EXISTS notas (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    concepto_id     INTEGER NOT NULL REFERENCES estructura_presupuesto(id) ON DELETE CASCADE,
-    usuario_id      INTEGER NOT NULL DEFAULT 1 REFERENCES usuarios(id),
-    texto           TEXT    NOT NULL,
-    resuelta        INTEGER NOT NULL DEFAULT 0,
-    creado_en       TEXT    NOT NULL DEFAULT (datetime('now')),
-    modificado_en   TEXT    NOT NULL DEFAULT (datetime('now'))
+CREATE TABLE IF NOT EXISTS indirectos (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    proyecto_id         INTEGER NOT NULL REFERENCES proyectos(id) ON DELETE CASCADE,
+    tipo                TEXT    NOT NULL CHECK(tipo IN ('campo', 'oficina')),
+    categoria           TEXT,
+    orden               INTEGER NOT NULL DEFAULT 0,
+    concepto            TEXT,
+    periodo_dias        REAL    NOT NULL DEFAULT 0.0,
+    importe             REAL    NOT NULL DEFAULT 0.0,
+    pct_participacion   REAL    NOT NULL DEFAULT 100.0,
+    total               REAL    NOT NULL DEFAULT 0.0,
+    activo              INTEGER NOT NULL DEFAULT 1,
+    creado_en           TEXT    NOT NULL DEFAULT (datetime('now')),
+    modificado_en       TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX IF NOT EXISTS idx_notas_concepto ON notas(concepto_id);
+CREATE INDEX IF NOT EXISTS idx_indirectos_proyecto ON indirectos(proyecto_id);
+CREATE INDEX IF NOT EXISTS idx_indirectos_tipo     ON indirectos(proyecto_id, tipo);
+
+
+-- =============================================================================
+-- BLOQUE 9: COLABORACIÓN
+-- historial: base para Ctrl+Z colaborativo — ver DECISIONES_PENDIENTES.md FE-02
+-- =============================================================================
 
 -- Historial de cambios — auditoría genérica y base del Ctrl+Z colaborativo
 -- sesion: UUID generado en Python para agrupar cambios de una misma operación
@@ -498,4 +496,7 @@ CREATE TABLE IF NOT EXISTS schema_version (
 );
 
 INSERT OR IGNORE INTO schema_version (version, descripcion) VALUES
-    (4, 'v4: costo_directo + FSR en insumos, apu_matrices con valor/operador, factores_sobrecosto, factores_fsr, variables_formula');
+    (4, 'v4: costo_directo + FSR en insumos, apu_matrices con valor/operador, factores_sobrecosto, factores_fsr, variables_formula'),
+    (5, 'v5: limpia proyectos (24 cols muertas), fusiona configuracion_proyecto, elimina apu_resumen_totales, crea indirectos'),
+    (6, 'v6: elimina catfsr y fsr_minimo de insumos (FSR solo manual via factor_fsr)'),
+    (7, 'v7: elimina tabla notas, salario_nominal, salario_real e indice_inegi de insumos');
