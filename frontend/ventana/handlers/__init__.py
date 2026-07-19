@@ -88,6 +88,8 @@ class HandlersMixin:
         if t:
             idx = t.currentIndex()
             if idx.isValid():
+                if t.state() == QAbstractItemView.State.EditingState:
+                    t.closeEditor(t.indexWidget(idx), QAbstractItemView.NoHint)
                 t.edit(idx)
 
     def _on_desglozar_toolbar(self):
@@ -183,12 +185,7 @@ class HandlersMixin:
             return
         if not self._db:
             return
-        title = item.text(0)
-        for i in range(self._tabs.count()):
-            if self._tabs.tabText(i) == title:
-                self._tabs.setCurrentIndex(i)
-                return
-        self._open_sidebar_tab(title, temporary=True)
+        self._focus_or_open_tab(item.text(0), temporary=True)
 
     def _on_sidebar_double_click(self, item, column):
         """Doble click en sidebar: abre pestaña permanente."""
@@ -196,15 +193,30 @@ class HandlersMixin:
             return
         if not self._db:
             return
-        title = item.text(0)
+        self._focus_or_open_tab(item.text(0), temporary=False)
+
+    def _focus_or_open_tab(self, title, temporary):
+        """Si ya existe una pestaña con ese título, la enfoca; si no, la abre.
+
+        Punto de entrada único para cualquier acción que deba abrir una de
+        estas pestañas (sidebar, doble click, botones de toolbar, etc.) —
+        centralizar esto evita que un nuevo punto de entrada olvide el
+        chequeo de duplicados y termine abriendo una pestaña repetida.
+        """
+        if not self._db:
+            return
         for i in range(self._tabs.count()):
             if self._tabs.tabText(i) == title:
                 widget = self._tabs.widget(i)
-                if widget is self._tab_temp:
+                if not temporary and widget is self._tab_temp:
                     self._tab_temp = None
                 self._tabs.setCurrentIndex(i)
                 return
-        self._open_sidebar_tab(title, temporary=False)
+        self._open_sidebar_tab(title, temporary=temporary)
+
+    def _on_abrir_generadores(self):
+        """Handler del botón 'Generadores' en la toolbar (pestaña INICIO)."""
+        self._focus_or_open_tab("📏 Generadores de obra", temporary=False)
 
     def _open_sidebar_tab(self, title, temporary):
         """Abre pestaña según título del sidebar."""
@@ -218,10 +230,6 @@ class HandlersMixin:
             content = self._build_presupuesto()
         elif title == "🔍 Buscar partidas":
             content = self._build_buscador_partidas()
-        elif title == "💰 Cálculo de indirectos":
-            content = self._build_placeholder(title, "En desarrollo")
-        elif title == "📊 Cálculo de sobrecostos":
-            content = self._build_sobrecostos()
         elif title == "📦 Explosión de insumos":
             content = self._build_explosion()
             if content is None:
@@ -232,6 +240,9 @@ class HandlersMixin:
                 return
         elif title in INSUMOS_TITLES:
             content = self._build_insumos(title)
+        elif title == "📏 Generadores de obra":
+            content = self._build_generadores()
+            self.poblar_generadores()
         else:
             content = self._build_placeholder(title)
 
@@ -267,6 +278,40 @@ class HandlersMixin:
     def _on_tab_changed(self, idx):
         """Re-aplica el filtro de búsqueda al cambiar de pestaña."""
         self._on_search(self._search_input.text())
+
+        title = self._tabs.tabText(idx) if idx >= 0 else ""
+        es_generadores = title == "📏 Generadores de obra"
+
+        # Panel izquierdo contextual: Generadores usa su propio panel de
+        # navegación (lista de generadores) en vez del sidebar normal.
+        if hasattr(self, "_left_stack"):
+            splitter = self._left_stack.parent()
+            prev = self._left_stack.currentIndex()
+            if es_generadores:
+                if prev == 0 and splitter is not None:
+                    self._sidebar_splitter_size = splitter.sizes()
+                self._left_stack.setCurrentIndex(1)
+                if splitter is not None and hasattr(self, '_gen_splitter_size'):
+                    splitter.setSizes(self._gen_splitter_size)
+                elif splitter is not None:
+                    s = splitter.sizes()
+                    gen_left = int(s[0] * 1.2)  # 20% más que sidebar actual
+                    splitter.setSizes([gen_left, s[1] - (gen_left - s[0])])
+                self.poblar_generadores()
+                if self._gen_seleccionado and self._api and hasattr(self, "_gen_tabla"):
+                    renglones = self._api.generador_renglones(self._gen_seleccionado)
+                    self._gen_tabla.poblar(renglones)
+            else:
+                if prev == 1 and splitter is not None:
+                    self._gen_splitter_size = splitter.sizes()
+                self._left_stack.setCurrentIndex(0)
+                if splitter is not None and hasattr(self, '_sidebar_splitter_size'):
+                    splitter.setSizes(self._sidebar_splitter_size)
+
+        # Al entrar a Generadores, cambiar automáticamente al ribbon GENERADORES
+        if es_generadores and getattr(self, "_tab_activa", None) != "GENERADORES":
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(0, lambda: self._switch_tab("GENERADORES"))
 
     # ── Adjuntar / Ver adjuntos ───────────────────────────────────────────
 
@@ -747,11 +792,31 @@ class HandlersMixin:
             self._sb.showMessage(f"Error al rehacer: {e}", 4000)
 
     def _on_agregar_agrupador(self):
-        """Agrega un capítulo/agrupador nuevo al presupuesto."""
+        """Agrega un capítulo/agrupador nuevo al presupuesto (solo si la pestaña activa es presupuesto)."""
+        from frontend.ventana.paneles import INSUMOS_TITLES
+        idx = self._tabs.currentIndex()
+        title = self._tabs.tabText(idx) if idx >= 0 else ""
+        if title in INSUMOS_TITLES:
+            return
         self._agregar_nodo("capitulo")
 
     def _on_agregar_concepto(self):
-        """Agrega un concepto nuevo al presupuesto."""
+        """Agrega un concepto nuevo al presupuesto, o un insumo si estamos en la pestaña de insumos."""
+        from frontend.ventana.paneles import INSUMOS_ITEMS, INSUMOS_TITLES
+        idx = self._tabs.currentIndex()
+        title = self._tabs.tabText(idx) if idx >= 0 else ""
+        if title in INSUMOS_TITLES:
+            from frontend.ventana.widgets.dialogs import InsumoDialog
+            from frontend.ventana.tipos_insumo import CLAVE as _CLAVE
+            if not self._api:
+                return
+            tipo_map = {t: k for t, k in INSUMOS_ITEMS}
+            tipo_clave = tipo_map.get(title)
+            default_tipo = next((tid for tid, c in _CLAVE.items() if c == tipo_clave), None) if tipo_clave else None
+            dlg = InsumoDialog(self._api, parent=self, default_tipo=default_tipo)
+            if dlg.exec() == 1:
+                self._on_tab_changed(idx)
+            return
         self._agregar_nodo("concepto")
 
     def _agregar_nodo(self, tipo: str):
@@ -818,6 +883,223 @@ class HandlersMixin:
                     t.setColumnHidden(edit_col, False)
                 t.editItem(item, edit_col)
         QTimer.singleShot(0, _seleccionar_nuevo)
+
+    # ── Sobrecostos / Indirectos (popup) ──────────────────────────────
+
+    def _on_indirectos(self):
+        """Abre popup de indirectos de campo."""
+        self._abrir_indirectos_dlg("campo")
+
+    def _on_personal_indirectos(self):
+        """Abre popup de indirectos de oficina."""
+        self._abrir_indirectos_dlg("oficina")
+
+    def _abrir_indirectos_dlg(self, tipo: str):
+        """Construye y muestra el diálogo de indirectos para un tipo ('campo' | 'oficina')."""
+        from PySide6.QtWidgets import (
+            QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+            QTableWidget, QTableWidgetItem, QDoubleSpinBox,
+            QAbstractItemView, QHeaderView,
+        )
+        titulo = "Indirectos de campo" if tipo == "campo" else "Personal en indirectos"
+        dlg = QDialog(self)
+        dlg.setWindowTitle(titulo)
+        dlg.setMinimumSize(750, 480)
+        dlg.setModal(True)
+        lay = QVBoxLayout(dlg)
+        lay.setContentsMargins(12, 12, 12, 12)
+        lay.setSpacing(8)
+
+        # ── Cabecera + duración de obra ──────────────────────────
+        hdr_row = QHBoxLayout()
+        hdr = QLabel(f"<b>{titulo}</b>")
+        hdr.setTextFormat(Qt.TextFormat.RichText)
+        hdr_row.addWidget(hdr, 1)
+        hdr_row.addSpacing(16)
+        lbl_dias = QLabel("Duración obra (días):")
+        spin_dias = QDoubleSpinBox()
+        spin_dias.setRange(0, 9999)
+        spin_dias.setDecimals(0)
+        spin_dias.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
+        duracion_actual = float(self._api._conn.execute(
+            "SELECT COALESCE(duracion_obra_dias, 0) FROM proyectos WHERE id = ?",
+            (self._api._pid,)
+        ).fetchone()[0])
+        spin_dias.setValue(duracion_actual)
+        hdr_row.addWidget(lbl_dias)
+        hdr_row.addWidget(spin_dias)
+        lay.addLayout(hdr_row)
+
+        # ── Tabla ────────────────────────────────────────────────
+        COLUMNAS = ["Categoría", "Concepto", "Periodo (días)", "Importe", "% Part.", "Total"]
+        datos = self._api.indirectos_lista(tipo)
+
+        tabla = QTableWidget(len(datos), len(COLUMNAS))
+        tabla.setHorizontalHeaderLabels(COLUMNAS)
+        tabla.verticalHeader().setVisible(False)
+        tabla.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        tabla.setAlternatingRowColors(True)
+        tabla.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+
+        def _recalcular_fila(fila):
+            """Recalcula el total de una fila según la fórmula de indirectos."""
+            periodo = tabla.item(fila, 2)
+            importe = tabla.item(fila, 3)
+            pct = tabla.item(fila, 4)
+            if not (periodo and importe and pct):
+                return
+            duracion = spin_dias.value()
+            p = float(periodo.text() or 0)
+            imp = float(importe.text() or 0)
+            pc = float(pct.text() or 100)
+            total = imp * (duracion / p) * (pc / 100) if p > 0 else imp * (pc / 100)
+            tabla.setItem(fila, 5, QTableWidgetItem(f"{total:.2f}"))
+
+        def _recalcular_todas():
+            for fila in range(tabla.rowCount()):
+                _recalcular_fila(fila)
+
+        def _on_cell_changed(fila, col):
+            if col in {1, 2, 3, 4}:
+                _recalcular_fila(fila)
+
+        spin_dias.valueChanged.connect(lambda: _recalcular_todas())
+        tabla.cellChanged.connect(_on_cell_changed)
+
+        tabla.setColumnCount(len(COLUMNAS) + 1)  # columna oculta para id
+        tabla.setColumnHidden(len(COLUMNAS), True)
+        for i, reg in enumerate(datos):
+            tabla.setItem(i, 0, QTableWidgetItem(reg.get("categoria") or ""))
+            tabla.setItem(i, 1, QTableWidgetItem(reg.get("concepto") or ""))
+            tabla.setItem(i, 2, QTableWidgetItem(str(reg.get("periodo_dias") or 0)))
+            tabla.setItem(i, 3, QTableWidgetItem(str(reg.get("importe") or 0)))
+            tabla.setItem(i, 4, QTableWidgetItem(str(reg.get("pct_participacion") or 100)))
+            tabla.setItem(i, 5, QTableWidgetItem(f"{reg.get('total') or 0:.2f}"))
+            id_item = QTableWidgetItem()
+            id_item.setData(Qt.ItemDataRole.UserRole, reg["id"])
+            tabla.setItem(i, len(COLUMNAS), id_item)
+
+        tabla.resizeColumnsToContents()
+        lay.addWidget(tabla, 1)
+
+        # ── Botones inferiores ───────────────────────────────────
+        btn_row = QHBoxLayout()
+        btn_plant = QPushButton("Cargar plantilla")
+        btn_add = QPushButton("+ Agregar")
+        btn_del = QPushButton("− Quitar")
+        btn_guardar = QPushButton("Guardar y recalcular")
+        btn_guardar.setObjectName("btnPrimario")
+        btn_cancelar = QPushButton("Cancelar")
+        btn_row.addWidget(btn_plant)
+        btn_row.addWidget(btn_add)
+        btn_row.addWidget(btn_del)
+        btn_row.addStretch()
+        btn_row.addWidget(btn_guardar)
+        btn_row.addWidget(btn_cancelar)
+        lay.addLayout(btn_row)
+
+        # ── Acciones ─────────────────────────────────────────────
+        def cargar_plantilla():
+            n = self._api.indirectos_cargar_plantilla(tipo)
+            if n:
+                self._sb.showMessage(f"Plantilla cargada: {n} ítems nuevos", 4000)
+            else:
+                self._sb.showMessage("Todos los ítems de la plantilla ya existen", 4000)
+            _recargar_tabla()
+
+        def agregar_fila():
+            fila = tabla.rowCount()
+            tabla.insertRow(fila)
+            tabla.setItem(fila, 0, QTableWidgetItem(""))
+            tabla.setItem(fila, 1, QTableWidgetItem("Nuevo ítem"))
+            tabla.setItem(fila, 2, QTableWidgetItem("0"))
+            tabla.setItem(fila, 3, QTableWidgetItem("0"))
+            tabla.setItem(fila, 4, QTableWidgetItem("100"))
+            tabla.setItem(fila, 5, QTableWidgetItem("0.00"))
+            id_item = QTableWidgetItem()
+            id_item.setData(Qt.ItemDataRole.UserRole, None)
+            tabla.setItem(fila, len(COLUMNAS), id_item)
+
+        def quitar_fila():
+            fila = tabla.currentRow()
+            if fila < 0:
+                return
+            id_item = tabla.item(fila, len(COLUMNAS))
+            reg_id = id_item.data(Qt.ItemDataRole.UserRole) if id_item else None
+            if reg_id is not None:
+                self._api.indirectos_eliminar(reg_id)
+            tabla.removeRow(fila)
+
+        def _recargar_tabla():
+            nonlocal datos
+            tabla.blockSignals(True)
+            datos = self._api.indirectos_lista(tipo)
+            tabla.setRowCount(len(datos))
+            for i, reg in enumerate(datos):
+                tabla.setItem(i, 0, QTableWidgetItem(reg.get("categoria") or ""))
+                tabla.setItem(i, 1, QTableWidgetItem(reg.get("concepto") or ""))
+                tabla.setItem(i, 2, QTableWidgetItem(str(reg.get("periodo_dias") or 0)))
+                tabla.setItem(i, 3, QTableWidgetItem(str(reg.get("importe") or 0)))
+                tabla.setItem(i, 4, QTableWidgetItem(str(reg.get("pct_participacion") or 100)))
+                tabla.setItem(i, 5, QTableWidgetItem(f"{reg.get('total') or 0:.2f}"))
+                id_item = QTableWidgetItem()
+                id_item.setData(Qt.ItemDataRole.UserRole, reg["id"])
+                tabla.setItem(i, len(COLUMNAS), id_item)
+            tabla.blockSignals(False)
+
+        def guardar():
+            tabla.blockSignals(True)
+            # Guardar duración de obra al proyecto
+            nueva_duracion = int(spin_dias.value())
+            self._api._conn.execute(
+                "UPDATE proyectos SET duracion_obra_dias = ? WHERE id = ?",
+                (nueva_duracion, self._api._pid)
+            )
+            for fila in range(tabla.rowCount()):
+                id_item = tabla.item(fila, len(COLUMNAS))
+                reg_id = id_item.data(Qt.ItemDataRole.UserRole) if id_item else None
+                campos = {
+                    "categoria": (tabla.item(fila, 0).text() if tabla.item(fila, 0) else ""),
+                    "concepto": (tabla.item(fila, 1).text() if tabla.item(fila, 1) else ""),
+                    "periodo_dias": float(tabla.item(fila, 2).text() or 0) if tabla.item(fila, 2) else 0,
+                    "importe": float(tabla.item(fila, 3).text() or 0) if tabla.item(fila, 3) else 0,
+                    "pct_participacion": float(tabla.item(fila, 4).text() or 100) if tabla.item(fila, 4) else 100,
+                }
+                if reg_id is not None:
+                    self._api.indirectos_guardar(reg_id, campos)
+                else:
+                    campos["tipo"] = tipo
+                    campos["orden"] = fila
+                    campos["total"] = 0.0
+                    campos["activo"] = 1
+                    self._api.indirectos_insertar(campos)
+            self._api.indirectos_calcular_totales()
+            self._conn.commit()
+            tabla.blockSignals(False)
+            dlg.accept()
+            self._sb.showMessage(f"{titulo} guardados", 3000)
+
+        btn_plant.clicked.connect(cargar_plantilla)
+        btn_add.clicked.connect(agregar_fila)
+        btn_del.clicked.connect(quitar_fila)
+        btn_guardar.clicked.connect(guardar)
+        btn_cancelar.clicked.connect(dlg.reject)
+
+        dlg.exec()
+
+    def _on_sobrecostos(self):
+        """Abre popup de cálculo de sobrecostos."""
+        if not self._db:
+            return
+        from PySide6.QtWidgets import QDialog, QVBoxLayout
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Cálculo de sobrecostos")
+        dlg.setMinimumSize(420, 380)
+        dlg.setModal(False)
+        lay = QVBoxLayout(dlg)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(self._build_sobrecostos())
+        dlg.exec()
 
 
 __all__ = [

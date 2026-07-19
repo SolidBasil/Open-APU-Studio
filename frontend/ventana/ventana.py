@@ -22,6 +22,7 @@ from frontend.ventana.paneles  import PanelesMixin
 from frontend.ventana.handlers import HandlersMixin
 from frontend.ventana.handlers import GestionProyectosMixin, InformesMixin, DiagDialogsMixin
 from frontend.ventana.apu       import ApuMixin, RastreoMixin, ExplosionMixin
+from frontend.ventana.generador.generador import GeneradorMixin
 
 
 # =============================================================================
@@ -31,7 +32,7 @@ from frontend.ventana.apu       import ApuMixin, RastreoMixin, ExplosionMixin
 class VentanaPrincipal(
     ToolbarMixin, PanelesMixin, HandlersMixin,
     GestionProyectosMixin, InformesMixin, DiagDialogsMixin,
-    ApuMixin, RastreoMixin, ExplosionMixin,
+    ApuMixin, RastreoMixin, ExplosionMixin, GeneradorMixin,
     QMainWindow,
 ):
     """Ventana principal de Open APU Studio.
@@ -93,7 +94,7 @@ class VentanaPrincipal(
         self._switch_tab("PROYECTO")
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(self._build_sidebar())
+        splitter.addWidget(self._build_left_panel())
 
         right        = QWidget()
         right_layout = QVBoxLayout(right)

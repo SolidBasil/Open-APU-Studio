@@ -5,6 +5,7 @@ Punto de entrada de Open APU Studio.
 """
 
 import sys
+import logging
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QIcon
 from PySide6.QtWidgets import QApplication
@@ -21,6 +22,7 @@ from frontend.ventana import VentanaPrincipal
 
 def main():
     """Punto de entrada: inicializa QApplication, aplica tema, crea y muestra la ventana principal."""
+    logging.basicConfig(level=logging.WARNING, format="%(name)s %(levelname)s: %(message)s")
     app = QApplication(sys.argv)
     app.setApplicationName("Open APU Studio")
     app.setOrganizationName("OpenAPU")
@@ -32,7 +34,7 @@ def main():
     Temas.aplicar(app, modo, acento)
 
     win = VentanaPrincipal()
-    win.show()
+    win.showMaximized()
     app.processEvents()
     app.setOverrideCursor(Qt.CursorShape.ArrowCursor)
     app.restoreOverrideCursor()

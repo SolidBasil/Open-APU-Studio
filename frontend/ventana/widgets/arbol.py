@@ -149,12 +149,14 @@ class TablaArbol(TreeTableWidget):
     agregar_concepto = Signal()
     eliminar_seleccion = Signal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, header_key: str | None = None):
         """Inicializa el árbol de presupuesto con columnas fijas, modo de columnas, búsqueda y restauración del header."""
+        if header_key:
+            self._HEADER_KEY = header_key
         super().__init__(COLUMNAS, EDITABLE, parent=parent,
                           editable_cols_fn=_editable_cols_arbol)
-        anchos = [80, 80, 70, 90, 250, 55, 65, 90, 90, 70, 100, 130, 130]
-        anchos += [70, 160]  # Orden, Fórmula
+        anchos = [160, 160, 140, 180, 500, 110, 130, 180, 180, 140, 200, 260, 260]
+        anchos += [140, 320]  # Orden, Fórmula
         self.set_column_modes({
             c: (QHeaderView.ResizeMode.Interactive, w)
             for c, w in enumerate(anchos)

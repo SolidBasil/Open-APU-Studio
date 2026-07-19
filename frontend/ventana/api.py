@@ -666,7 +666,7 @@ class Api:
         de dominio con reglas de SchemaRegistry, así que se calcula aquí y
         se envía como campo extra a DataService.actualizar().
         """
-        from backend.database.repos.base import generar_hash
+        from backend.database.core import generar_hash
         descripcion = descripcion.strip()
         if not descripcion:
             raise ValueError("La descripción no puede estar vacía")
@@ -807,7 +807,7 @@ class Api:
         en la fachada y se envía como campo extra a DataService.insertar().
         Verifica colisión con otro insumo del proyecto antes de crear.
         """
-        from backend.database.repos.base import generar_hash
+        from backend.database.core import generar_hash
         nuevo_hash = generar_hash(descripcion) if descripcion else None
         if self._use_http:
             if nuevo_hash:
@@ -890,6 +890,17 @@ class Api:
             return []
         return sorted(p.stem for p in carpeta.glob("*.db"))
 
+    def proyecto_leer(self) -> dict:
+        """Devuelve todos los campos editables del proyecto actual."""
+        from backend.database.repos import ProyectoRepo
+        reg = ProyectoRepo(self._conn).buscar(self._pid)
+        return dict(reg) if reg else {}
+
+    def proyecto_guardar(self, campos: dict) -> None:
+        """Persiste los campos editados del proyecto."""
+        from backend.database.repos import ProyectoRepo
+        ProyectoRepo(self._conn).update(self._pid, campos)
+
     # =========================================================================
     # FACTORES DE SOBRECOSTO
     # =========================================================================
@@ -936,6 +947,64 @@ class Api:
             RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
         self._ds.emitir(ProyectoRecalculado(self._pid))
         return factor
+
+    # =========================================================================
+    # INDIRECTOS
+    # =========================================================================
+
+    def indirectos_lista(self, tipo: str | None = None) -> list[dict]:
+        """Lista indirectos del proyecto, opcionalmente filtrados por tipo."""
+        from backend.database.repos import IndirectoRepo
+        return IndirectoRepo(self._conn).todos(self._pid, tipo)
+
+    def indirectos_guardar(self, registro_id: int, campos: dict) -> None:
+        """Actualiza un indirecto existente."""
+        from backend.database.repos import IndirectoRepo
+        IndirectoRepo(self._conn).update(registro_id, campos)
+
+    def indirectos_insertar(self, campos: dict) -> int:
+        """Inserta un indirecto nuevo. Devuelve el id."""
+        from backend.database.repos import IndirectoRepo
+        return IndirectoRepo(self._conn).insert(campos)
+
+    def indirectos_eliminar(self, registro_id: int) -> None:
+        """Elimina (soft-delete) un indirecto."""
+        from backend.database.repos import IndirectoRepo
+        IndirectoRepo(self._conn).delete(registro_id)
+
+    def indirectos_calcular_totales(self) -> None:
+        """Recalcula el campo 'total' de todos los indirectos del proyecto."""
+        from backend.database.repos import IndirectoRepo
+        IndirectoRepo(self._conn).calcular_totales(self._pid)
+
+    def indirectos_cargar_plantilla(self, tipo: str) -> int:
+        """Carga items de plantilla que no existan ya. Devuelve cuántos insertó."""
+        from backend.database.repos import IndirectoRepo, PLANTILLA_CAMPO, PLANTILLA_OFICINA
+        plantilla = PLANTILLA_CAMPO if tipo == "campo" else PLANTILLA_OFICINA
+        existentes = {
+            (i["concepto"], i["categoria"])
+            for i in IndirectoRepo(self._conn).todos(self._pid, tipo)
+        }
+        repo = IndirectoRepo(self._conn)
+        orden = 0
+        insertados = 0
+        for cat, concepto, periodo, importe in plantilla:
+            orden += 1
+            if (concepto, cat) not in existentes:
+                repo.insert({
+                    "proyecto_id": self._pid,
+                    "tipo": tipo,
+                    "categoria": cat,
+                    "orden": orden,
+                    "concepto": concepto,
+                    "periodo_dias": periodo,
+                    "importe": importe,
+                    "pct_participacion": 100.0,
+                    "total": 0.0,
+                    "activo": 1,
+                })
+                insertados += 1
+        return insertados
 
     # =========================================================================
     # SRV-10: DESHACER / REHACER
@@ -1051,3 +1120,54 @@ class Api:
         if migrados:
             self._ds.emitir(ProyectoRecalculado(self._pid))
         return migrados
+
+    # =========================================================================
+    # GENERADORES DE OBRA
+    # =========================================================================
+
+    def generadores(self) -> list[dict]:
+        """Lista generadores del proyecto."""
+        from backend.database.repos.generador import GeneradorRepo
+        return GeneradorRepo(self._conn).listar_por_proyecto(self._pid)
+
+    def generadores_por_concepto(self, concepto_id: int | None) -> list[dict]:
+        """Generadores vinculados a un concepto, o sueltos si concepto_id es None."""
+        from backend.database.repos.generador import GeneradorRepo
+        return GeneradorRepo(self._conn).listar_por_concepto(self._pid, concepto_id)
+
+    def generador_por_id(self, generador_id: int) -> dict | None:
+        from backend.database.repos.generador import GeneradorRepo
+        return GeneradorRepo(self._conn).buscar(generador_id)
+
+    def generador_crear(self, nombre: str = "", concepto_id: int | None = None,
+                        unidad: str | None = None) -> int:
+        """Crea un generador vacío. Devuelve su id."""
+        from backend.database.repos.generador import GeneradorRepo
+        campos = {
+            "proyecto_id": self._pid,
+            "nombre": nombre,
+            "concepto_id": concepto_id,
+        }
+        if unidad:
+            campos["unidad"] = unidad
+        return self._ds.insertar("generadores", **campos)
+
+    def generador_actualizar(self, generador_id: int, **campos) -> None:
+        self._ds.actualizar("generadores", generador_id, **campos)
+
+    def generador_eliminar(self, generador_id: int) -> None:
+        self._ds.eliminar("generadores", generador_id)
+
+    def generador_renglones(self, generador_id: int) -> list[dict]:
+        from backend.database.repos.generador import GeneradorRepo
+        return GeneradorRepo(self._conn).listar_renglones(generador_id)
+
+    def generador_renglon_guardar(self, generador_id: int,
+                                  renglon_id: int | None = None,
+                                  **campos) -> int:
+        return self._ds.guardar_renglon_generador(
+            generador_id, renglon_id=renglon_id, **campos
+        )
+
+    def generador_renglon_eliminar(self, renglon_id: int) -> None:
+        self._ds.eliminar_renglon_generador(renglon_id)

@@ -42,6 +42,19 @@ class PanelesMixin:
 
     # ── Sidebar ──────────────────────────────────────────────────────────
 
+    # ── Panel izquierdo (contextual) ──────────────────────────────────────
+
+    def _build_left_panel(self):
+        """Envuelve el sidebar normal y paneles contextuales (p.ej. el de
+        generadores) en un QStackedWidget, para poder cambiar qué se
+        muestra en la columna izquierda según la pestaña activa.
+        """
+        from PySide6.QtWidgets import QStackedWidget
+        self._left_stack = QStackedWidget()
+        self._left_stack.addWidget(self._build_sidebar())          # índice 0: normal
+        self._left_stack.addWidget(self._build_generadores_lateral())  # índice 1
+        return self._left_stack
+
     def _build_sidebar(self):
         """Construye el explorador lateral."""
         tree = QTreeWidget()
@@ -57,11 +70,6 @@ class PanelesMixin:
                 "📋 Presupuesto programable", "🔍 Buscar partidas",
                 "📦 Explosión de insumos", "📦 Explosión de matrices",
                 "🚚 Programa de suministros",
-            ]),
-            ("📁 Sobrecostos", [
-                "💰 Cálculo de indirectos",
-                "👷 Personal en indirectos",
-                "📊 Cálculo de sobrecostos",
             ]),
             ("📁 Insumos", [title for title, _ in INSUMOS_ITEMS]),
             ("📁 Ejecución", [
@@ -106,7 +114,7 @@ class PanelesMixin:
         QShortcut(QKeySequence("Alt+Left"),  self).activated.connect(self._on_izquierda)
         QShortcut(QKeySequence("Alt+Right"), self).activated.connect(self._on_derecha)
         QShortcut(QKeySequence("Delete"),    self).activated.connect(self._on_eliminar)
-        QShortcut(QKeySequence("Insert"),        self).activated.connect(self._on_agregar_concepto)
+        QShortcut(QKeySequence("Insert"),        self).activated.connect(self._on_insert_contextual)
         QShortcut(QKeySequence("Ctrl+Z"),         self).activated.connect(self._on_deshacer)
         QShortcut(QKeySequence("Ctrl+Y"),         self).activated.connect(self._on_rehacer)
         QShortcut(QKeySequence("Ctrl+Shift+Z"),   self).activated.connect(self._on_rehacer)
@@ -194,8 +202,8 @@ class PanelesMixin:
         tabla = TablaInsumos()
         tabla._insumos_tipo = tipo_map.get(title)
         tabla._insumos_matrices = (title == "🧮 Matrices")
-        tabla._HEADER_KEY = "insumos_header_state_" + (tabla._insumos_tipo or "todos")
-        tabla._restore_header_state()  # re-restaurar con la clave correcta por tipo
+        tabla._HEADER_KEY = "insumos_header_state"
+        tabla._restore_header_state()
         ids = set()
         if self._api:
             tipo = tabla._insumos_tipo
@@ -207,6 +215,7 @@ class PanelesMixin:
             tabla.poblar(insumos, ids)
         tabla.rastrear_insumo.connect(self._on_rastrear_insumo)
         tabla.desglozar_insumo.connect(self._abrir_apu_insumo)
+        tabla.nuevo_insumo.connect(self._on_nuevo_insumo_panel)
         tabla.itemChanged.connect(self._on_insumo_editado)
         if self._event_bus and self._api:
             tabla.conectar_eventos(self._event_bus, self._api)
@@ -234,6 +243,32 @@ class PanelesMixin:
         tabla.itemDoubleClicked.connect(_on_insumo_dblclick)
         return tabla
 
+    def _on_nuevo_insumo_panel(self):
+        """Abre formulario de nuevo insumo desde la pestaña de insumos."""
+        from frontend.ventana.widgets.dialogs import InsumoDialog
+        from frontend.ventana.tipos_insumo import CLAVE as _CLAVE
+        if not self._api:
+            return
+        idx = self._tabs.currentIndex()
+        title = self._tabs.tabText(idx) if idx >= 0 else ""
+        tipo_map = {title: key for title, key in INSUMOS_ITEMS}
+        tipo_clave = tipo_map.get(title)
+        default_tipo = None
+        if tipo_clave:
+            default_tipo = next((tid for tid, c in _CLAVE.items() if c == tipo_clave), None)
+        dlg = InsumoDialog(self._api, parent=self, default_tipo=default_tipo)
+        if dlg.exec() == 1:  # Accepted
+            self._on_tab_changed(idx)
+
+    def _on_insert_contextual(self):
+        """Insert: en pestaña de insumos crea insumo; en presupuesto agrega concepto."""
+        idx = self._tabs.currentIndex()
+        title = self._tabs.tabText(idx) if idx >= 0 else ""
+        if title in INSUMOS_TITLES:
+            self._on_nuevo_insumo_panel()
+        else:
+            self._on_agregar_concepto()
+
     def _on_insumo_editado(self, item, column):
         """Persiste edición inline de insumos.
 
@@ -255,9 +290,10 @@ class PanelesMixin:
             except ValueError as e:
                 QMessageBox.warning(self, "Descripción duplicada", str(e))
                 actual = self._api.insumo_por_id(insumo_id) or {}
+                prefijo = "\u25b6 " if actual.get("es_compuesto") else ""
                 tabla = item.treeWidget()
                 tabla.blockSignals(True)
-                item.setText(column, actual.get("descripcion", "") or "")
+                item.setText(column, prefijo + (actual.get("descripcion", "") or ""))
                 tabla.blockSignals(False)
         elif column == 2:
             self._api.insumo_actualizar_campo(insumo_id, "unidad", item.text(column))
@@ -268,6 +304,14 @@ class PanelesMixin:
                 self._api.insumo_actualizar_precio(insumo_id, precio)
             except ValueError:
                 return
+        elif column == 4:  # Tipo
+            tipo_id = item.data(column, Qt.ItemDataRole.UserRole)
+            if tipo_id is not None:
+                self._api.insumo_actualizar_campo(insumo_id, "tipo_id", tipo_id)
+        elif column == 5:  # Familia
+            familia_id = item.data(column, Qt.ItemDataRole.UserRole)
+            self._api.insumo_actualizar_campo(insumo_id, "familia_id", familia_id)
+            self._api.insumo_actualizar_campo(insumo_id, "subfamilia_id", None)
 
     # ── Buscador de partidas ─────────────────────────────────────────────
 
