@@ -50,7 +50,7 @@ class ProjectDialog(QDialog):
         # ── Búsqueda ──────────────────────────────────────────────
         search = QLineEdit()
         search.setObjectName("dlgSearch")
-        search.setPlaceholderText("\U0001f50d  Buscar proyecto\u2026")
+        search.setPlaceholderText("🔍  Buscar proyecto…")
         search.setClearButtonEnabled(True)
         sc = QWidget()
         sl = QHBoxLayout(sc)
@@ -76,9 +76,11 @@ class ProjectDialog(QDialog):
             wl.setContentsMargins(12, 6, 16, 6)
             wl.setSpacing(12)
 
-            icon = QLabel("\U0001f4c1")
-            icon.setObjectName("dlgIcon")
-            wl.addWidget(icon)
+            from frontend.ventana.iconos import icono as _icono
+            icon_lbl = QLabel()
+            icon_lbl.setPixmap(_icono("folder-open", 32, "#7FAFD6").pixmap(32, 32))
+            icon_lbl.setObjectName("dlgIcon")
+            wl.addWidget(icon_lbl)
 
             info = QVBoxLayout()
             info.setSpacing(0)
