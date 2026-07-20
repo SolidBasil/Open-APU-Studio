@@ -527,4 +527,43 @@ evento. Esto mantiene el flujo evidente y depurable.
 
 ---
 
+## TOOLBAR
+
+### TB-01 — Botones placeholder (beta) en la toolbar
+**Estado:** ✓ Documentado
+
+**Contexto:**
+La toolbar ribbon tiene 15 botones marcados como `(beta)` con estilo atenuado
+que no tienen handler conectado. Se documenta cuáles se van a implementar,
+cuándo, y por qué se mantienen visibles.
+
+**Botones y su estado:**
+
+| Botón | Ribbon | Estado | Plan |
+|-------|--------|--------|------|
+| **Exportar** | PROYECTO > Transferir | Pendiente | Se activará cuando se restaure `backend/exportar/` (roto tras cambios de schema) |
+| **Usuarios** | INICIO > Sistema | Planeado | Multi-usuario está en roadmap (ver COL-01, COL-02) |
+| **APU** | INFORMES > Generar | Futuro | Generar PDF de matrices APU (similar a ReportePresupuesto) |
+| **Explosión** | INFORMES > Generar | Futuro | Generar PDF/Excel de explosión de insumos |
+| **Catálogo** | INFORMES > Generar | Futuro | Generar PDF del catálogo de insumos por tipo |
+| **Tema LaTeX** | INFORMES > Plantilla | Futuro | Seleccionar template LaTeX desde `latex/templates/` |
+| **Formato columnas** | VISTA > Presentación | Planeado | Dialog de formato por columna: alineación, márgenes (izq/der/arriba/abajo), padding |
+| **Filtro** | VISTA > Ver | Cableado | Toggle visibilidad de la barra de búsqueda (`_on_filtro_toolbar`) |
+| **Cortar** | PRINCIPAL > Portapapeles | Cableado | `widget._cut()` sobre tabla activa |
+| **Pegar** | PRINCIPAL > Portapapeles | Cableado | `widget._paste()` sobre tabla activa |
+| **En catálogos** | PRINCIPAL > Buscar | Futuro | Activar búsqueda con scope en columnas de catálogo |
+| **En vista** | PRINCIPAL > Buscar | Futuro | Activar búsqueda con scope en columnas visibles |
+| **Rastrear uso** | PRINCIPAL > Rastreo | Cableado | Abre pestaña de rastreo del insumo seleccionado |
+
+**Decisión:**
+Los botones se mantienen visibles con estilo `(beta)` para que el usuario sepa
+que van a existir. No se eliminan porque tienen funcionalidad planeada.
+
+**Consecuencias:**
+- Los botones `(beta)` no hacen nada al hacer clic (solo muestran tooltip)
+- Se cablean a medida que la funcionalidad subyacente está lista
+- El grupo Filtrar se eliminó de PRINCIPAL (3 botones sin backend)
+
+---
+
 *Última actualización: Julio 2026*

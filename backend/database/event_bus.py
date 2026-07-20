@@ -87,6 +87,15 @@ class ProyectoAbierto(Evento):
 
 
 @dataclass
+class GeneradorActualizado(Evento):
+    """Se emite cuando un generador o sus renglones cambian.
+    carries generador_id + conceptos_ids afectados para que el
+    frontend refresque tanto el panel de generadores como el árbol."""
+    generador_id: int
+    conceptos_ids: list[int]
+
+
+@dataclass
 class ProyectoCerrado(Evento):
     """Se emite justo antes de desmontar los servicios (EventBus,
     DataService, Api) del proyecto que se está cerrando. Ver
@@ -155,7 +164,3 @@ class EventBus:
                     traceback.print_exc()
             except Exception:
                 traceback.print_exc()
-
-    def suscriptores_count(self, tipo_evento: type[Evento]) -> int:
-        """Número de suscriptores para un tipo de evento (útil para debugging)."""
-        return len(self._suscriptores.get(tipo_evento, []))

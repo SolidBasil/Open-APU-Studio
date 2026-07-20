@@ -97,7 +97,7 @@ class NodoRepo(RepoBase):
             {
                 "id":               int,
                 "padre_id":         int | None,
-                "wbs":              str,        # "1", "11", "111", "11101"
+                "wbs":              str,        # "1", "1.1", "1.1.3"
                 "nivel":            int,        # 0=raíz, 1=capítulo...
                 "tipo":             str,        # "capitulo" | "concepto"
                 "insumo_id":        int | None, # solo conceptos
@@ -184,11 +184,8 @@ class NodoRepo(RepoBase):
         incrementalmente), nunca pueden desincronizarse de la jerarquía
         real, sin importar cuántas veces se mueva algo.
 
-        wbs se genera como sufijos de 2 dígitos concatenados por nivel
-        (ej. capítulo "11", concepto "1103"), igual que el formato que ya
-        usaba el importador — así no se rompe la exportación OPUS (PRE_WBS)
-        ni la numeración de partidas en los reportes LaTeX, que siguen
-        leyendo wbs/nivel tal cual sin saber que ahora son derivados.
+        wbs se guarda ya en formato final con puntos por nivel (ej.
+        "1", "1.1", "1.1.3") — no hace falta reformatear al mostrarlo.
 
         Debe llamarse tras cualquier cambio estructural: mover un nodo,
         insertar, eliminar (soft-delete), o importar desde OPUS.
@@ -215,7 +212,7 @@ class NodoRepo(RepoBase):
 
         def caminar(padre_id, prefijo: str, nivel: int) -> None:
             for i, f in enumerate(hijos_de.get(padre_id, []), start=1):
-                wbs = f"{prefijo}{i:02d}"
+                wbs = f"{prefijo}.{i}" if prefijo else str(i)
                 cambios.append((wbs, nivel, f["id"]))
                 caminar(f["id"], wbs, nivel + 1)
 

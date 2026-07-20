@@ -185,7 +185,7 @@ def _aplanar_a_arbol(nodos: list[dict]) -> list[dict]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _leer_meta_db(conn, proyecto_id: int) -> dict:
-    """Lee proyecto + configuracion_proyecto y devuelve los campos de encabezado."""
+    """Lee proyecto y devuelve los campos de encabezado para el reporte."""
     cur = conn.cursor()
 
     row = cur.execute(
@@ -195,21 +195,16 @@ def _leer_meta_db(conn, proyecto_id: int) -> dict:
         raise ValueError(f"Proyecto {proyecto_id} no encontrado.")
     proy = dict(row)
 
-    cfg_row = cur.execute(
-        "SELECT * FROM configuracion_proyecto WHERE proyecto_id = ?", [proyecto_id]
-    ).fetchone()
-    cfg = dict(cfg_row) if cfg_row else {}
-
     return {
-        "nombre_prot":    cfg.get("nombre_prototipo") or proy.get("nombre", ""),
+        "nombre_prot":    proy.get("nombre", ""),
         "nombre":         proy.get("nombre", ""),
-        "cliente":        proy.get("cliente", ""),
-        "ubicacion":      proy.get("ubicacion", ""),
-        "version":        cfg.get("version", "1.0") or "1.0",
-        "moneda":         cfg.get("moneda", "MXN"),
-        "iva_pct":        float(cfg.get("iva_pct") or 16.0),
-        "responsable":    cfg.get("responsable") or "",
-        "observaciones":  cfg.get("observaciones") or "",
+        "cliente":        proy.get("cliente_nombre", ""),
+        "ubicacion":      proy.get("obra_domicilio", ""),
+        "version":        proy.get("reporte_version", "1.0") or "1.0",
+        "moneda":         proy.get("moneda_abrev", "MXN"),
+        "iva_pct":        float(proy.get("iva_porcentaje") or 16.0),
+        "responsable":    proy.get("reporte_responsable", ""),
+        "observaciones":  proy.get("reporte_observaciones", ""),
         "total_obra":     proy.get("total_obra"),
     }
 

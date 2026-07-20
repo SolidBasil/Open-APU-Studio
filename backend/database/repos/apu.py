@@ -1,7 +1,9 @@
 """apu.py
-Repositorios de matrices APU y resúmenes de totales.
+Repositorios de matrices APU — subtotales se calculan al vuelo.
 """
 from .base import RepoBase
+from .recalculo import RecalculoRepo, _RESUMEN_DEFAULT
+
 
 class ApuMatricesRepo(RepoBase):
     """Componentes del APU: desglose de insumos por concepto o insumo compuesto.
@@ -68,14 +70,12 @@ class ApuMatricesRepo(RepoBase):
 
     def con_detalle(self, matriz_id: int) -> dict:
         """Devuelve el APU completo de una matriz (concepto o insumo compuesto):
-        componentes con su insumo enriquecido + totales por tipo.
-
-        Migrado desde core.get_apu() (Fase 4, ver ARQUITECTURA_SERVICIOS.md).
+        componentes con su insumo enriquecido + totales por tipo (al vuelo).
 
         Returns:
             {
                 "detalle":  list[dict],   # componentes con insumo completo
-                "totales":  dict | None,  # subtotales por tipo (apu_resumen_totales)
+                "totales":  dict | None,  # subtotales por tipo calculados al vuelo
             }
         """
         detalle = self._lista("""
@@ -104,14 +104,32 @@ class ApuMatricesRepo(RepoBase):
             ORDER BY ad.orden
         """, [matriz_id])
 
-        totales = self._uno("""
-            SELECT * FROM apu_resumen_totales WHERE matriz_id = ?
-        """, [matriz_id])
+        # ponytail: calcular resumen al vuelo en vez de leer de apu_resumen_totales
+        proyecto_id = self._obtener_proyecto_id(matriz_id)
+        if proyecto_id is not None:
+            rc = RecalculoRepo(self._conn)
+            totales = rc.calcular_resumen(proyecto_id, matriz_id)
+        else:
+            totales = _RESUMEN_DEFAULT.copy()
 
         return {"detalle": detalle, "totales": totales}
+
+    def _obtener_proyecto_id(self, matriz_id: int) -> int | None:
+        """Resuelve proyecto_id desde matriz_id (positivo=árbol, negativo=compuesto)."""
+        if matriz_id > 0:
+            row = self._uno(
+                "SELECT proyecto_id FROM estructura_presupuesto WHERE id = ?",
+                [matriz_id],
+            )
+        else:
+            row = self._uno(
+                "SELECT proyecto_id FROM insumos WHERE id = ?",
+                [-matriz_id],
+            )
+        return row["proyecto_id"] if row else None
 
 
 # =============================================================================
 # APU RESUMEN (antes: apu_totales)
 # =============================================================================
-# Clase eliminada — recalculo.py maneja apu_resumen_totales directamente.
+# ponytail: eliminado — los subtotales se calculan al vuelo en memoria

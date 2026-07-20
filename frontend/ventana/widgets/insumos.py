@@ -15,8 +15,15 @@ Uso:
 """
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QHeaderView, QMenu
 from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef
+from frontend.ventana.iconos import icono
+from frontend.ventana.tipos_insumo import NOMBRE as _TIPO_NOMBRE, ICONO_SVG as _TIPO_ICONO_SVG, COLOR as _COLOR_TIPO
+
+# Índice de la columna "Tipo" en COLUMNAS — usado para pintar el icono
+# real (QIcon) del tipo de insumo en cada fila, en vez de un emoji de texto.
+_COL_TIPO = 4
 
 
 # ── Configuración de columnas ─────────────────────────────────────
@@ -75,8 +82,6 @@ COLUMNAS_CATALOGO = [
     ColumnaDef(26, "Modificado Por",    "Auditoría",      favorita_default=False, visible_default=False),
 ]
 
-from frontend.ventana.tipos_insumo import ICONO_NOMBRE as TIPO_NOMBRE
-
 TIPO_TRABAJO_NOMBRE = {
     "subcontrato": "Subcontrato",
     "acarreo":     "Acarreo",
@@ -107,7 +112,6 @@ class TablaInsumos(TreeTableWidget):
     nuevo_insumo = Signal()
 
     def __init__(self, parent=None):
-        from frontend.ventana.tipos_insumo import ICONO as _TIPO_ICONO
 
         def _combo_unidad(parent):
             from PySide6.QtWidgets import QComboBox
@@ -123,9 +127,8 @@ class TablaInsumos(TreeTableWidget):
             combo = QComboBox(parent)
             combo.setEditable(False)
             for tid in (32, 1, 2, 4, 8, 16, 64, 128):
-                icono = _TIPO_ICONO.get(tid, "")
                 nombre = _NOMBRE.get(tid, f"Tipo {tid}")
-                combo.addItem(f"{icono} {nombre}", tid)
+                combo.addItem(nombre, tid)
             return combo
 
         def _combo_familia(parent):
@@ -167,17 +170,18 @@ class TablaInsumos(TreeTableWidget):
     def _context_menu_actions(self, menu):
         from frontend.ventana.widgets.base import _menu_icon
         items = self.selectedItems()
-        act_nuevo = menu.addAction(_menu_icon("➕"), "Nuevo insumo")
+        act_nuevo = menu.addAction(_menu_icon("plus"), "Nuevo insumo")
         act_nuevo.triggered.connect(self._emit_nuevo)
         if len(items) == 1:
             item = items[0]
             insumo_id = item.data(0, Qt.ItemDataRole.UserRole)
-            act_rastrear = menu.addAction(_menu_icon("🔍"), "Rastrear uso")
+            act_rastrear = menu.addAction(_menu_icon("search"), "Rastrear uso")
             act_rastrear.setEnabled(bool(insumo_id))
             act_rastrear.triggered.connect(lambda: self._emit_rastrear(item))
             desc = item.text(1) or ""
-            if desc.startswith("▶"):
-                act = menu.addAction(_menu_icon("🔗"), "Desglozar")
+            es_compuesto = item.data(0, Qt.ItemDataRole.UserRole + 1)
+            if es_compuesto:
+                act = menu.addAction(_menu_icon("link"), "Desglozar")
                 act.triggered.connect(lambda: self._emit_desglozar(insumo_id))
 
     def _emit_rastrear(self, item):
@@ -199,11 +203,9 @@ class TablaInsumos(TreeTableWidget):
         ambos caminos formateen exactamente igual."""
         clave_opus = ins.get("clave_opus") or ""
         tipo_id    = ins.get("tipo_id") or ins.get("tipo", 0)
-        tipo_txt   = TIPO_NOMBRE.get(tipo_id) or ins.get("tipo_nombre") or f"Tipo {tipo_id}"
+        tipo_txt   = _TIPO_NOMBRE.get(tipo_id) or ins.get("tipo_nombre") or f"Tipo {tipo_id}"
         precio     = ins.get("costo_directo", 0) or 0
         desc       = ins.get("descripcion") or ins.get("descripcion_corta") or ""
-        if tiene_sub_apu:
-            desc = f"\u25b6 {desc}"
         tipo_trabajo = ins.get("tipo_trabajo") or ""
         return [
             clave_opus,
@@ -235,8 +237,16 @@ class TablaInsumos(TreeTableWidget):
             ins.get("modificado_por_nombre") or "",
         ]
 
+    @staticmethod
+    def _set_tipo_icon(item, ins: dict):
+        """Pinta el icono SVG real (Lucide) de la columna Tipo — reemplaza
+        el viejo prefijo de emoji embebido en el texto."""
+        tipo_id = ins.get("tipo_id") or ins.get("tipo", 0)
+        svg_name = _TIPO_ICONO_SVG.get(tipo_id, "file-text")
+        item.setIcon(_COL_TIPO, icono(svg_name, 16, _COLOR_TIPO.get(tipo_id)))
+
     def poblar(self, insumos: list[dict], ids_con_apu: set[int] | None = None):
-        """Puebla la tabla. ids_con_apu antepone ▶ a insumos compuestos."""
+        """Puebla la tabla. Marca con icono de capas los insumos compuestos."""
         self.clear()
         for ins in insumos:
             insumo_id = ins.get("id")
@@ -244,6 +254,10 @@ class TablaInsumos(TreeTableWidget):
             row_item = self.add_row(self._valores_fila(ins, tiene_sub_apu), editable=True)
             if row_item is not None:
                 row_item.setData(0, Qt.ItemDataRole.UserRole, insumo_id)
+                row_item.setData(0, Qt.ItemDataRole.UserRole + 1, tiene_sub_apu)
+                self._set_tipo_icon(row_item, ins)
+                if tiene_sub_apu:
+                    row_item.setIcon(1, icono("combine", 16))
 
     # ── Fase 3: suscripción a eventos semánticos ───────────────────
     #
@@ -317,6 +331,8 @@ class TablaInsumos(TreeTableWidget):
                 try:
                     for c, val in enumerate(self._valores_fila(registro, tiene_sub_apu)):
                         item.setText(c, val)
+                    self._set_tipo_icon(item, registro)
+                    item.setIcon(1, icono("combine", 16) if tiene_sub_apu else QIcon())
                 finally:
                     self.blockSignals(False)
             elif self._coincide_filtro(registro):
@@ -324,6 +340,10 @@ class TablaInsumos(TreeTableWidget):
                 row_item = self.add_row(self._valores_fila(registro, tiene_sub_apu), editable=True)
                 if row_item is not None:
                     row_item.setData(0, Qt.ItemDataRole.UserRole, evento.insumo_id)
+                    row_item.setData(0, Qt.ItemDataRole.UserRole + 1, tiene_sub_apu)
+                    self._set_tipo_icon(row_item, registro)
+                    if tiene_sub_apu:
+                        row_item.setIcon(1, icono("combine", 16))
         except Exception as e:
             print(f"[eventbus] _on_insumo_actualizado: {type(e).__name__}: {e}")
 
@@ -340,6 +360,7 @@ class TablaInsumos(TreeTableWidget):
             row_item = self.add_row(self._valores_fila(insumo, tiene_sub_apu=tiene_sub_apu), editable=True)
             if row_item is not None:
                 row_item.setData(0, Qt.ItemDataRole.UserRole, evento.nodo_id)
+                self._set_tipo_icon(row_item, insumo)
         except Exception as e:
             print(f"[eventbus] _on_nodo_insertado: {type(e).__name__}: {e}")
 

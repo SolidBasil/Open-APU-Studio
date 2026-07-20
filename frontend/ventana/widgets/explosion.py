@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from frontend.ventana.widgets.base import TreeTableWidget
+from frontend.ventana.iconos import icono
 
 
 # =============================================================================
@@ -28,24 +29,13 @@ from frontend.ventana.widgets.base import TreeTableWidget
 # =============================================================================
 
 from frontend.ventana.tipos_insumo import (
-    ICONO as TIPO_ICONO,
-    DESC as TIPO_DESC,
+    ICONO_SVG as TIPO_ICONO_SVG,
     TIPOS_INSUMO,
+    COLOR as COLOR_GRUPO,
 )
 
 COLUMNAS_EXP = ["Tipo", "Clave", "Descripción", "Unidad", "Cantidad", "P.U.", "Total", "%"]
 EDITABLE_EXP = frozenset()
-
-COLOR_GRUPO = {
-    1:   "#5A9FD4",
-    2:   "#4A9A72",
-    4:   "#C4956B",
-    8:   "#8B6FB5",
-    16:  "#4E9298",
-    32:  "#9A5A5A",
-    64:  "#BF9B30",
-    128: "#5A9A7A",
-}
 
 NIVEL_BASICO       = "basico"
 NIVEL_COMPUESTO    = "compuesto"
@@ -53,9 +43,9 @@ NIVEL_PRIMER_NIVEL = "primer_nivel"
 
 # Descripciones para las tarjetas de método de cálculo
 NIVEL_INFO = {
-    NIVEL_BASICO:       ("▤",  "Insumos básicos",              "Materiales y artículos fundamentales del proyecto."),
-    NIVEL_COMPUESTO:    ("⚭",  "Insumos compuestos",            "Ítems ensamblados o fabricados con múltiples componentes."),
-    NIVEL_PRIMER_NIVEL: ("⎇",  "Primer nivel de composición",   "Desglose hasta el primer nivel de estructura del producto."),
+    NIVEL_BASICO:       ("square",             "Insumos básicos",              "Materiales y artículos fundamentales del proyecto."),
+    NIVEL_COMPUESTO:    ("layers",             "Insumos compuestos",           "Ítems ensamblados o fabricados con múltiples componentes."),
+    NIVEL_PRIMER_NIVEL: ("corner-down-right",  "Primer nivel de composición",  "Desglose hasta el primer nivel de estructura del producto."),
 }
 
 
@@ -70,7 +60,7 @@ class _TarjetaRadio(QFrame):
     evitar problemas de propagación de eventos con subwidgets.
     """
 
-    def __init__(self, icono: str, nombre: str, descripcion: str, valor: str,
+    def __init__(self, svg_icon: str, nombre: str, descripcion: str, valor: str,
                  on_click, parent=None):
         """Inicializa tarjeta: icono + nombre + descripción, callback on_click(valor) al hacer clic."""
         super().__init__(parent)
@@ -87,7 +77,8 @@ class _TarjetaRadio(QFrame):
 
         hdr = QHBoxLayout()
         hdr.setSpacing(8)
-        self._lbl_icono = QLabel(icono)
+        self._lbl_icono = QLabel()
+        self._lbl_icono.setPixmap(icono(svg_icon, 18).pixmap(18, 18))
         hdr.addWidget(self._lbl_icono)
         self._lbl_nombre = QLabel(nombre)
         f = QFont()
@@ -166,7 +157,7 @@ class _TarjetaRadio(QFrame):
 class _TarjetaCheck(QWidget):
     """Fila simple: QCheckBox + icono + nombre, sin bordes extra."""
 
-    def __init__(self, icono: str, nombre: str, tipo_id: int, parent=None):
+    def __init__(self, svg_icon: str, nombre: str, tipo_id: int, parent=None):
         """Fila con QCheckBox + icono + nombre para filtrar por tipo de insumo."""
         super().__init__(parent)
         self._tipo_id = tipo_id
@@ -175,7 +166,9 @@ class _TarjetaCheck(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(4)
 
-        self._cb = QCheckBox(f" {icono}  {nombre}" if icono else nombre)
+        self._cb = QCheckBox(f" {nombre}")
+        if svg_icon:
+            self._cb.setIcon(icono(svg_icon, 16))
         self._cb.setChecked(True)
         root.addWidget(self._cb)
 
@@ -295,8 +288,8 @@ class DialogoExplosion(QDialog):
         col.addWidget(_label_seccion("Método de cálculo"))
 
         self._tarjetas_nivel: list[_TarjetaRadio] = []
-        for valor, (icono, nombre, desc) in NIVEL_INFO.items():
-            t = _TarjetaRadio(icono, nombre, desc, valor, self._on_nivel_click)
+        for valor, (svg_icon, nombre, desc) in NIVEL_INFO.items():
+            t = _TarjetaRadio(svg_icon, nombre, desc, valor, self._on_nivel_click)
             self._tarjetas_nivel.append(t)
             col.addWidget(t)
 
@@ -331,8 +324,8 @@ class DialogoExplosion(QDialog):
         grid.setSpacing(6)
         self._tarjetas_tipo: list[_TarjetaCheck] = []
         for idx, (tipo_id, nombre, _) in enumerate(TIPOS_INSUMO):
-            icono = TIPO_ICONO.get(tipo_id, "")
-            t = _TarjetaCheck(icono, nombre, tipo_id, self)
+            svg_icon = TIPO_ICONO_SVG.get(tipo_id, "file-text")
+            t = _TarjetaCheck(svg_icon, nombre, tipo_id, self)
             self._tarjetas_tipo.append(t)
             grid.addWidget(t, idx // 2, idx % 2)
         grid.setColumnStretch(0, 1)
@@ -445,7 +438,7 @@ class TablaExplosion(TreeTableWidget):
         es_primero = True
         for tid in orden_tipos:
             grupo = grupos[tid]
-            icono       = TIPO_ICONO.get(tid, "")
+            svg_icon    = TIPO_ICONO_SVG.get(tid, "file-text")
             tipo_nombre = grupo[0].get("tipo_nombre", "")
             subtotal    = sum(f.get("total") or 0 for f in grupo)
             pct_subtotal = (subtotal / total_global * 100) if total_global else 0
@@ -477,7 +470,7 @@ class TablaExplosion(TreeTableWidget):
                     pu_txt = "—" if pu is None else f"${pu:,.2f}"
 
                 item = self.add_row([
-                    f"{icono} {tipo_nombre}",
+                    tipo_nombre,
                     f.get("clave", ""),
                     f.get("descripcion", ""),
                     f.get("unidad", "") or "",
@@ -486,6 +479,7 @@ class TablaExplosion(TreeTableWidget):
                     f"${total:,.2f}",
                     f"{pct:.2f}%",
                 ], editable=False)
+                item.setIcon(0, icono(svg_icon, 16, COLOR_GRUPO.get(tid)))
                 item.setData(0, Qt.ItemDataRole.UserRole, f.get("insumo_id"))
 
             # Subtotal del tipo
@@ -586,19 +580,19 @@ class PestañaExplosion(QWidget):
             return
         self._tabla.setCurrentItem(item)
         menu = QMenu(self)
-        copy_act = menu.addAction(_menu_icon("📋"), "Copiar")
+        copy_act = menu.addAction(_menu_icon("clipboard"), "Copiar")
         copy_act.setShortcut(QKeySequence.StandardKey.Copy)
         copy_act.triggered.connect(self._tabla._copy)
-        cut_act = menu.addAction(_menu_icon("✂"), "Cortar")
+        cut_act = menu.addAction(_menu_icon("scissors"), "Cortar")
         cut_act.setShortcut(QKeySequence.StandardKey.Cut)
         cut_act.triggered.connect(self._tabla._cut)
-        paste_act = menu.addAction(_menu_icon("📋"), "Pegar")
+        paste_act = menu.addAction(_menu_icon("file-text"), "Pegar")
         paste_act.setShortcut(QKeySequence.StandardKey.Paste)
         paste_act.triggered.connect(self._tabla._paste)
         menu.addSeparator()
         insumo_id = item.data(0, Qt.ItemDataRole.UserRole)
         if insumo_id:
-            act = menu.addAction(_menu_icon("🔍"), "Rastrear uso")
+            act = menu.addAction(_menu_icon("search"), "Rastrear uso")
             act.triggered.connect(lambda: on_rastrear(insumo_id))
         menu.exec(self._tabla.mapToGlobal(pos))
 

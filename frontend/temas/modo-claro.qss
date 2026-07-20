@@ -138,6 +138,9 @@ QTreeView::item {
 QTreeView::item:hover {
     background: #EBE7DF;
 }
+QTableWidget::item:hover {
+    background: #EBE7DF;
+}
 QTreeView::item:selected {
     background: #D0DCE8;
 }
@@ -152,6 +155,12 @@ QTreeView::branch:hover {
 }
 QTreeView::branch:selected {
     background: #D0DCE8;
+}
+QTableWidget::item:selected {
+    background: #D0DCE8;
+}
+QTableWidget::item:selected:focus {
+    background: #A8C4E0;
 }
 QHeaderView::section {
     background-color: #CDD5DC;

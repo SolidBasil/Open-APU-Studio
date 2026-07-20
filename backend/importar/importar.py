@@ -483,19 +483,8 @@ def importar(
     # Recalcular total de conceptos usando precio real del insumo (costo_final)
     # PRE_PRE del DBF puede ser un valor desactualizado; el precio vigente vive
     # en insumos.costo_final y ahora está accesible vía el insumo_id vinculado.
-    cur.execute("""
-        UPDATE estructura_presupuesto
-        SET total = (
-            SELECT COALESCE(estructura_presupuesto.cantidad, 0) * COALESCE(i.costo_final, 0)
-            FROM insumos i
-            WHERE i.id = estructura_presupuesto.insumo_id
-        ),
-        modificado_en = datetime('now')
-        WHERE proyecto_id = ?
-          AND tipo = 'concepto'
-          AND activo = 1
-          AND insumo_id IS NOT NULL
-    """, (proyecto_id,))
+    from backend.database.repos import RecalculoRepo
+    RecalculoRepo(con).recalcular_totales_conceptos(proyecto_id)
     con.commit()
     print(f"  → totales de conceptos recalculados con precio real del insumo")
 
@@ -751,28 +740,11 @@ def _arbol_clasico(con, cur, proyecto_id, regs_f, regs_p) -> dict:
 # =============================================================================
 # SUBTOTALES BOTTOM-UP
 # =============================================================================
-
 # ── recalcular totales de capítulos desde hojas hacia raíz ──
 def _recalcular_totales(con, proyecto_id: int):
     """Recalcula totales de capítulos bottom-up desde el nivel más profundo hacia la raíz."""
-    cur = con.cursor()
-    cur.execute("""
-        SELECT MAX(nivel) FROM estructura_presupuesto WHERE proyecto_id = ? AND activo = 1
-    """, (proyecto_id,))
-    max_nivel = cur.fetchone()[0] or 0
-
-    for nivel in range(max_nivel, -1, -1):
-        cur.execute("""
-            UPDATE estructura_presupuesto SET
-                total = (
-                    SELECT COALESCE(SUM(COALESCE(total, 0)), 0)
-                    FROM estructura_presupuesto h
-                    WHERE h.padre_id = estructura_presupuesto.id AND h.activo = 1
-                ),
-                modificado_en = datetime('now')
-            WHERE proyecto_id = ? AND nivel = ?
-              AND tipo = 'capitulo' AND activo = 1
-        """, (proyecto_id, nivel))
+    from backend.database.repos import RecalculoRepo
+    RecalculoRepo(con).recalcular_totales_capitulos(proyecto_id)
     con.commit()
 
 

@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from backend.database.services.data_service import DataService
 
 # ponytail: constante global — evita recrear el dict en cada llamada a apu()
-from frontend.ventana.tipos_insumo import ICONO as _EMOJI
+from frontend.ventana.tipos_insumo import ICONO_SVG as _TIPO_ICONO_SVG
 
 
 # =============================================================================
@@ -80,6 +80,19 @@ class Api:
         if servidor_url:
             from frontend.ventana.api_cliente import ApiCliente
             self._cliente = ApiCliente(servidor_url, self._nombre_proyecto)
+
+        # Backends (migración en progreso, ver api_backends.py): por ahora
+        # solo la sección FACTORES DE SOBRECOSTO delega aquí; el resto de
+        # Api sigue con el patrón "if self._use_http" método por método.
+        from frontend.ventana.api_backends import _BackendLocal, _BackendHTTP
+        self._backend_local = _BackendLocal(self)
+        self._backend_http  = _BackendHTTP(self)
+
+    @property
+    def _backend(self):
+        """Backend activo. Es una property (no un valor fijo) porque
+        _use_http puede promoverse a True a medio uso — ver _http()."""
+        return self._backend_http if self._use_http else self._backend_local
 
     def proyecto_actual_id(self) -> int:
         """Devuelve el ID del proyecto activo."""
@@ -157,11 +170,10 @@ class Api:
             self._http().recalcular()
             self._ds.emitir(ProyectoRecalculado(self._pid))
             return
-        from backend.database.repos import NodoRepo, RecalculoRepo
+        from backend.database.repos import RecalculoRepo
         with self._ds.transaccion():
             self._ds.actualizar("estructura_presupuesto", concepto_id,
                                  insumo_id=nuevo_insumo_id)
-            NodoRepo(self._conn).recalcular_desde(concepto_id)
             RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
         self._ds.emitir(ProyectoRecalculado(self._pid))
 
@@ -263,10 +275,9 @@ class Api:
             self._http().recalcular()
             self._ds.emitir(ProyectoRecalculado(self._pid))
             return
-        from backend.database.repos import NodoRepo, RecalculoRepo
+        from backend.database.repos import RecalculoRepo
         with self._ds.transaccion():
             self._ds.eliminar("estructura_presupuesto", nodo_id)
-            NodoRepo(self._conn).recalcular_desde(nodo_id)
             RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
         self._ds.emitir(ProyectoRecalculado(self._pid))
 
@@ -373,7 +384,7 @@ class Api:
 
         Cada fila de detalle incluye:
             id (pk de apu_matrices, usado como comp_id para editar
-            operador/valor), tipo_emoji, tipo_nombre, tipo_id, insumo_id,
+            operador/valor), tipo_icono, tipo_nombre, tipo_id, insumo_id,
             descripcion, insumo_unidad, cantidad (desde valor/operador),
             precio, importe, es_compuesto, tiene_sub_apu, formula,
             creado_en, modificado_en
@@ -400,11 +411,11 @@ class Api:
             op = r.get("operador", "*")
             detalle.append({
                 "id":           r.get("id"),
-                "tipo_emoji":   _EMOJI.get(tid, ""),
+                "tipo_icono":   _TIPO_ICONO_SVG.get(tid, "file-text"),
                 "tipo_nombre":  r.get("tipo_nombre", ""),
                 "tipo_id":      tid,
                 "insumo_id":    r.get("insumo_id"),
-                "descripcion":  f"▶ {desc}" if tiene_sub else desc,
+                "descripcion":  desc,
                 "insumo_unidad": r.get("insumo_unidad", ""),
                 "valor":        v,
                 "operador":     op,
@@ -511,11 +522,7 @@ class Api:
         """Catálogo de insumos, opcionalmente filtrado por tipo (ej. 'material', 'mano_obra').
         Cada dict incluye todos los campos de InsumoRepo más familia y subfamilia.
         """
-        if self._use_http:
-            return self._http().insumos(tipo=tipo_clave)
-        from backend.database.repos import InsumoRepo
-        repo = InsumoRepo(self._conn)
-        return repo.por_tipo(self._pid, tipo_clave) if tipo_clave else repo.todos(self._pid)
+        return self._backend.insumos(tipo_clave)
 
     def insumos_con_matrices(self, tipo_clave: str | None = None) -> list[dict]:
         """Como insumos() pero filtra solo los que aparecen en al menos un APU."""
@@ -527,17 +534,7 @@ class Api:
         costo de insumos compuestos → totales de conceptos → totales de
         capítulos. Útil tras editar precios o cantidades a mano.
         """
-        if self._use_http:
-            self._http().recalcular()
-            from backend.database.event_bus import ProyectoRecalculado
-            self._ds.emitir(ProyectoRecalculado(self._pid))
-            return {}
-        from backend.database.repos import RecalculoRepo
-        from backend.database.event_bus import ProyectoRecalculado
-        with self._ds.transaccion():
-            resultado = RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
-        self._ds.emitir(ProyectoRecalculado(self._pid))
-        return resultado
+        return self._backend.recalcular_proyecto()
 
     def rastrear_insumo(self, insumo_id: int) -> list[dict]:
         """Devuelve las matrices (conceptos o compuestos) donde aparece un insumo.
@@ -546,10 +543,7 @@ class Api:
             tipo_origen ('concepto' | 'compuesto'), matriz_clave, matriz_descripcion,
             matriz_wbs, cantidad, precio, importe
         """
-        if self._use_http:
-            return self._http().rastrear(insumo_id)
-        from backend.database.repos import InsumoRepo
-        return InsumoRepo(self._conn).donde_se_usa(insumo_id)
+        return self._backend.rastrear_insumo(insumo_id)
 
     # =========================================================================
     # EXPLOSIÓN DE INSUMOS
@@ -597,12 +591,12 @@ class Api:
 
     def resumen_tipos_explosion(self, tipos_ids: list[int]) -> str:
         """Genera el string de tipos para el encabezado de la pestaña de explosión.
-        Ej: '🧱 Materiales, 👷 Mano de obra, 🔧 Herramienta'
+        Ej: 'Materiales, Mano de obra, Herramienta'
         """
-        from frontend.ventana.widgets.explosion import TIPOS_INSUMO, TIPO_ICONO
+        from frontend.ventana.widgets.explosion import TIPOS_INSUMO
         tipo_nombre_map = {t[0]: t[1] for t in TIPOS_INSUMO}
         return ", ".join(
-            f"{TIPO_ICONO.get(tid, '')} {tipo_nombre_map.get(tid, str(tid))}".strip()
+            tipo_nombre_map.get(tid, str(tid))
             for tid in tipos_ids
         )
 
@@ -907,10 +901,7 @@ class Api:
 
     def factores_sobrecosto_obtener(self) -> dict:
         """Devuelve los factores de sobrecosto del proyecto o dict vacío."""
-        if self._use_http:
-            return self._http().factores_sobrecosto_obtener()
-        from backend.database.repos import FactoresSobrecostoRepo
-        return FactoresSobrecostoRepo(self._conn).obtener(self._pid) or {}
+        return self._backend.factores_sobrecosto_obtener()
 
     def factores_sobrecosto_calcular(
         self, pct_indirectos_campo=0, pct_indirectos_oficina=0,
@@ -933,20 +924,7 @@ class Api:
         el evento semántico, vía el método `emitir()` documentado para
         este caso en ARQUITECTURA_SERVICIOS.md.
         """
-        from backend.database.event_bus import FactoresSobrecostoActualizados, ProyectoRecalculado
-        if self._use_http:
-            factor = self._http().factores_sobrecosto_guardar(valores)
-            self._ds.emitir(FactoresSobrecostoActualizados(self._pid, valores))
-            self._http().recalcular()
-            self._ds.emitir(ProyectoRecalculado(self._pid))
-            return factor
-        from backend.database.repos import FactoresSobrecostoRepo, RecalculoRepo
-        with self._ds.transaccion():
-            factor = FactoresSobrecostoRepo(self._conn).guardar(self._pid, **valores)
-            self._ds.emitir(FactoresSobrecostoActualizados(self._pid, valores))
-            RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
-        self._ds.emitir(ProyectoRecalculado(self._pid))
-        return factor
+        return self._backend.factores_sobrecosto_guardar(valores)
 
     # =========================================================================
     # INDIRECTOS

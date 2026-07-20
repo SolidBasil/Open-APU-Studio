@@ -28,12 +28,12 @@ from pydantic import BaseModel
 # ponytail: imports del backend — el server ES backend, no frontend
 from backend.database.db import Database, Rutas
 from backend.database.event_bus import EventBus
-from backend.database.services.repository_registry import RepositoryRegistry
+from backend.database.services.repository_registry import crear_registry
 from backend.database.services.data_service import DataService
 from backend.database.repos import (
     InsumoRepo, NodoRepo, ApuMatricesRepo, ProyectoRepo,
     FactoresSobrecostoRepo, FamiliaRepo, SubfamiliaRepo,
-    RecalculoRepo, ExplosionRepo, HistorialRepo,
+    RecalculoRepo, ExplosionRepo, HistorialRepo, GeneradorRepo,
 )
 from backend.database.exceptions import (
     ValidationError, DataServiceError, RepositoryError,
@@ -157,14 +157,7 @@ def _obtener_servicios(nombre: str) -> dict:
 
     db = Database.abrir(db_path)
     event_bus = EventBus()
-    registry = RepositoryRegistry(db)
-    registry.registrar("insumos", InsumoRepo)
-    registry.registrar("estructura_presupuesto", NodoRepo)
-    registry.registrar("apu_matrices", ApuMatricesRepo)
-    registry.registrar("proyectos", ProyectoRepo)
-    registry.registrar("factores_sobrecosto", FactoresSobrecostoRepo)
-    registry.registrar("familias", FamiliaRepo)
-    registry.registrar("subfamilias", SubfamiliaRepo)
+    registry = crear_registry(db)
     ds = DataService(db, registry, event_bus)
 
     servicios = {"db": db, "ds": ds, "event_bus": event_bus, "registry": registry}

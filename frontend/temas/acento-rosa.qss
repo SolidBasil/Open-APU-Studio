@@ -53,6 +53,12 @@ QTreeView::item:selected:focus {
 QTreeView::branch:selected {
     background: #3A2530;
 }
+QTableWidget::item:selected {
+    background: #3A2530;
+}
+QTableWidget::item:selected:focus {
+    background: #B07A98;
+}
 #dlgList::item:selected {
     background-color: #2E1F28;
 }
@@ -62,6 +68,9 @@ QTreeView::branch:selected {
 
 /* ── Hover rows ── */
 QTreeView::item:hover {
+    background: #281D22;
+}
+QTableWidget::item:hover {
     background: #281D22;
 }
 QTreeView::branch:hover {

@@ -30,6 +30,7 @@ from .explosion   import ExplosionRepo
 from .diagnostico import DiagnosticoRepo
 from .historial   import HistorialRepo
 from .indirectos  import IndirectoRepo, PLANTILLA_CAMPO, PLANTILLA_OFICINA
+from .generador   import GeneradorRepo
 
 __all__ = [
     "RepoBase",
@@ -43,4 +44,5 @@ __all__ = [
     "DiagnosticoRepo",
     "HistorialRepo",
     "IndirectoRepo", "PLANTILLA_CAMPO", "PLANTILLA_OFICINA",
+    "GeneradorRepo",
 ]

@@ -18,7 +18,7 @@ from backend.database.event_bus import (
     EventBus, Evento,
     InsumoActualizado, ConceptoActualizado, ApuComponenteActualizado,
     FactoresSobrecostoActualizados, NodoInsertado, NodoEliminado,
-    ProyectoRecalculado,
+    ProyectoRecalculado, GeneradorActualizado,
 )
 from backend.database.schema_registry import SchemaRegistry
 from backend.database.exceptions import (
@@ -295,6 +295,130 @@ class DataService:
         instancia directamente.
         """
         self._event_bus.emit(evento)
+
+    # ── Generadores de obra ─────────────────────────────────────────
+
+    def guardar_renglon_generador(self, generador_id: int,
+                                  usuario_id: int = 1,
+                                  renglon_id: int | None = None,
+                                  **campos) -> int:
+        """Inserta o actualiza un renglón de generador.
+
+        Recalcula cantidad_total del generador y, si tiene concepto_id,
+        la cantidad del concepto en el presupuesto. Emite GeneradorActualizado.
+        """
+        from backend.database.repos.generador import GeneradorRepo
+        from backend.database.repos.recalculo import RecalculoRepo
+
+        gen_repo = GeneradorRepo(self._db.conn)
+
+        # Calcular subtotal antes de persistir
+        veces = float(campos.get("veces", 1))
+        largo = campos.get("largo")
+        ancho = campos.get("ancho")
+        alto = campos.get("alto")
+        campos["subtotal"] = GeneradorRepo.calcular_subtotal(
+            veces,
+            float(largo) if largo is not None else None,
+            float(ancho) if ancho is not None else None,
+            float(alto) if alto is not None else None,
+        )
+
+        conceptos_ids = []
+
+        try:
+            with self._db.transaction():
+                if renglon_id:
+                    gen_repo.actualizar_renglon(renglon_id, campos)
+                else:
+                    campos["generador_id"] = generador_id
+                    renglon_id = gen_repo.insertar_renglon(campos)
+
+                # Recalcular cantidad_total del generador
+                gen_repo.recalcular_cantidad_total(generador_id)
+
+                # Recalcular concepto(s) afectado(s)
+                gen = gen_repo.buscar(generador_id)
+                if gen and gen.get("concepto_id"):
+                    cid = gen["concepto_id"]
+                    gen_repo.recalcular_concepto(cid)
+                    conceptos_ids.append(cid)
+                    # Propagar total (cantidad × precio) hacia capítulos padres
+                    RecalculoRepo(self._db.conn).recalcular_proyecto(
+                        gen["proyecto_id"]
+                    )
+        except Exception as e:
+            raise RepositoryError(str(e)) from e
+
+        self._event_bus.emit(GeneradorActualizado(
+            generador_id=generador_id,
+            conceptos_ids=conceptos_ids,
+        ))
+        return renglon_id
+
+    def eliminar_renglon_generador(self, renglon_id: int,
+                                   usuario_id: int = 1) -> None:
+        """Elimina un renglón y recalcula sync."""
+        from backend.database.repos.generador import GeneradorRepo
+        from backend.database.repos.recalculo import RecalculoRepo
+
+        gen_repo = GeneradorRepo(self._db.conn)
+        rn = gen_repo.buscar_renglon(renglon_id)
+        if not rn:
+            return
+
+        generador_id = rn["generador_id"]
+        conceptos_ids = []
+
+        try:
+            with self._db.transaction():
+                gen_repo.eliminar_renglon(renglon_id)
+                gen_repo.recalcular_cantidad_total(generador_id)
+
+                gen = gen_repo.buscar(generador_id)
+                if gen and gen.get("concepto_id"):
+                    cid = gen["concepto_id"]
+                    gen_repo.recalcular_concepto(cid)
+                    conceptos_ids.append(cid)
+                    RecalculoRepo(self._db.conn).recalcular_proyecto(
+                        gen["proyecto_id"]
+                    )
+        except Exception as e:
+            raise RepositoryError(str(e)) from e
+
+        self._event_bus.emit(GeneradorActualizado(
+            generador_id=generador_id,
+            conceptos_ids=conceptos_ids,
+        ))
+
+    def reasignar_generador(self, generador_id: int,
+                            nuevo_concepto_id: int | None,
+                            usuario_id: int = 1) -> None:
+        """Cambia el concepto vinculado a un generador y recalcula ambos."""
+        from backend.database.repos.generador import GeneradorRepo
+        from backend.database.repos.recalculo import RecalculoRepo
+
+        gen_repo = GeneradorRepo(self._db.conn)
+        afectados = gen_repo.conceptos_afectados(generador_id, nuevo_concepto_id)
+
+        try:
+            with self._db.transaction():
+                gen_repo.update(generador_id, {"concepto_id": nuevo_concepto_id})
+                for cid in afectados:
+                    gen_repo.recalcular_concepto(cid)
+                if afectados:
+                    gen = gen_repo.buscar(generador_id)
+                    if gen:
+                        RecalculoRepo(self._db.conn).recalcular_proyecto(
+                            gen["proyecto_id"]
+                        )
+        except Exception as e:
+            raise RepositoryError(str(e)) from e
+
+        self._event_bus.emit(GeneradorActualizado(
+            generador_id=generador_id,
+            conceptos_ids=afectados,
+        ))
 
     # ── Helpers internos ────────────────────────────────────────────
 

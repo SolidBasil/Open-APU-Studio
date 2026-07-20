@@ -78,7 +78,21 @@ class InsumoRepo(RepoBase):
         """, [hash_val, proyecto_id])
 
     def donde_se_usa(self, insumo_id):
-        """Devuelve los APU (concepto/compuesto) donde aparece un insumo."""
+        """Devuelve los APU (concepto/compuesto) donde aparece un insumo.
+
+        matriz_clave es siempre el clave_opus del insumo dueño de la fila
+        (el del concepto para 'concepto', el del propio compuesto para
+        'compuesto') — antes se devolvía por error el id interno de la
+        fila (ep.id / ic.id), que no significa nada para el usuario.
+
+        matriz_wbs solo aplica a 'concepto' (posición real en el árbol de
+        presupuesto, wbs crudo sin formatear — el formato con puntos según
+        nivel se resuelve en el frontend). Un insumo compuesto puede
+        usarse en múltiples APUs distintos a la vez, así que no tiene una
+        posición única en el presupuesto; antes se intentaba adivinar una
+        vía subconsulta, lo que casi siempre daba NULL o un wbs de otro
+        concepto sin relación real. Ahora se deja NULL a propósito.
+        """
         return self._lista("""
             SELECT
                 am.matriz_id,
@@ -88,17 +102,25 @@ class InsumoRepo(RepoBase):
                 CASE WHEN am.operador='*' THEN am.valor*am.precio ELSE am.precio/am.valor END AS importe,
                 CASE WHEN am.matriz_id > 0
                      THEN 'concepto' ELSE 'compuesto' END         AS tipo_origen,
-                COALESCE(CAST(ep.id AS TEXT),  CAST(ic.id AS TEXT))  AS matriz_clave,
+                COALESCE(ie.clave_opus, ic.clave_opus)           AS matriz_clave,
                 COALESCE(ep.descripcion,
                          ic.descripcion)                          AS matriz_descripcion,
-                ep.wbs                                            AS matriz_wbs
+                CASE WHEN am.matriz_id > 0 THEN ep.wbs END       AS matriz_wbs,
+                COALESCE(tc.nombre, ti.nombre)                   AS matriz_tipo,
+                COALESCE(tc.id, ti.id)                           AS matriz_tipo_id
             FROM apu_matrices am
             LEFT JOIN estructura_presupuesto ep
                    ON ep.id = am.matriz_id AND am.matriz_id > 0
             LEFT JOIN insumos ic
                    ON ic.id = ABS(am.matriz_id) AND am.matriz_id < 0
+            LEFT JOIN tipos_insumo tc
+                   ON tc.id = ic.tipo_id AND am.matriz_id < 0
+            LEFT JOIN insumos ie
+                   ON ie.id = ep.insumo_id AND am.matriz_id > 0
+            LEFT JOIN tipos_insumo ti
+                   ON ti.id = ie.tipo_id AND am.matriz_id > 0
             WHERE am.insumo_id = ?
-            ORDER BY matriz_wbs, matriz_clave
+            ORDER BY tipo_origen DESC, matriz_wbs, matriz_clave
         """, [insumo_id])
 
     def ids_con_apu(self, proyecto_id):

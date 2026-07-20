@@ -43,3 +43,30 @@ TIPOS_INSUMO = [(tid, v[2], v[3]) for tid, v in TIPOS.items()]
 
 # Formato emoji+nombre para celdas de tabla: {id: "emoji nombre"}
 ICONO_NOMBRE = {tid: f"{v[0]} {v[1]}" for tid, v in TIPOS.items()}
+
+# ── Iconos Lucide SVG (para UI con QIcon real, no emoji de texto) ────
+# Misma asignación que frontend/ventana/widgets/arbol.py _ICONOS_TIPO_SVG —
+# fuente única de verdad para quien necesite el nombre de icono por tipo.
+ICONO_SVG = {
+    1:   "building-2",   # Material
+    2:   "hard-hat",     # Mano de obra
+    4:   "wrench",       # Herramienta
+    8:   "tractor",      # Equipo
+    16:  "cog",          # Auxiliar
+    32:  "file-text",    # Concepto
+    64:  "truck",        # Flete
+    128: "construction", # Trabajo
+}
+
+# ── Colores por tipo de insumo (fuente única) ──────────────────────
+# Usado en sidebar, árboles, tablas, explosión, rastreo, diálogos.
+COLOR = {
+    1:   "#7FAFD6",  # Material    — azul
+    2:   "#D5B39B",  # Mano de obra — café
+    4:   "#5B8A72",  # Herramienta — verde
+    8:   "#8B6FB5",  # Equipo      — púrpura
+    16:  "#4E9298",  # Auxiliar    — teal
+    32:  "#E8EDF2",  # Concepto    — blanco
+    64:  "#5E92B8",  # Flete       — azul claro
+    128: "#5A9A7A",  # Trabajo     — verde oscuro
+}

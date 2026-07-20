@@ -27,6 +27,8 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import QComboBox, QDialog, QHeaderView, QMessageBox
 
 from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef, UNIDADES
+from frontend.ventana.iconos import icono
+from frontend.ventana.tipos_insumo import COLOR as _COLOR_TIPO
 
 COLUMNAS = ["Tipo", "Clave", "Descripción", "Unidad", "P.U.", "Op", "Valor", "Importe",
             "Fórmula", "Creado", "Modificado"]
@@ -154,7 +156,7 @@ class TablaApuDetalle(TreeTableWidget):
                     tn = r["tipo_nombre"]
                     es_compuesto = bool(r.get("tiene_sub_apu"))
                     row_item = self.add_row([
-                        f"{r['tipo_emoji']} {tn}".strip() if r["tipo_emoji"] else tn,
+                        tn,
                         "",
                         r["descripcion"],
                         r["insumo_unidad"],
@@ -166,6 +168,9 @@ class TablaApuDetalle(TreeTableWidget):
                         r.get("creado_en") or "",
                         r.get("modificado_en") or "",
                     ], editable=True)
+                    row_item.setIcon(0, icono(r.get("tipo_icono", "file-text"), 16, _COLOR_TIPO.get(r.get("tipo_id"))))
+                    if es_compuesto:
+                        row_item.setIcon(2, icono("combine", 16))
                     row_item.setData(0, Qt.ItemDataRole.UserRole, r.get("insumo_id"))
                     row_item.setData(0, Qt.ItemDataRole.UserRole + 1, es_compuesto)
                     row_item.setData(5, Qt.ItemDataRole.UserRole, r.get("id"))

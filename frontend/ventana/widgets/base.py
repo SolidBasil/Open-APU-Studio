@@ -180,27 +180,17 @@ class PersonalizarColumnasDialog(QDialog):
 # ── Expresiones regulares ──────────────────────────────────────────
 
 # Derivado de tipos_insumo.ICONO — no hardcodear emojis aquí.
-from frontend.ventana.colores import TEXT, SEL_BG, LINE
+from frontend.ventana.colores import SEL_BG, LINE
 from frontend.ventana.tipos_insumo import ICONO as _TIPO_ICONO
-_PREFIJOS = "▶" + "".join(_TIPO_ICONO.values())
-SISTEMA_PREFIJOS = re.compile(rf"^[{re.escape(_PREFIJOS)}]\s?")
+from frontend.ventana.iconos import icono as _icono
+
+_PREFIJOS = "".join(_TIPO_ICONO.values())
+SISTEMA_PREFIJOS = re.compile(rf"^[{re.escape(_PREFIJOS)}]\s?") if _PREFIJOS else re.compile(r"^\Z")
 
 
-def _menu_icon(char: str, size: int = 16):
-    """Icono Unicode para acciones de menú contextual."""
-    return make_icon(char, size)
-
-
-def make_icon(char: str, size: int = 20, font_size: int | None = None):
-    """Genera QIcon desde un carácter Unicode pintado sobre pixmap transparente."""
-    pix = QPixmap(size, size)
-    pix.fill(Qt.GlobalColor.transparent)
-    p = QPainter(pix)
-    p.setPen(QColor(TEXT))
-    p.setFont(QFont("Segoe UI Symbol", font_size or size - 4))
-    p.drawText(QRect(0, 0, size, size), Qt.AlignmentFlag.AlignCenter, char)
-    p.end()
-    return QIcon(pix)
+def _menu_icon(nombre: str, size: int = 16):
+    """Icono Lucide para acciones de menú contextual."""
+    return _icono(nombre, size)
 
 
 # ── Constantes de conectores ──────────────────────────────────────
@@ -212,7 +202,7 @@ LINE_WIDTH  = 1.5
 # ── Utilidades de texto ───────────────────────────────────────────
 
 def _strip_icons(text: str) -> str:
-    """Quita prefijos del sistema (▶ y emojis de tipo) sin afectar datos del usuario.
+    """Quita prefijos del sistema (iconos de tipo) sin afectar datos del usuario.
     Necesario para copiar/exportar datos limpios sin marcadores visuales.
     """
     return SISTEMA_PREFIJOS.sub("", text)
@@ -355,19 +345,28 @@ class _Delegate(QStyledItemDelegate):
         from PySide6.QtWidgets import QLineEdit, QComboBox
         if isinstance(editor, QComboBox):
             texto = index.data(Qt.ItemDataRole.DisplayRole) or ""
-            idx = editor.findText(texto.strip())
+            texto_limpio = texto.split(" › ")[0].strip() if " › " in texto else texto.strip()
+            idx = editor.findText(texto_limpio)
             editor.setCurrentIndex(idx if idx >= 0 else 0)
         elif isinstance(editor, QLineEdit):
             texto = index.data(Qt.ItemDataRole.DisplayRole) or ""
-            texto = texto.replace("$", "").replace(",", "").strip()
+            texto = texto.lstrip("\u25b6").replace("$", "").replace(",", "").strip()
             editor.setText(texto)
         else:
             super().setEditorData(editor, index)
 
     def setModelData(self, editor, model, index):
-        """Escribe el valor del QComboBox al modelo."""
+        """Escribe el valor del QComboBox al modelo (texto + userData en UserRole).
+
+        ponytail: UserRole ANTES de EditRole para que cuando itemChanged
+        dispare _on_insumo_editado, UserRole ya tenga el valor correcto.
+        Si escribíamos EditRole primero, el handler leía el tipo_id viejo
+        y lo guardaba de vuelta — la combo solo funcionaba una vez.
+        """
         from PySide6.QtWidgets import QComboBox
         if isinstance(editor, QComboBox):
+            if editor.currentData() is not None:
+                model.setData(index, editor.currentData(), Qt.ItemDataRole.UserRole)
             model.setData(index, editor.currentText(), Qt.ItemDataRole.EditRole)
         else:
             super().setModelData(editor, model, index)
@@ -606,7 +605,7 @@ class TreeTableWidget(QTreeWidget):
             act.toggled.connect(
                 lambda checked, c=col.idx: self.setColumnHidden(c, not checked))
         menu.addSeparator()
-        personalizar_act = menu.addAction(_menu_icon("⚙"), "Personalizar columnas…")
+        personalizar_act = menu.addAction(_menu_icon("settings"), "Personalizar columnas…")
         personalizar_act.triggered.connect(self._abrir_personalizar_columnas)
         menu.exec(self.header().mapToGlobal(pos))
         self._save_header_state()
@@ -866,18 +865,18 @@ class TreeTableWidget(QTreeWidget):
         if item not in self.selectedItems():
             self.setCurrentItem(item, col)
         menu = QMenu(self)
-        copy_act = menu.addAction(_menu_icon("📋"), "Copiar")
+        copy_act = menu.addAction(_menu_icon("clipboard"), "Copiar")
         copy_act.setShortcut(QKeySequence.StandardKey.Copy)
         copy_act.triggered.connect(self._copy)
         if col in self._editable_cols:
-            cut_act = menu.addAction(_menu_icon("✂"), "Cortar")
+            cut_act = menu.addAction(_menu_icon("scissors"), "Cortar")
             cut_act.setShortcut(QKeySequence.StandardKey.Cut)
             cut_act.triggered.connect(self._cut)
-            paste_act = menu.addAction(_menu_icon("📋"), "Pegar")
+            paste_act = menu.addAction(_menu_icon("file-text"), "Pegar")
             paste_act.setShortcut(QKeySequence.StandardKey.Paste)
             paste_act.triggered.connect(self._paste)
         menu.addSeparator()
-        sel_act = menu.addAction(_menu_icon("☑"), "Seleccionar todo")
+        sel_act = menu.addAction(_menu_icon("check-square"), "Seleccionar todo")
         sel_act.setShortcut(QKeySequence.StandardKey.SelectAll)
         sel_act.triggered.connect(self.selectAll)
         self._context_menu_actions(menu)

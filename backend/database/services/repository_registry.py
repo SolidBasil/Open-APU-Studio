@@ -10,6 +10,11 @@ Uso:
     registry = RepositoryRegistry(db)
     registry.registrar("insumos", InsumoRepo)
     repo = registry.obtener("insumos")
+
+crear_registry(db) es el único punto de wiring de todos los repos
+conocidos — lo usan tanto la app de escritorio (gestion_proyectos.py)
+como el servidor embebido (server/servidor.py). Agregar un repo nuevo
+se hace aquí, no en cada uno de los llamadores.
 """
 
 from __future__ import annotations
@@ -38,6 +43,27 @@ class RepositoryRegistry:
             raise KeyError(f"No hay repositorio registrado para '{entidad}'")
         return self._repos[entidad]
 
-    def entidades(self) -> list[str]:
-        """Lista de entidades registradas (debugging)."""
-        return list(self._repos.keys())
+
+def crear_registry(db: Database) -> RepositoryRegistry:
+    """Crea un RepositoryRegistry con todos los repos conocidos ya registrados.
+
+    Único punto de wiring: cualquier flujo que abra un .db (app de
+    escritorio, importar, servidor embebido) debe llamar aquí en lugar
+    de repetir el bloque de registrar(...).
+    """
+    from backend.database.repos import (
+        InsumoRepo, NodoRepo, ApuMatricesRepo, ProyectoRepo,
+        FactoresSobrecostoRepo, FamiliaRepo, SubfamiliaRepo,
+        GeneradorRepo,
+    )
+
+    registry = RepositoryRegistry(db)
+    registry.registrar("insumos", InsumoRepo)
+    registry.registrar("estructura_presupuesto", NodoRepo)
+    registry.registrar("apu_matrices", ApuMatricesRepo)
+    registry.registrar("proyectos", ProyectoRepo)
+    registry.registrar("factores_sobrecosto", FactoresSobrecostoRepo)
+    registry.registrar("familias", FamiliaRepo)
+    registry.registrar("subfamilias", SubfamiliaRepo)
+    registry.registrar("generadores", GeneradorRepo)
+    return registry

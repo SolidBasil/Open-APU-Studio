@@ -245,12 +245,20 @@ class Database:
     # ── Schema ────────────────────────────────────────────────────────────
 
     def _aplicar_schema(self):
-        """Aplica schema.sql completo. Crea tablas si no existen."""
+        """Aplica schema.sql completo. Crea tablas si no existen.
+        Para proyectos viejos: agrega columnas nuevas y migra datos de
+        configuracion_proyecto antes de que se elimine la tabla.
+        """
         schema_path = Path(__file__).parent / "schema.sql"
         if not schema_path.exists():
             raise FileNotFoundError(f"No se encontró el schema en {schema_path}")
+
+        # Migración v5: copiar configuracion_proyecto a proyectos ANTES del schema
+        self._migrar_v5()
+
         sql = schema_path.read_text(encoding="utf-8")
         self._conn.executescript(sql)
+
         # SRV-10: agregar columna deshachado_en a historial si falta (proyectos viejos)
         try:
             self._conn.execute(
@@ -259,6 +267,96 @@ class Database:
         except Exception:
             pass  # columna ya existe
         self._conn.commit()
+
+    def _migrar_v5(self):
+        """Migración v5: agrega columnas nuevas a proyectos y migra datos
+        de configuracion_proyecto (que se fusiona en proyectos).
+        """
+        cur = self._conn.cursor()
+
+        # Verificar si la tabla antigua existe
+        try:
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='configuracion_proyecto'")
+            tiene_cfg = cur.fetchone() is not None
+        except Exception:
+            tiene_cfg = False
+
+        # Columnas a agregar (solo si no existen)
+        columnas_nuevas = [
+            # Fusionadas desde configuracion_proyecto
+            ("horas_dia", "REAL NOT NULL DEFAULT 8.0"),
+            ("tasa_seguro", "REAL NOT NULL DEFAULT 0.0"),
+            ("tasa_interes", "REAL NOT NULL DEFAULT 0.0"),
+            ("capturar_rendimientos", "INTEGER NOT NULL DEFAULT 0"),
+            ("unidad_cantidad_agrup", "INTEGER NOT NULL DEFAULT 0"),
+            # Ubicación de la obra
+            ("obra_domicilio", "TEXT"),
+            ("obra_ciudad", "TEXT"),
+            ("obra_estado", "TEXT"),
+            ("obra_cp", "TEXT"),
+            ("obra_pais", "TEXT DEFAULT 'México'"),
+            ("obra_latitud", "REAL"),
+            ("obra_longitud", "REAL"),
+            ("obra_descripcion", "TEXT"),
+            # Contacto
+            ("contacto_nombre", "TEXT"),
+            ("contacto_cargo", "TEXT"),
+            ("contacto_email", "TEXT"),
+            ("contacto_tel", "TEXT"),
+            # Constructora
+            ("constructora_nombre", "TEXT"),
+            ("constructora_rfc", "TEXT"),
+            ("constructora_domicilio", "TEXT"),
+            ("constructora_ciudad", "TEXT"),
+            ("constructora_estado", "TEXT"),
+            ("constructora_cp", "TEXT"),
+            ("constructora_pais", "TEXT DEFAULT 'México'"),
+            ("constructora_tel", "TEXT"),
+            ("constructora_email", "TEXT"),
+            ("constructora_sitio_web", "TEXT"),
+            ("constructora_logo_path", "TEXT"),
+            # Moneda extranjera
+            ("moneda_ext_nombre", "TEXT"),
+            ("moneda_ext_simbolo", "TEXT"),
+            ("moneda_ext_abrev", "TEXT"),
+            ("tipo_cambio", "REAL NOT NULL DEFAULT 1.0"),
+            # Programa de obra
+            ("duracion_obra_dias", "INTEGER"),
+            # Reportes
+            ("reporte_responsable", "TEXT"),
+            ("reporte_version", "TEXT DEFAULT '1.0'"),
+            ("reporte_observaciones", "TEXT"),
+            ("reporte_fecha", "TEXT"),
+        ]
+
+        for col, typedef in columnas_nuevas:
+            try:
+                cur.execute(f"ALTER TABLE proyectos ADD COLUMN {col} {typedef}")
+            except Exception:
+                pass  # columna ya existe
+
+        # Copiar datos de configuracion_proyecto si existe
+        if tiene_cfg:
+            try:
+                cur.execute("""
+                    UPDATE proyectos SET
+                        horas_dia = COALESCE((SELECT horas_dia FROM configuracion_proyecto WHERE proyecto_id = proyectos.id), 8.0),
+                        tasa_seguro = COALESCE((SELECT tasa_seguro FROM configuracion_proyecto WHERE proyecto_id = proyectos.id), 0.0),
+                        tasa_interes = COALESCE((SELECT tasa_interes FROM configuracion_proyecto WHERE proyecto_id = proyectos.id), 0.0),
+                        capturar_rendimientos = COALESCE((SELECT capturar_rendimientos FROM configuracion_proyecto WHERE proyecto_id = proyectos.id), 0),
+                        unidad_cantidad_agrup = COALESCE((SELECT unidad_cantidad_agrup FROM configuracion_proyecto WHERE proyecto_id = proyectos.id), 0)
+                """)
+                cur.execute("DROP TABLE IF EXISTS configuracion_proyecto")
+                self._conn.commit()
+            except Exception:
+                pass  # tabla ya no existe o error menor
+
+        # Eliminar tabla apu_resumen_totales si existe (v5 la elimina)
+        try:
+            cur.execute("DROP TABLE IF EXISTS apu_resumen_totales")
+            self._conn.commit()
+        except Exception:
+            pass
 
     # ── Instanciación ────────────────────────────────────────────────
 

@@ -16,7 +16,7 @@ from pathlib import Path
 
 from backend.database.repos import (
     ProyectoRepo, NodoRepo, InsumoRepo,
-    ApuMatricesRepo, ApuResumenTotalesRepo,
+    ApuMatricesRepo, RecalculoRepo,
 )
 from backend.exportar.exportar_plantillas import (
     TIPOSINS_ROWS, CONFIG_FIJOS, C_FIJOS, FSR_9_ROWS, CONFIG_INI_TEMPLATE,
@@ -210,10 +210,10 @@ class Exportador:
         self._nodo_repo = NodoRepo(self._conn)
         self._ins_repo  = InsumoRepo(self._conn)
         self._apu_repo  = ApuMatricesRepo(self._conn)
-        self._res_repo  = ApuResumenTotalesRepo(self._conn)
+        self._rc_repo   = RecalculoRepo(self._conn)
 
         self._proy  = self._proy_repo.buscar(proyecto_id)
-        self._cfg   = self._proy_repo.config(proyecto_id)
+        # ponytail: config se fusionó en proyectos — ya no hay tabla separada
         self._clave = (self._proy.get('clave_opus') or 'OBRA').upper()
 
     def _run(self):
@@ -366,11 +366,6 @@ class Exportador:
         proy = self._proy
         hoy  = date.today()
         fecha_cfg = hoy
-        if self._cfg and self._cfg.get('fecha_inicio'):
-            try:
-                fecha_cfg = date.fromisoformat(str(self._cfg['fecha_inicio'])[:10])
-            except Exception:
-                pass
 
         cfg_rec = {**CONFIG_FIJOS}
         cfg_rec.update({
@@ -415,7 +410,7 @@ class Exportador:
         c_rec = {**C_FIJOS}
         c_rec.update({
             'OBRDES':    (proy.get('descripcion') or '')[:200],
-            'OBRUBI':    (proy.get('cliente_domicilio') or '')[:100],
+            'OBRUBI':    (proy.get('obra_domicilio') or '')[:100],
             'OBRFEC':    _fecha('licitacion_fecha'),
             'OBRCOS':    total,
             'OBRMOGRA':  0.0,
@@ -434,15 +429,9 @@ class Exportador:
     def _fase2_insumos(self):
         insumos = self._ins_repo.todos(self._pid)
 
-        # Resumen APU de compuestos (matriz_id < 0)
-        cur = self._conn.cursor()
-        res_map = {}
-        for row in cur.execute(
-            'SELECT matriz_id, materiales, mano_obra, herramienta, equipo, auxiliares '
-            'FROM apu_resumen_totales'
-        ):
-            if row[0] < 0:
-                res_map[abs(row[0])] = row
+        # ponytail: resúmenes calculados al vuelo en memoria
+        resumenes = self._rc_repo.calcular_todos_resumenes(self._pid)
+        res_map = {abs(mid): r for mid, r in resumenes.items() if mid < 0}
 
         registros = []
         for ins in insumos:
@@ -463,11 +452,11 @@ class Exportador:
                 prefijo = int(ins.get('tipo_id') or 1)
 
             resumen  = res_map.get(ins['id'])
-            mat  = float(resumen[1]) if resumen else 0.0
-            mo   = float(resumen[2]) if resumen else 0.0
-            herr = float(resumen[3]) if resumen else 0.0
-            equ  = float(resumen[4]) if resumen else 0.0
-            aux  = float(resumen[5]) if resumen else 0.0
+            mat  = float(resumen.get('materiales', 0)) if resumen else 0.0
+            mo   = float(resumen.get('mano_obra', 0)) if resumen else 0.0
+            herr = float(resumen.get('herramienta', 0)) if resumen else 0.0
+            equ  = float(resumen.get('equipo', 0)) if resumen else 0.0
+            aux  = float(resumen.get('auxiliares', 0)) if resumen else 0.0
 
             fecha_precio = None
             fp = ins.get('fecha_precio')
@@ -657,6 +646,8 @@ class Exportador:
     def _fase4_apu(self):
         nodos   = self._nodo_repo.todos(self._pid)
         insumos = {i['id']: i for i in self._ins_repo.todos(self._pid)}
+        # ponytail: precalcular todos los resúmenes en memoria
+        resumenes = self._rc_repo.calcular_todos_resumenes(self._pid)
 
         registros_f = []
         registros_n = []
@@ -717,9 +708,9 @@ class Exportador:
                 'SUBCONT':   sc,
                 'ACARREOS':  0.0,
                 'DESTAJOS':  0.0,
-                'INDIRECTOS':float(resumen.get('indirectos_pct') or 0),
-                'FINANCIA':  float(resumen.get('financiamiento_pct') or 0),
-                'UTILIDAD':  float(resumen.get('utilidad_pct') or 0),
+                'INDIRECTOS': 0.0,
+                'FINANCIA':  0.0,
+                'UTILIDAD':  0.0,
                 'OTROS':     0.0,
                 'RENDMTO':   0.0,
                 'PP':        mm + oo + hh + ee + aa + sc,
@@ -737,7 +728,7 @@ class Exportador:
             _add_f(nombre, 32, comp)
             if mid not in matrices_vistas:
                 matrices_vistas.add(mid)
-                _add_n(nombre, self._res_repo.por_matriz(mid))
+                _add_n(nombre, resumenes.get(mid))
 
         # Insumos compuestos (matriz_id < 0)
         cur = self._conn.cursor()
@@ -756,7 +747,7 @@ class Exportador:
             key = -ins_id
             if key not in matrices_vistas:
                 matrices_vistas.add(key)
-                _add_n(nombre, self._res_repo.por_matriz(-ins_id))
+                _add_n(nombre, resumenes.get(-ins_id))
 
         self._crear_tabla(self._ruta('F'), 'F', registros_f, cdx_sufijo='F')
         self._crear_tabla(self._ruta('N'), 'N', registros_n, cdx_sufijo='N')

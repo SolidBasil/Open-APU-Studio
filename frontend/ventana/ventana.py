@@ -17,12 +17,16 @@ from PySide6.QtWidgets import (
 )
 
 from frontend.temas    import Temas
-from frontend.ventana.toolbar  import ToolbarMixin
-from frontend.ventana.paneles  import PanelesMixin
-from frontend.ventana.handlers import HandlersMixin
-from frontend.ventana.handlers import GestionProyectosMixin, InformesMixin, DiagDialogsMixin
-from frontend.ventana.apu       import ApuMixin, RastreoMixin, ExplosionMixin
-from frontend.ventana.generador.generador import GeneradorMixin
+from frontend.ventana.mixins.toolbar           import ToolbarMixin
+from frontend.ventana.mixins.paneles           import PanelesMixin
+from frontend.ventana.mixins.navegacion        import HandlersMixin
+from frontend.ventana.mixins.gestion_proyectos import GestionProyectosMixin
+from frontend.ventana.mixins.informes          import InformesMixin
+from frontend.ventana.mixins.diag_dialogs      import DiagDialogsMixin
+from frontend.ventana.mixins.apu               import ApuMixin
+from frontend.ventana.mixins.rastreo           import RastreoMixin
+from frontend.ventana.mixins.explosion         import ExplosionMixin
+from frontend.ventana.mixins.generador         import GeneradorMixin
 
 
 # =============================================================================
@@ -91,7 +95,7 @@ class VentanaPrincipal(
 
         self._build_tab_bar(layout)
         self._build_toolbar(layout)
-        self._switch_tab("PROYECTO")
+        self._switch_tab("PRINCIPAL")  # ponytail: ribbon por defecto = pestaña inicial (Presupuesto)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(self._build_left_panel())

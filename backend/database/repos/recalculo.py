@@ -51,7 +51,20 @@ class RecalculoRepo(RepoBase):
         self._aplicar_cascada_sobrecosto(cur, proyecto_id)
 
         # Totales de conceptos = cantidad × costo_final del insumo vinculado
-        cur.execute("""
+        self.recalcular_totales_conceptos(proyecto_id)
+
+        # Totales de capítulos, de hojas hacia la raíz
+        self.recalcular_totales_capitulos(proyecto_id)
+
+        return {"iteraciones_compuestos": n_iter, "resumenes": resumenes}
+
+    def recalcular_totales_conceptos(self, proyecto_id: int) -> None:
+        """Totales de conceptos = cantidad × costo_final del insumo vinculado.
+
+        Reutilizable fuera de la cascada completa de recalcular_proyecto()
+        (p.ej. backend/importar/importar.py, justo tras vincular insumo_id).
+        """
+        self._cursor.execute("""
             UPDATE estructura_presupuesto
             SET total = (
                 SELECT COALESCE(estructura_presupuesto.cantidad, 0) * COALESCE(i.costo_final, 0)
@@ -65,7 +78,13 @@ class RecalculoRepo(RepoBase):
               AND insumo_id IS NOT NULL
         """, (proyecto_id,))
 
-        # Totales de capítulos, de hojas hacia la raíz
+    def recalcular_totales_capitulos(self, proyecto_id: int) -> None:
+        """Totales de capítulos, de hojas hacia la raíz.
+
+        Reutilizable fuera de la cascada completa de recalcular_proyecto()
+        (p.ej. backend/importar/importar.py, al cerrar la importación).
+        """
+        cur = self._cursor
         cur.execute("""
             SELECT MAX(nivel) FROM estructura_presupuesto WHERE proyecto_id = ? AND activo = 1
         """, (proyecto_id,))
@@ -82,8 +101,6 @@ class RecalculoRepo(RepoBase):
                 WHERE proyecto_id = ? AND nivel = ?
                   AND tipo = 'capitulo' AND activo = 1
             """, (proyecto_id, nivel))
-
-        return {"iteraciones_compuestos": n_iter, "resumenes": resumenes}
 
     def calcular_resumen(self, proyecto_id: int, matriz_id: int) -> dict:
         """Calcula el resumen de un APU específico al vuelo (para UI/exportar)."""

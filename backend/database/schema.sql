@@ -499,4 +499,60 @@ INSERT OR IGNORE INTO schema_version (version, descripcion) VALUES
     (4, 'v4: costo_directo + FSR en insumos, apu_matrices con valor/operador, factores_sobrecosto, factores_fsr, variables_formula'),
     (5, 'v5: limpia proyectos (24 cols muertas), fusiona configuracion_proyecto, elimina apu_resumen_totales, crea indirectos'),
     (6, 'v6: elimina catfsr y fsr_minimo de insumos (FSR solo manual via factor_fsr)'),
-    (7, 'v7: elimina tabla notas, salario_nominal, salario_real e indice_inegi de insumos');
+    (7, 'v7: elimina tabla notas, salario_nominal, salario_real e indice_inegi de insumos'),
+    (8, 'v8: generadores de obra — tablas generadores y generador_renglones');
+
+
+-- =============================================================================
+-- BLOQUE 11: GENERADORES DE OBRA
+-- Documentos de medición (ubicación × veces × largo × ancho × alto → subtotal).
+-- Pueden existir solos (concepto_id = NULL) o vinculados a un concepto del
+-- presupuesto. La sincronización de cantidad es automática vía DataService.
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS generadores (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    proyecto_id     INTEGER NOT NULL REFERENCES proyectos(id) ON DELETE CASCADE,
+    concepto_id     INTEGER REFERENCES estructura_presupuesto(id),  -- NULL = suelto
+    nombre          TEXT    NOT NULL DEFAULT '',
+    unidad          TEXT,
+    cantidad_total  REAL    NOT NULL DEFAULT 0.0,   -- SUM(renglones activos)
+    notas           TEXT,
+    activo          INTEGER NOT NULL DEFAULT 1,
+    creado_por      INTEGER NOT NULL DEFAULT 1 REFERENCES usuarios(id),
+    creado_en       TEXT    NOT NULL DEFAULT (datetime('now')),
+    modificado_por  INTEGER REFERENCES usuarios(id),
+    modificado_en   TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_gen_proyecto ON generadores(proyecto_id);
+CREATE INDEX IF NOT EXISTS idx_gen_concepto ON generadores(concepto_id);
+
+CREATE TABLE IF NOT EXISTS generador_renglones (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    generador_id    INTEGER NOT NULL REFERENCES generadores(id) ON DELETE CASCADE,
+    orden           INTEGER NOT NULL DEFAULT 0,
+
+    ubicacion       TEXT    NOT NULL DEFAULT '',
+    veces           REAL    NOT NULL DEFAULT 1,
+    largo           REAL,
+    ancho           REAL,
+    alto            REAL,
+    subtotal        REAL    NOT NULL DEFAULT 0.0,   -- veces × (largo|1) × (ancho|1) × (alto|1)
+
+    origen          TEXT    NOT NULL DEFAULT 'manual' CHECK(origen IN ('manual', 'cad')),
+    cad_archivo_id  INTEGER,
+    cad_capa        TEXT,
+    cad_tipo_medicion TEXT CHECK(cad_tipo_medicion IN
+                        ('punto', 'linea', 'polilinea', 'area', 'contador')),
+    cad_geometria   TEXT,   -- JSON
+
+    notas           TEXT,
+    activo          INTEGER NOT NULL DEFAULT 1,
+    creado_por      INTEGER NOT NULL DEFAULT 1 REFERENCES usuarios(id),
+    creado_en       TEXT    NOT NULL DEFAULT (datetime('now')),
+    modificado_por  INTEGER REFERENCES usuarios(id),
+    modificado_en   TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_genr_generador ON generador_renglones(generador_id);

@@ -88,7 +88,47 @@ Eliminado: 2026-07-11 — todos eliminados excepto 4.17 (usuario_id en Api).
 | # | Fix | Líneas eliminadas | Archivos tocados | Esfuerzo |
 |---|-----|-------------------|------------------|----------|
 | ~~1~~ | ~~**Eliminar código muerto** — 20 métodos/funciones nunca llamados (4.1-4.20)~~ | ~~180~~ | ~~7~~ | ~~Bajo~~ ✅ |
-| 2 | **Reemplazar 4 inline `_get_active_table()`** por el método existente (2.8) | ~20 | 1 | Bajo |
-| 3 | **`_get_move_context()`** — eliminar preamble duplicado (2.9) | ~18 | 1 | Bajo |
+| ~~2~~ | ~~**Reemplazar 4 inline `_get_active_table()`** por el método existente (2.8)~~ | ~~20~~ | ~~1~~ | ~~Bajo~~ ✅ |
+| ~~3~~ | ~~**`_get_move_context()`** — eliminar preamble duplicado (2.9)~~ | ~~18~~ | ~~1~~ | ~~Bajo~~ ✅ |
 | 4 | **Módulo compartido de tipos** — unificar 1.1 + 1.2 + 1.6 + 1.7 | ~120 | 6-8 | Medio |
 | 5 | **Base class event subscription** — dict pattern (2.1 + 2.12) | ~120 | 4 | Medio |
+
+## 7. Progreso de sesión de refactor (2026-07-19)
+
+- **Reorganización de `frontend/ventana/`**: nuevo paquete `mixins/` agrupa los
+  9 mixins que se mezclan en `VentanaPrincipal` (antes repartidos en
+  `apu/`, `generador/`, `handlers/` y sueltos en la raíz, con nombres que
+  colisionaban con `widgets/`). Carpetas viejas eliminadas.
+- **Bug corregido**: `backend/database/repos.py` estaba shadowed por el
+  paquete `repos/` — el import en `sidebar_estructura.py` fallaba en
+  runtime. Renombrado a `hoja_bindings.py`.
+- **Código muerto eliminado**: 5 imports sin uso, `RepositoryRegistry.entidades()`
+  y `EventBus.suscriptores_count()` (helpers de debug sin caller).
+- **Código muerto identificado, no eliminado** (parece trabajo a medio
+  construir, no basura — requiere decisión): `api.py` (6 métodos de
+  gestión de generadores), `data_service.py` (`iniciar_sesion`/
+  `cerrar_sesion` ligados a SRV-09, `reasignar_generador`),
+  `DiagnosticoRepo.estadisticas()`/`resumen_integridad()`, `ConflictError`.
+- **Subsistema huérfano identificado** (¿conservar como WIP o eliminar?):
+  `toolbar_estructural.py` (682 líneas, nunca mezclado en `VentanaPrincipal`,
+  fork copy-paste de `mixins/toolbar.py`), `widgets/sidebar_estructura.py`,
+  `widgets/viewport3d.py`, `backend/motor/opensees_repo.py`, y 5 helpers
+  CAD sin ninguna referencia externa (`calibracion.py`, `panel_capas.py`,
+  `filtro_nombres.py`, `agregacion.py`, `busqueda_texto.py`). Sin tocar,
+  pendiente de decisión.
+- **Duplicación resuelta**: `recalculo.py`/`importar.py` (SQL de totales
+  extraído a `recalcular_totales_conceptos()`/`recalcular_totales_capitulos()`),
+  `gestion_proyectos.py`/`servidor.py` (factory `crear_registry()`).
+- **Pasos redundantes eliminados**: `api.py` — `concepto_reasignar_insumo()`
+  y `eliminar_nodo()` llamaban `recalcular_desde()` inmediatamente
+  sobreescrito por `recalcular_proyecto()`.
+- **Migración `Api` a backends** (en progreso): patrón Strategy para
+  reemplazar el `if self._use_http` repetido en cada uno de los 65
+  métodos. Ver `frontend/ventana/api_backends.py`. Secciones migradas:
+  FACTORES DE SOBRECOSTO, INSUMOS. Pendientes: PRESUPUESTO, APU,
+  EXPLOSIÓN DE INSUMOS, CATÁLOGOS, MUTACIÓN DE INSUMOS, GESTIÓN DE
+  PROYECTOS, INDIRECTOS, SRV-10, GENERADORES DE OBRA.
+- **`tests/smoke_api_backends.py`** (nuevo): primer test del proyecto —
+  corre contra una BD SQLite real, sin mocks. Extenderlo con cada
+  sección nueva que se migre a backends, antes de dar la sección por
+  cerrada.

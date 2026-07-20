@@ -15,11 +15,11 @@ from PySide6.QtWidgets import QHeaderView
 from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef
 
 
-# ── Icono desde emoji ───────────────────────────────────────────
+# ── Icono desde tipo_id (Lucide SVG) ─────────────────────────────
 
-from frontend.ventana.tipos_insumo import ICONO as _ICONOS_TIPO
-from frontend.ventana.widgets.base import make_icon
+from frontend.ventana.iconos import icono
 from frontend.ventana.colores import ACCENT, SUCCESS, WARNING, ERROR
+from frontend.ventana.tipos_insumo import ICONO_SVG as _ICONOS_TIPO_SVG, COLOR as _COLOR_TIPO
 
 
 # ── Roles de datos ────────────────────────────────────────────────
@@ -189,14 +189,14 @@ class TablaArbol(TreeTableWidget):
         from frontend.ventana.widgets.base import _menu_icon
         menu.addSeparator()
 
-        act = menu.addAction(_menu_icon("⊞"), "Agregar agrupador")
+        act = menu.addAction(_menu_icon("square-plus"), "Agregar agrupador")
         act.triggered.connect(self.agregar_agrupador)
 
-        act = menu.addAction(_menu_icon("+"), "Agregar concepto")
+        act = menu.addAction(_menu_icon("plus"), "Agregar concepto")
         act.triggered.connect(self.agregar_concepto)
 
         if self.selectedItems():
-            act = menu.addAction(_menu_icon("✕"), "Eliminar")
+            act = menu.addAction(_menu_icon("x"), "Eliminar")
             act.triggered.connect(self.eliminar_seleccion)
 
         if len(self.selectedItems()) != 1:
@@ -210,32 +210,12 @@ class TablaArbol(TreeTableWidget):
         insumo_id = item.data(0, INSUMO_ROLE)
         nodo_id = item.data(0, ID_ROLE)
         if insumo_id:
-            act = menu.addAction(_menu_icon("🔍"), "Rastrear uso")
+            act = menu.addAction(_menu_icon("search"), "Rastrear uso")
             act.triggered.connect(lambda: self.rastrear_insumo.emit(insumo_id))
         if nodo_id:
-            act = menu.addAction(_menu_icon("🔗"), "Desglozar")
+            act = menu.addAction(_menu_icon("link"), "Desglozar")
             act.triggered.connect(lambda: self.desglozar_nodo.emit(nodo_id))
 
-
-    # ── Helpers de WBS ────────────────────────────────────────────
-
-    @staticmethod
-    def _calc_wbs(wbs: str, parent):
-        """Concatena el display WBS del padre con el sufijo del nodo."""
-        if not wbs:
-            return ""
-        pwbs_raw = ""
-        pwbs_display = ""
-        if parent is not None:
-            try:
-                pwbs_raw = parent.data(0, WBS_ROLE)
-                pwbs_display = parent.text(1)  # columna Nivel = display WBS
-            except AttributeError:
-                pass
-        if not pwbs_raw:
-            return str(int(wbs))
-        suffix = wbs[len(pwbs_raw):]
-        return f"{pwbs_display}.{str(int(suffix))}"
 
     # ── Construcción de celdas desde dict ─────────────────────────
 
@@ -275,13 +255,12 @@ class TablaArbol(TreeTableWidget):
             nivel += 1
             p = p.parent()
         wbs  = n.get("wbs", "")
-        fmt  = self._calc_wbs(wbs, parent)
-        data = self._celdas(n, fmt)
+        data = self._celdas(n, wbs)
         item = self.add_row(data, parent, editable=True)
         item.setData(0, WBS_ROLE, wbs)
         item.setData(0, ID_ROLE, n.get("id"))
         item.setData(0, TIPO_ROLE, "capitulo")
-        item.setIcon(0, make_icon("\U0001F4C2", 20, 14))  # 📂 folder
+        item.setIcon(0, icono("folder-open", 20))
         color = COLORES_NIVEL[min(nivel, len(COLORES_NIVEL) - 1)]
         brush = QBrush(QColor(color))
         f     = item.font(0)
@@ -298,15 +277,14 @@ class TablaArbol(TreeTableWidget):
         Descripción (col 4) no es editable — refleja insumos.descripcion via JOIN.
         """
         wbs = n.get("wbs", "")
-        fmt = self._calc_wbs(wbs, parent)
-        data = self._celdas(n, fmt)
+        data = self._celdas(n, wbs)
         item = self.add_row(data, parent, editable=True)
         item.setData(0, WBS_ROLE, wbs)
         item.setData(0, ID_ROLE, n.get("id"))
         item.setData(0, TIPO_ROLE, "concepto")
         item.setData(0, INSUMO_ROLE, n.get("insumo_id"))
         tid = n.get("tipo_id")
-        item.setIcon(0, make_icon(_ICONOS_TIPO.get(tid, "\U0001F4C4"), 20, 14))
+        item.setIcon(0, icono(_ICONOS_TIPO_SVG.get(tid, "file-text"), 20, _COLOR_TIPO.get(tid)))
         return item
 
     # ── Poblado del árbol ─────────────────────────────────────────

@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QListWidget,
     QListWidgetItem, QLabel, QPushButton, QWidget, QFrame,
     QTreeWidgetItem, QAbstractItemView, QComboBox, QMessageBox,
-    QCheckBox, QGroupBox, QGridLayout,
+    QCheckBox, QGroupBox, QGridLayout, QDoubleSpinBox,
 )
 
 from frontend.ventana.colores import ACCENT, SEL_BG as _SEL_BG, WARNING
@@ -330,10 +330,12 @@ class EditarPrecioDialog(QDialog):
 # ── Tipos de insumo para filtros ──────────────────────────────────
 
 from frontend.ventana.tipos_insumo import (
-    ICONO as _TIPO_ICONO,
+    ICONO_SVG as _TIPO_ICONO_SVG,
     NOMBRES as _TIPO_NOMBRE,
-    FILTROS as _FILTROS_TIPO,
+    TIPOS_INSUMO as _TIPOS_INSUMO,
+    COLOR as _COLOR_TIPO,
 )
+from frontend.ventana.iconos import icono
 
 
 # ── Diálogo de selección de insumo ─────────────────────────────────
@@ -376,17 +378,15 @@ class DialogoSeleccionarInsumo(QDialog):
         fila_btns = QHBoxLayout()
         fila_btns.setSpacing(4)
         self._btns_tipo: dict[int, QPushButton] = {}
-        for tipo_id, icono, nombre in _FILTROS_TIPO:
-            btn = QPushButton(icono)
+        for tipo_id, nombre, _clave in _TIPOS_INSUMO:
+            btn = QPushButton()
+            btn.setIcon(icono(_TIPO_ICONO_SVG.get(tipo_id, "file-text"), 22, _COLOR_TIPO.get(tipo_id)))
+            btn.setIconSize(QSize(22, 22))
             btn.setToolTip(nombre)
             btn.setCheckable(True)
             btn.setMinimumSize(76, 66)
             btn.setMaximumSize(90, 70)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            fnt = btn.font()
-            fnt.setFamilies(["Segoe UI Emoji", "Segoe UI"])
-            fnt.setPointSize(26)
-            btn.setFont(fnt)
             btn.setStyleSheet(
                 "QPushButton { padding: 0; margin: 0; }"
                 f"QPushButton:checked {{ background-color: {ACCENT}; color: #12161D; }}"
@@ -400,11 +400,13 @@ class DialogoSeleccionarInsumo(QDialog):
         # ── Toolbar: nuevo / editar insumo ─────────────────────────
         tb = QHBoxLayout()
         tb.setSpacing(4)
-        self._btn_nuevo = QPushButton("➕  Nuevo")
+        self._btn_nuevo = QPushButton("Nuevo")
+        self._btn_nuevo.setIcon(icono("plus", 16))
         self._btn_nuevo.setCursor(Qt.CursorShape.PointingHandCursor)
         self._btn_nuevo.clicked.connect(self._on_nuevo_insumo)
         tb.addWidget(self._btn_nuevo)
-        self._btn_editar = QPushButton("✏️  Editar")
+        self._btn_editar = QPushButton("Editar")
+        self._btn_editar.setIcon(icono("pencil", 16))
         self._btn_editar.setCursor(Qt.CursorShape.PointingHandCursor)
         self._btn_editar.clicked.connect(self._on_editar_insumo)
         tb.addWidget(self._btn_editar)
@@ -412,7 +414,7 @@ class DialogoSeleccionarInsumo(QDialog):
         layout.addLayout(tb)
 
         # ── Results tree (usa TablaInsumos internamente) ────────
-        from frontend.ventana.widgets.insumos import TablaInsumos, TIPO_NOMBRE, COLUMNAS_CATALOGO
+        from frontend.ventana.widgets.insumos import TablaInsumos, COLUMNAS_CATALOGO
         self._tree = TablaInsumos()
         self._tree.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._tree.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -536,11 +538,13 @@ class InsumoDialog(QDialog):
             pass  # insumo 42 actualizado
     """
 
-    def __init__(self, api, insumo_id: int | None = None, parent=None):
+    def __init__(self, api, insumo_id: int | None = None, parent=None,
+                 default_tipo: int | None = None):
         super().__init__(parent)
         self._api = api
         self._insumo_id = insumo_id
         self._resultado: int | None = insumo_id  # en edición se mantiene el mismo
+        self._default_tipo = default_tipo
 
         self.setWindowTitle("Nuevo insumo" if insumo_id is None else "Editar insumo")
         self.setMinimumWidth(480)
@@ -549,38 +553,6 @@ class InsumoDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 12, 16, 12)
         layout.setSpacing(4)
-
-        # ── Tipo * + Unidad ──────────────────────────────────────
-        tipo_unidad_row = QHBoxLayout()
-        tipo_unidad_row.setSpacing(8)
-        tipo_col = QVBoxLayout()
-        tipo_col.setSpacing(2)
-        tipo_col.addWidget(QLabel("Tipo *:"))
-        self._tipo = QComboBox()
-        for tid in (32, 1, 2, 4, 8, 16, 64, 128):
-            icono = _TIPO_ICONO.get(tid, "")
-            nombre = _TIPO_NOMBRE.get(tid, f"Tipo {tid}")
-            self._tipo.addItem(f"{icono}  {nombre}", tid)
-        tipo_col.addWidget(self._tipo)
-        tipo_unidad_row.addLayout(tipo_col, 1)
-        unidad_col = QVBoxLayout()
-        unidad_col.setSpacing(2)
-        unidad_col.addWidget(QLabel("Unidad *:"))
-        from frontend.ventana.widgets.base import UNIDADES
-        self._unidad_warn = QLabel()
-        self._unidad_warn.setStyleSheet(f"color: {WARNING}; font-size: 11px;")
-        self._unidad_warn.hide()
-        self._unidad = QComboBox()
-        self._unidad.setEditable(True)
-        self._unidad.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self._unidad.lineEdit().textChanged.connect(self._checar_unidad)
-        for u in UNIDADES:
-            self._unidad.addItem(u)
-        self._unidad.setCurrentText("")
-        unidad_col.addWidget(self._unidad)
-        unidad_col.addWidget(self._unidad_warn)
-        tipo_unidad_row.addLayout(unidad_col, 1)
-        layout.addLayout(tipo_unidad_row)
 
         # ── Descripción * ─────────────────────────────────────────
         layout.addWidget(QLabel("Descripción *:"))
@@ -593,6 +565,39 @@ class InsumoDialog(QDialog):
         self._desc_corta = QLineEdit()
         self._desc_corta.setPlaceholderText("Abreviatura")
         layout.addWidget(self._desc_corta)
+
+        # ── Tipo * + Unidad ──────────────────────────────────────
+        tipo_unidad_row = QHBoxLayout()
+        tipo_unidad_row.setSpacing(8)
+        tipo_col = QVBoxLayout()
+        tipo_col.setSpacing(2)
+        tipo_col.addWidget(QLabel("Tipo *:"))
+        self._tipo = QComboBox()
+        for tid in (32, 1, 2, 4, 8, 16, 64, 128):
+            nombre = _TIPO_NOMBRE.get(tid, f"Tipo {tid}")
+            self._tipo.addItem(icono(_TIPO_ICONO_SVG.get(tid, "file-text"), 16, _COLOR_TIPO.get(tid)), nombre, tid)
+        tipo_col.addWidget(self._tipo)
+        tipo_col.addSpacing(16)  # alinear con _unidad_warn
+        tipo_unidad_row.addLayout(tipo_col, 1)
+        unidad_col = QVBoxLayout()
+        unidad_col.setSpacing(2)
+        unidad_col.addWidget(QLabel("Unidad *:"))
+        from frontend.ventana.widgets.base import UNIDADES
+        self._unidad_warn = QLabel()
+        self._unidad_warn.setStyleSheet(f"color: {WARNING}; font-size: 11px;")
+        self._unidad_warn.setFixedHeight(16)
+        self._unidad_warn.setText("")
+        self._unidad = QComboBox()
+        self._unidad.setEditable(True)
+        self._unidad.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self._unidad.lineEdit().textChanged.connect(self._checar_unidad)
+        for u in UNIDADES:
+            self._unidad.addItem(u)
+        self._unidad.setCurrentText("")
+        unidad_col.addWidget(self._unidad)
+        unidad_col.addWidget(self._unidad_warn)
+        tipo_unidad_row.addLayout(unidad_col, 1)
+        layout.addLayout(tipo_unidad_row)
 
         # ── Familia ──────────────────────────────────────────────
         layout.addWidget(QLabel("Familia:"))
@@ -622,13 +627,19 @@ class InsumoDialog(QDialog):
         precios_layout.addWidget(self._es_compuesto, 0, 0, 1, 2)
 
         precios_layout.addWidget(QLabel("PU MN:"), 1, 0)
-        self._precio_mn = QLineEdit("0.00")
-        self._precio_mn.setValidator(QDoubleValidator(0.0, 1e12, 4))
+        self._precio_mn = QDoubleSpinBox()
+        self._precio_mn.setPrefix("$ ")
+        self._precio_mn.setDecimals(4)
+        self._precio_mn.setRange(0, 1e12)
+        self._precio_mn.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
         precios_layout.addWidget(self._precio_mn, 1, 1)
 
         precios_layout.addWidget(QLabel("PU ME:"), 2, 0)
-        self._precio_me = QLineEdit("0.00")
-        self._precio_me.setValidator(QDoubleValidator(0.0, 1e12, 4))
+        self._precio_me = QDoubleSpinBox()
+        self._precio_me.setPrefix("$ ")
+        self._precio_me.setDecimals(4)
+        self._precio_me.setRange(0, 1e12)
+        self._precio_me.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
         precios_layout.addWidget(self._precio_me, 2, 1)
 
         layout.addWidget(precios_box)
@@ -640,11 +651,11 @@ class InsumoDialog(QDialog):
         self._avanzadas_btn = QPushButton("▶  Opciones avanzadas")
         self._avanzadas_btn.setFlat(True)
         self._avanzadas_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._avanzadas_btn.setStyleSheet(f"""
-            QPushButton {{ text-align: left; padding: 4px 0; font-weight: bold;
-                          color: {ACCENT}; border: none; }}
-            QPushButton:hover { color: #9BC1E8; }
-        """)
+        self._avanzadas_btn.setStyleSheet(
+            "QPushButton { text-align: left; padding: 4px 0; font-weight: bold;"
+            f" color: {ACCENT}; border: none; }}"
+            " QPushButton:hover { color: #9BC1E8; }"
+        )
         self._avanzadas_btn.clicked.connect(self._alternar_avanzadas)
         layout.addWidget(self._avanzadas_btn)
 
@@ -664,12 +675,12 @@ class InsumoDialog(QDialog):
         adv_grid.addWidget(QLabel("Clave OPUS:"), 0, 0)
         self._clave_opus = QLineEdit()
         self._clave_opus.setPlaceholderText("Código original OPUS")
-        adv_grid.addWidget(self._clave_opus, 0, 1)
+        adv_grid.addWidget(self._clave_opus, 1, 0)
 
-        adv_grid.addWidget(QLabel("Peso (kg):"), 0, 2)
+        adv_grid.addWidget(QLabel("Peso (kg):"), 0, 1)
         self._peso_kg = QLineEdit("0.00")
         self._peso_kg.setValidator(QDoubleValidator(0.0, 1e6, 4))
-        adv_grid.addWidget(self._peso_kg, 0, 3)
+        adv_grid.addWidget(self._peso_kg, 1, 1)
 
 
         av_layout.addLayout(adv_grid)
@@ -679,6 +690,10 @@ class InsumoDialog(QDialog):
         # ── Pre-cargar si es edición ─────────────────────────────
         if insumo_id is not None:
             self._cargar()
+        elif default_tipo is not None:
+            idx = self._tipo.findData(default_tipo)
+            if idx >= 0:
+                self._tipo.setCurrentIndex(idx)
 
         # ── Botones ──────────────────────────────────────────────
         bl = QHBoxLayout()
@@ -729,8 +744,8 @@ class InsumoDialog(QDialog):
                 else:
                     self._subfamilia.setEditText(insumo.get("subfamilia_nombre") or "")
 
-        self._precio_mn.setText(f"{insumo.get('costo_mn', 0):.2f}")
-        self._precio_me.setText(f"{insumo.get('costo_me', 0):.2f}")
+        self._precio_mn.setValue(float(insumo.get('costo_mn', 0) or 0))
+        self._precio_me.setValue(float(insumo.get('costo_me', 0) or 0))
 
         self._desc_corta.setText(insumo.get("descripcion_corta") or "")
         self._clave_opus.setText(insumo.get("clave_opus") or "")
@@ -765,10 +780,9 @@ class InsumoDialog(QDialog):
         from frontend.ventana.widgets.base import UNIDADES
         t = texto.strip()
         if t and t not in UNIDADES:
-            self._unidad_warn.setText("⚠ Unidad no estándar (no aparece en el catálogo)")
-            self._unidad_warn.show()
+            self._unidad_warn.setText("⚠ Unidad no estándar")
         else:
-            self._unidad_warn.hide()
+            self._unidad_warn.setText("")
 
     def _resolver_familia(self) -> int | None:
         """Crea la familia si el texto no coincide con ninguna existente."""
@@ -813,8 +827,8 @@ class InsumoDialog(QDialog):
 
         if not es_compuesto:
             try:
-                costo_mn = float(self._precio_mn.text().replace(",", "."))
-                costo_me = float(self._precio_me.text().replace(",", "."))
+                costo_mn = self._precio_mn.value()
+                costo_me = self._precio_me.value()
             except ValueError:
                 QMessageBox.warning(self, "Valor inválido", "Ingresa números válidos para los precios.")
                 return

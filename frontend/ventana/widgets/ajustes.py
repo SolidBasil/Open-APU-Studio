@@ -21,12 +21,14 @@ from PySide6.QtWidgets import (
     QStackedWidget,
 )
 
+from frontend.ventana.iconos import icono
 
-# ── Categorías de la sidebar ─────────────────────────────────────
+
+# ── Categorías de la sidebar (nombre de icono Lucide, no emoji) ──
 _CATEGORIAS = [
-    ("📋", "General"),
-    ("🌐", "Red"),
-    ("🎨", "Apariencia"),
+    ("clipboard", "General"),
+    ("globe", "Red"),
+    ("palette", "Apariencia"),
 ]
 
 
@@ -66,7 +68,8 @@ class DialogoAjustes(QDialog):
         row = QHBoxLayout(hdr)
         row.setContentsMargins(16, 0, 16, 0)
 
-        icon = QLabel("⚙")
+        icon = QLabel()
+        icon.setPixmap(icono("settings", 18).pixmap(18, 18))
         icon.setObjectName("dlgIcon")
         row.addWidget(icon)
 
@@ -95,8 +98,9 @@ class DialogoAjustes(QDialog):
         self._nav.setFixedWidth(150)
         self._nav.setSpacing(0)
 
-        for icono, nombre in _CATEGORIAS:
-            item = QListWidgetItem(f"  {icono}  {nombre}")
+        for svg_name, nombre in _CATEGORIAS:
+            pix = icono(svg_name, 16).pixmap(16, 16)
+            item = QListWidgetItem(pix, f"  {nombre}")
             item.setSizeHint(item.sizeHint())
             self._nav.addItem(item)
 
