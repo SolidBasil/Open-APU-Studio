@@ -427,33 +427,34 @@ class _Delegate(QStyledItemDelegate):
         """Intercepta Enter (cerrar), Tab (mover foco), Escape (cancelar) y Ctrl+Z/Y (undo/redo)."""
         from PySide6.QtWidgets import QComboBox
         from PySide6.QtCore import QEvent
-        if event.type() == QEvent.Type.KeyPress:
-            key = event.key()
-            if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-                if isinstance(editor, QComboBox) and editor.isPopupVisible():
-                    editor.hidePopup()
-                self.commitData.emit(editor)
-                self.closeEditor.emit(editor, QStyledItemDelegate.EndEditHint.NoHint)
-                return True
-            if key == Qt.Key.Key_Escape:
-                self.closeEditor.emit(editor, QStyledItemDelegate.EndEditHint.RevertModelCache)
-                return True
-            if key == Qt.Key.Key_Tab:
-                self.commitAndMove(editor, QStyledItemDelegate.EndEditHint.EditNextItem)
-                return True
-            if key == Qt.Key.Key_Backtab:
-                self.commitAndMove(editor, QStyledItemDelegate.EndEditHint.EditPreviousItem)
-                return True
-            if key == Qt.Key.Key_Z and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-                win = self.parent().window()
-                if hasattr(win, '_on_deshacer'):
-                    win._on_deshacer()
-                return True
-            if key == Qt.Key.Key_Y and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-                win = self.parent().window()
-                if hasattr(win, '_on_rehacer'):
-                    win._on_rehacer()
-                return True
+        if event.type() != QEvent.Type.KeyPress:
+            return super().eventFilter(editor, event)
+        key = event.key()
+        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            if isinstance(editor, QComboBox) and editor.isPopupVisible():
+                editor.hidePopup()
+            self.commitData.emit(editor)
+            self.closeEditor.emit(editor, QStyledItemDelegate.EndEditHint.NoHint)
+            return True
+        if key == Qt.Key.Key_Escape:
+            self.closeEditor.emit(editor, QStyledItemDelegate.EndEditHint.RevertModelCache)
+            return True
+        if key == Qt.Key.Key_Tab:
+            self.commitAndMove(editor, QStyledItemDelegate.EndEditHint.EditNextItem)
+            return True
+        if key == Qt.Key.Key_Backtab:
+            self.commitAndMove(editor, QStyledItemDelegate.EndEditHint.EditPreviousItem)
+            return True
+        if key == Qt.Key.Key_Z and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            win = self.parent().window()
+            if hasattr(win, '_on_deshacer'):
+                win._on_deshacer()
+            return True
+        if key == Qt.Key.Key_Y and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            win = self.parent().window()
+            if hasattr(win, '_on_rehacer'):
+                win._on_rehacer()
+            return True
         return super().eventFilter(editor, event)
 
 

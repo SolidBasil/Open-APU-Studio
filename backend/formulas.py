@@ -20,6 +20,8 @@ import graphlib
 import math
 from decimal import Decimal
 
+from decimal import DivisionUndefined
+
 from simpleeval import EvalWithCompoundTypes, NameNotDefined, InvalidExpression
 
 
@@ -122,6 +124,8 @@ def resolver_variables(variables: dict[str, str]) -> dict[str, Decimal]:
 
 def _mensaje_error(e: Exception) -> str:
     """Traduce excepciones de simpleeval/Decimal a mensajes legibles."""
+    if isinstance(e, DivisionUndefined):
+        return "0/0 — resultado indefinido"
     msg = str(e)
     m = msg.lower()
     if "division" in m and "zero" in m:

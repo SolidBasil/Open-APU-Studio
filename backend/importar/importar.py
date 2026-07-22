@@ -538,6 +538,9 @@ def importar(
             es_mo   = insumo_tipo_por_clave.get(insumo_clave, 0) == 2
             operador = '/' if es_mo else '*'
             valor = _f(r.get("RENDTO")) if es_mo else _f(r.get("CANTIDAD"))
+            formula = _s(r.get("EXPRESION") or r.get("MEMOCAD"))
+            if operador == '/' and formula:
+                formula = f"1/{formula}"
             cur.execute("""
                 INSERT INTO apu_matrices
                     (matriz_id, insumo_id, valor, operador,
@@ -547,7 +550,7 @@ def importar(
                   valor,
                   operador,
                   _f(r.get("COSTO")),
-                  _s(r.get("EXPRESION") or r.get("MEMOCAD")),
+                  formula,
                   int(_f(r.get("CLAVENUM")))))
             n_comp += 1
 
@@ -659,17 +662,19 @@ def _arbol_numerico(con, cur, proyecto_id, regs_1, regs_a, regs_p) -> dict:
             unidad = cantidad = pu = None
 
         total = cantidad * pu if es_concepto and cantidad and pu else 0
+        formula_pres = _s(r.get("PRE_EXP")) or None
         cur.execute("""
             INSERT INTO estructura_presupuesto
                 (proyecto_id, padre_id, wbs, nivel, orden, tipo,
-                 insumo_id, descripcion, cantidad, total, estado, creado_por)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)
+                 insumo_id, descripcion, cantidad, formula, total, estado, creado_por)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)
         """, (proyecto_id, padre_id, wbs, nivel,
               int(wbs[-2:]) if len(wbs) >= 2 else 0,
               "concepto" if es_concepto else "capitulo",
               None,  # insumo_id: se vincula posteriormente
               desc,
               cantidad,
+              formula_pres,
               total))
 
         sid = cur.lastrowid
@@ -722,15 +727,16 @@ def _arbol_clasico(con, cur, proyecto_id, regs_f, regs_p) -> dict:
             cantidad = _f(r.get("NOELE"))
             pu       = _f(r.get("COSTO"))
             total    = cantidad * pu if cantidad and pu else 0
+            formula_pres = (_s(r.get("EXPRESION")) or _s(r.get("PRE_EXP"))) or None
             cur.execute("""
                 INSERT INTO estructura_presupuesto
                     (proyecto_id, padre_id, wbs, nivel, orden, tipo,
-                     insumo_id, descripcion, cantidad, total, estado, creado_por)
-                VALUES (?, ?, ?, 2, ?, 'concepto', ?, ?, ?, ?, 1, 1)
+                     insumo_id, descripcion, cantidad, formula, total, estado, creado_por)
+                VALUES (?, ?, ?, 2, ?, 'concepto', ?, ?, ?, ?, ?, 1, 1)
             """, (proyecto_id, cap_id, f"{wbs_cap}{i:02d}", i,
                   None,  # insumo_id
                   _s(rec.get("DESCRIPCIO") or rec.get("DESCCORTA")),
-                  cantidad, total))
+                  cantidad, formula_pres, total))
             nodo_id_sqlite[clave] = cur.lastrowid
 
     con.commit()

@@ -6,7 +6,7 @@ Mixin de pestañas APU: desglose, edición inline, navegación a sub-APU.
 Se mezcla en VentanaPrincipal via herencia múltiple.
 """
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 
 
 class ApuMixin:
@@ -192,18 +192,20 @@ class ApuMixin:
         if column == 6:
             from PySide6.QtWidgets import QMessageBox
             from frontend.ventana.widgets.arbol import _num
+            from frontend.ventana.widgets.base import FORMULA_ROLE
             texto = item.text(column).strip()
             try:
                 self._api.concepto_actualizar_cantidad(nodo_id, cantidad=0, formula=texto or None)
             except ValueError as e:
                 QMessageBox.warning(self, "Fórmula inválida", str(e))
-                # revertir celda al valor numérico guardado en DB
                 tree = item.treeWidget()
                 if tree:
                     tree.blockSignals(True)
                     nodo = self._api.campo_valor("estructura_presupuesto", "cantidad", nodo_id)
                     item.setText(6, _num((nodo or {}).get("cantidad")))
+                    item.setData(6, FORMULA_ROLE, texto)
                     tree.blockSignals(False)
+                    QTimer.singleShot(0, lambda t=tree, i=item, c=column: t.editItem(i, c))
 
         elif column == 4:
             if tipo == "Capítulo":

@@ -253,9 +253,16 @@ class TablaApuDetalle(TreeTableWidget):
 
         def _on_evento(evento):
             try:
+                cur = self.currentItem()
+                row = self.indexOfTopLevelItem(cur) if cur else -1
+                col = self.currentColumn()
                 def _refrescar_seguro():
                     try:
                         self._refrescar()
+                        if row >= 0 and col >= 0:
+                            it = self.topLevelItem(row)
+                            if it:
+                                self.setCurrentItem(it, col)
                     except Exception as e:
                         print(f"[eventbus] _refrescar_seguro: {type(e).__name__}: {e}")
                 QTimer.singleShot(0, _refrescar_seguro)
@@ -347,7 +354,17 @@ class TablaApuDetalle(TreeTableWidget):
                 self._api.apu_actualizar_valor(comp_id, valor=0, formula=texto or None)
             except ValueError as e:
                 QMessageBox.warning(self.window(), "Fórmula inválida", str(e))
-                self._revertir_item(item, column, "apu_matrices", comp_id, "valor", ":,.8f")
+                tw = item.treeWidget()
+                if tw:
+                    tw.blockSignals(True)
+                    row = self._api.campo_valor("apu_matrices", "valor", comp_id)
+                    old = (row or {}).get("valor")
+                    if old is not None:
+                        txt = f"{old:,.8f}".rstrip("0").rstrip(".")
+                        item.setText(6, txt)
+                    item.setData(6, FORMULA_ROLE, texto)
+                    tw.blockSignals(False)
+                    QTimer.singleShot(0, lambda t=tw, i=item, c=column: t.editItem(i, c))
             return
 
         if column == 4:

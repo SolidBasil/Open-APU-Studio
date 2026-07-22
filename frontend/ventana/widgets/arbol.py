@@ -481,20 +481,30 @@ class TablaArbol(TreeTableWidget):
         return encontrados
 
     def _on_concepto_actualizado(self, evento):
-        """ConceptoActualizado: actualiza in-place la fila propia del nodo."""
+        """ConceptoActualizado: actualiza in-place la fila propia del nodo.
+
+        Bloquea señales para evitar que item.setText() (col 6) dispare
+        itemChanged recursivamente y sobreescriba la fórmula con el valor
+        numérico (ver _on_concepto_editado en mixins/apu.py).
+        """
         try:
             item = self._buscar_item_por_id(evento.concepto_id)
             if item is None:
                 return
-            registro = evento.registro or {}
-            if "descripcion" in evento.cambios:
-                item.setText(4, registro.get("descripcion", "") or "")
-            if "cantidad" in evento.cambios:
-                item.setText(6, _num(registro.get("cantidad")))
-            if "formula" in evento.cambios:
-                item.setText(14, registro.get("formula") or "")
-            if "total" in registro:
-                item.setText(8, _fmt(registro.get("total")))
+            self.blockSignals(True)
+            try:
+                registro = evento.registro or {}
+                if "descripcion" in evento.cambios:
+                    item.setText(4, registro.get("descripcion", "") or "")
+                if "cantidad" in evento.cambios:
+                    item.setText(6, _num(registro.get("cantidad")))
+                if "formula" in evento.cambios:
+                    item.setText(14, registro.get("formula") or "")
+                    item.setData(6, FORMULA_ROLE, registro.get("formula") or "")
+                if "total" in registro:
+                    item.setText(8, _fmt(registro.get("total")))
+            finally:
+                self.blockSignals(False)
         except Exception as e:
             print(f"[eventbus] _on_concepto_actualizado: {type(e).__name__}: {e}")
 
@@ -549,6 +559,7 @@ class TablaArbol(TreeTableWidget):
             scroll_y = self.verticalScrollBar().value()
             current = self.currentItem()
             id_actual = current.data(0, ID_ROLE) if current else None
+            col_actual = self.currentColumn()
             ids_seleccionados = {
                 it.data(0, ID_ROLE) for it in self.selectedItems()
                 if it.data(0, ID_ROLE) is not None
@@ -573,7 +584,7 @@ class TablaArbol(TreeTableWidget):
                     if id_actual is not None:
                         item = self._buscar_item_por_id(id_actual)
                         if item is not None:
-                            self.setCurrentItem(item)
+                            self.setCurrentItem(item, col_actual if col_actual >= 0 else 0)
                     if ids_seleccionados:
                         for nid in ids_seleccionados:
                             item = self._buscar_item_por_id(nid)
