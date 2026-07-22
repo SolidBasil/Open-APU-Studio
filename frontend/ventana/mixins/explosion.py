@@ -131,6 +131,7 @@ class ExplosionMixin:
                     painter.restore()
 
         tree = _TablaMatriz(cols)
+        tree.setColumnHidden(1, True)  # Clave oculta por defecto
         tree.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         tree.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         tree.setItemDelegate(_BorderDelegate(tree, frozenset(), None))

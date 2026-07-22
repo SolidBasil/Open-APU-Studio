@@ -130,29 +130,41 @@ class Api:
         nodo = NodoRepo(self._conn).buscar(nodo_id)
         return (nodo.get("total") or 0) if nodo else 0
 
-    def concepto_actualizar_cantidad(self, concepto_id: int, cantidad: float) -> None:
-        """Actualiza la cantidad de un concepto y recalcula totales.
+    def concepto_actualizar_cantidad(self, concepto_id: int, cantidad: float,
+                                      formula: str | None = None) -> None:
+        """Actualiza la cantidad y opcionalmente la fórmula de un concepto.
 
-        Vía HTTP usa el recálculo completo (`/recalcular`, cascada desde
-        la raíz) en vez del `recalcular_desde()` local, que solo
-        recalculaba este concepto y subía hasta la raíz. Es más trabajo
-        del necesario para un cambio de una sola cantidad, pero el
-        resultado es idéntico (`recalcular_proyecto` es idempotente,
-        confirmado en Fase 0/1) — no vale la pena un endpoint dedicado
-        solo por performance todavía; revisar si se vuelve un cuello de
-        botella real con árboles grandes.
+        Si se proporciona `formula`, se evalúa antes de guardar (valida
+        que dé un resultado numérico). El resultado se guarda como
+        `cantidad` y el texto de la fórmula se persiste en la columna
+        `formula`. Si la evaluación falla, no se guarda nada (ValueError).
         """
         from backend.database.event_bus import ProyectoRecalculado
         if cantidad < 0:
             raise ValueError("La cantidad no puede ser negativa")
+        if formula is not None and formula.strip():
+            from backend.formulas import evaluar_formula, ErrorFormula
+            try:
+                resuelta = evaluar_formula(formula.strip(), self.variables_resueltas())
+                cantidad = float(resuelta)
+            except ErrorFormula as e:
+                raise ValueError(str(e))
+        else:
+            formula = None
         if self._use_http:
-            self._http().actualizar("estructura_presupuesto", concepto_id, cantidad=cantidad)
+            campos = {"cantidad": cantidad}
+            if formula is not None:
+                campos["formula"] = formula
+            self._http().actualizar("estructura_presupuesto", concepto_id, **campos)
             self._http().recalcular()
             self._ds.emitir(ProyectoRecalculado(self._pid))
             return
         from backend.database.repos import NodoRepo
         with self._ds.transaccion():
-            self._ds.actualizar("estructura_presupuesto", concepto_id, cantidad=cantidad)
+            campos = {"cantidad": cantidad}
+            if formula is not None:
+                campos["formula"] = formula
+            self._ds.actualizar("estructura_presupuesto", concepto_id, **campos)
             NodoRepo(self._conn).recalcular_desde(concepto_id)
         self._ds.emitir(ProyectoRecalculado(self._pid))
 
@@ -366,6 +378,85 @@ class Api:
         return NodoRepo(self._conn).todos(self._pid, tipo="concepto")
 
     # =========================================================================
+    # VARIABLES DE FÓRMULA
+    # =========================================================================
+
+    def variables_listar(self) -> list[dict]:
+        """Todas las variables del proyecto."""
+        from backend.database.repos import VariableFormulaRepo
+        return VariableFormulaRepo(self._conn).por_proyecto(self._pid)
+
+    def variables_crear(self, nombre: str, expresion: str = "",
+                        descripcion: str = "") -> int:
+        """Crea una variable. Valida nombre duplicado."""
+        import re
+        if not re.match(r'^[A-Za-z_]\w*$', nombre):
+            raise ValueError(
+                f"'{nombre}' no es un nombre de variable válido. "
+                "Debe empezar con letra o _ y contener solo letras, dígitos o _."
+            )
+        from backend.database.repos import VariableFormulaRepo
+        existente = VariableFormulaRepo(self._conn).buscar_por_nombre(self._pid, nombre)
+        if existente:
+            raise ValueError(f"Ya existe una variable con el nombre '{nombre}'")
+        return self._ds.insertar("variables_formula",
+                                 proyecto_id=self._pid,
+                                 nombre=nombre,
+                                 expresion=expresion,
+                                 descripcion=descripcion)
+
+    def variables_actualizar(self, variable_id: int, **campos) -> None:
+        """Actualiza expresión, descripción o nombre de una variable.
+        Rechaza cambios que creen ciclos en el conjunto completo."""
+        from backend.database.repos import VariableFormulaRepo
+        repo = VariableFormulaRepo(self._conn)
+
+        # Si cambia expresión, validar que no introduce ciclo
+        if "expresion" in campos or "nombre" in campos:
+            todas = repo.por_proyecto(self._pid)
+            nuevas = {}
+            for v in todas:
+                key = v["nombre"]
+                val = campos.get("expresion") if v["id"] == variable_id and "expresion" in campos else v.get("expresion", "")
+                key_nuevo = campos.get("nombre") if v["id"] == variable_id and "nombre" in campos else key
+                nuevas[key_nuevo] = val
+            from backend.formulas import resolver_variables, ErrorFormula
+            try:
+                resolver_variables(nuevas)
+            except ErrorFormula as e:
+                raise ValueError(str(e))
+
+        self._ds.actualizar("variables_formula", variable_id, **campos)
+
+    def variables_eliminar(self, variable_id: int) -> None:
+        """Elimina una variable."""
+        self._ds.eliminar("variables_formula", variable_id)
+
+    def variables_resueltas(self) -> dict[str, 'Decimal']:
+        """Resuelve todas las variables del proyecto en orden de
+        dependencias. Devuelve {nombre: Decimal}.
+        Lanza ValueError si hay ciclo o variable indefinida."""
+        from backend.database.repos import VariableFormulaRepo
+        from backend.formulas import resolver_variables, ErrorFormula
+        variables = {
+            v["nombre"]: v["expresion"] or ""
+            for v in VariableFormulaRepo(self._conn).por_proyecto(self._pid)
+        }
+        try:
+            return resolver_variables(variables)
+        except ErrorFormula as e:
+            raise ValueError(str(e))
+
+    def formula_evaluar(self, expr: str) -> 'Decimal':
+        """Evalúa una expresión contra las variables del proyecto.
+        Devuelve Decimal. Lanza ValueError con mensaje legible."""
+        from backend.formulas import evaluar_formula, ErrorFormula
+        try:
+            return evaluar_formula(expr, self.variables_resueltas())
+        except ErrorFormula as e:
+            raise ValueError(str(e))
+
+    # =========================================================================
     # APU
     # =========================================================================
 
@@ -452,17 +543,33 @@ class Api:
             RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
         self._ds.emitir(ProyectoRecalculado(self._pid))
 
-    def apu_actualizar_valor(self, comp_id: int, valor: float) -> None:
-        """Actualiza la cantidad (columna Valor) de un componente APU y recalcula en cascada."""
+    def apu_actualizar_valor(self, comp_id: int, valor: float,
+                              formula: str | None = None) -> None:
+        """Actualiza el valor y opcionalmente la fórmula de un componente APU.
+
+        Si se proporciona `formula`, se evalúa antes de guardar.
+        """
         from backend.database.event_bus import ProyectoRecalculado
         if valor is None or valor < 0:
             raise ValueError("La cantidad no puede ser negativa")
+        if formula is not None and formula.strip():
+            from backend.formulas import evaluar_formula, ErrorFormula
+            try:
+                resuelta = evaluar_formula(formula.strip(), self.variables_resueltas())
+                valor = float(resuelta)
+            except ErrorFormula as e:
+                raise ValueError(str(e))
+        else:
+            formula = None
         if self._use_http:
             if valor == 0:
                 comp = self._http().buscar("apu_matrices", comp_id)
                 if comp and comp["operador"] == "/":
                     raise ValueError("La cantidad no puede ser cero con operador división (división por cero)")
-            self._http().actualizar("apu_matrices", comp_id, valor=valor)
+            campos = {"valor": valor}
+            if formula is not None:
+                campos["formula"] = formula
+            self._http().actualizar("apu_matrices", comp_id, **campos)
             self._http().recalcular()
             self._ds.emitir(ProyectoRecalculado(self._pid))
             return
@@ -472,7 +579,10 @@ class Api:
             if comp and comp["operador"] == "/":
                 raise ValueError("La cantidad no puede ser cero con operador división (división por cero)")
         with self._ds.transaccion():
-            self._ds.actualizar("apu_matrices", comp_id, valor=valor)
+            campos = {"valor": valor}
+            if formula is not None:
+                campos["formula"] = formula
+            self._ds.actualizar("apu_matrices", comp_id, **campos)
             RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
         self._ds.emitir(ProyectoRecalculado(self._pid))
 
@@ -1149,3 +1259,16 @@ class Api:
 
     def generador_renglon_eliminar(self, renglon_id: int) -> None:
         self._ds.eliminar_renglon_generador(renglon_id)
+
+    def campo_valor(self, tabla: str, campo: str, registro_id: int) -> dict | None:
+        """Lee un campo concreto de una tabla. Devuelve registro completo o None."""
+        from backend.database.repos import NodoRepo, ApuMatricesRepo, InsumoRepo
+        repos = {
+            "estructura_presupuesto": NodoRepo,
+            "apu_matrices": ApuMatricesRepo,
+            "insumos": InsumoRepo,
+        }
+        cls = repos.get(tabla)
+        if not cls:
+            return None
+        return cls(self._conn).buscar(registro_id)

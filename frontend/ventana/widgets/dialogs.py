@@ -48,14 +48,12 @@ class ProjectDialog(QDialog):
         layout.addWidget(header)
 
         # ── Búsqueda ──────────────────────────────────────────────
-        search = QLineEdit()
-        search.setObjectName("dlgSearch")
-        search.setPlaceholderText("🔍  Buscar proyecto…")
-        search.setClearButtonEnabled(True)
+        from frontend.ventana.iconos import search_input
+        search_wrapper, search = search_input("Buscar proyecto…", "dlgSearch")
         sc = QWidget()
         sl = QHBoxLayout(sc)
         sl.setContentsMargins(16, 12, 16, 4)
-        sl.addWidget(search)
+        sl.addWidget(search_wrapper)
         layout.addWidget(sc)
 
         # ── Lista de proyectos ────────────────────────────────────
@@ -370,11 +368,9 @@ class DialogoSeleccionarInsumo(QDialog):
         layout.setSpacing(8)
 
         # ── Search bar ──────────────────────────────────────────
-        self._search = QLineEdit()
-        self._search.setPlaceholderText("🔍  Buscar insumo…")
-        self._search.setClearButtonEnabled(True)
+        search_wrapper, self._search = search_input("Buscar insumo…", "dlgSearch")
         self._search.textChanged.connect(self._aplicar_filtros)
-        layout.addWidget(self._search)
+        layout.addWidget(search_wrapper)
 
         # ── Filter buttons (icono + tooltip, azul al activarse) ──
         fila_btns = QHBoxLayout()

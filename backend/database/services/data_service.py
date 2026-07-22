@@ -18,7 +18,7 @@ from backend.database.event_bus import (
     EventBus, Evento,
     InsumoActualizado, ConceptoActualizado, ApuComponenteActualizado,
     FactoresSobrecostoActualizados, NodoInsertado, NodoEliminado,
-    ProyectoRecalculado, GeneradorActualizado,
+    ProyectoRecalculado, GeneradorActualizado, VariableFormulaActualizada,
 )
 from backend.database.schema_registry import SchemaRegistry
 from backend.database.exceptions import (
@@ -36,6 +36,7 @@ _EVENTO_POR_ENTIDAD: dict[str, type[Evento]] = {
     "estructura_presupuesto": ConceptoActualizado,
     "apu_matrices": ApuComponenteActualizado,
     "factores_sobrecosto": FactoresSobrecostoActualizados,
+    "variables_formula": VariableFormulaActualizada,
 }
 
 
@@ -144,14 +145,46 @@ class DataService:
     # ── Eliminar ────────────────────────────────────────────────────
 
     def eliminar(self, entidad: str, registro_id: int,
-                 usuario_id: int = 1) -> None:
+                 usuario_id: int = 1, limpiar_redo: bool = True) -> None:
         """Elimina (soft-delete) un registro y emite evento post-commit.
+
+        SRV-09: captura en historial el valor anterior del campo 'activo'
+        ANTES del soft-delete, igual que actualizar() — así Ctrl+Z puede
+        deshacer un eliminar_nodo/eliminar_insumo (antes de este fix,
+        _delete() escribía directo con _update() sin pasar por
+        HistorialRepo.capturar() y el borrado no quedaba en el historial).
+
+        Si la tabla no tiene columna 'activo' (hard-delete real, ej.
+        variables_formula) no hay nada que capturar: ese borrado sigue
+        sin ser deshacible, porque no queda fila para revertir.
+
         usuario_id: id del usuario que realiza la operación (SRV-06).
+        limpiar_redo: True = limpia sesiones deshechas (nueva escritura
+                      invalida redo). Poner False en llamadas internas.
         """
+        from backend.database.repos.historial import HistorialRepo
+
         repo = self._registry.obtener(entidad)
         try:
             with self._db.transaction():
+                h_repo = HistorialRepo(self._db.conn)
+                if limpiar_redo:
+                    h_repo.limpiar_deshachadas(usuario_id)
+                sesion = self._sesion or str(uuid.uuid4())
+
+                try:
+                    viejo = h_repo.valor_campo(entidad, registro_id, "activo")
+                except Exception:
+                    viejo = None  # tabla sin columna 'activo' (hard-delete)
+
                 repo.delete(registro_id)
+
+                if viejo is not None:
+                    h_repo.capturar(
+                        tabla=entidad, registro_id=registro_id,
+                        campo="activo", valor_anterior=viejo, valor_nuevo=0,
+                        usuario_id=usuario_id, sesion=sesion,
+                    )
         except Exception as e:
             raise RepositoryError(str(e)) from e
 
@@ -199,12 +232,18 @@ class DataService:
         if not cambios:
             return False
 
-        # Inferir proyecto_id del primer cambio si no se dio
+        # Inferir proyecto_id del primer cambio si no se dio.
+        # Ojo: NO usar repo_tmp.buscar() aquí — casi todos los repos lo
+        # sobreescriben para filtrar "WHERE activo = 1", así que si el
+        # cambio a deshacer es justo un eliminar_nodo/eliminar_insumo (el
+        # registro está soft-deleted en este momento) buscar() no lo
+        # encontraría y pid caería siempre al fallback 1, recalculando el
+        # proyecto equivocado. Se consulta la tabla directo, sin filtro.
         pid = proyecto_id
         if pid is None:
             for c in cambios:
                 repo_tmp = self._registry.obtener(c["tabla"])
-                reg = repo_tmp.buscar(c["registro_id"])
+                reg = repo_tmp._uno(f"SELECT * FROM {c['tabla']} WHERE id = ?", [c["registro_id"]])
                 if reg and "proyecto_id" in reg:
                     pid = reg["proyecto_id"]
                     break
@@ -258,7 +297,7 @@ class DataService:
         if pid is None:
             for c in cambios:
                 repo_tmp = self._registry.obtener(c["tabla"])
-                reg = repo_tmp.buscar(c["registro_id"])
+                reg = repo_tmp._uno(f"SELECT * FROM {c['tabla']} WHERE id = ?", [c["registro_id"]])
                 if reg and "proyecto_id" in reg:
                     pid = reg["proyecto_id"]
                     break

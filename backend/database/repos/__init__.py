@@ -31,6 +31,7 @@ from .diagnostico import DiagnosticoRepo
 from .historial   import HistorialRepo
 from .indirectos  import IndirectoRepo, PLANTILLA_CAMPO, PLANTILLA_OFICINA
 from .generador   import GeneradorRepo
+from .formulas    import VariableFormulaRepo
 
 __all__ = [
     "RepoBase",
@@ -45,4 +46,5 @@ __all__ = [
     "HistorialRepo",
     "IndirectoRepo", "PLANTILLA_CAMPO", "PLANTILLA_OFICINA",
     "GeneradorRepo",
+    "VariableFormulaRepo",
 ]

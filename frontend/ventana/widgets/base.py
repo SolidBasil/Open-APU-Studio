@@ -39,12 +39,13 @@ class ColumnaDef:
 
     Una tabla puede tener muchas más columnas de las que tiene sentido
     mostrar en el menú rápido de clic derecho (ver Insumos: ~30 campos
-    posibles). El catálogo separa dos cosas independientes:
-      - favorita_default: si aparece en el menú rápido por defecto
-      - visible_default:  si se muestra en la tabla por defecto
-    El usuario puede cambiar ambas desde "Personalizar columnas…", y
-    marcar como favorita una columna que hoy no lo es (o viceversa) sin
-    tocar su visibilidad actual.
+    posibles). El catálogo separa tres cosas independientes:
+      - favorita_default:   si aparece en el menú rápido por defecto
+      - visible_default:    si se muestra en la tabla por defecto
+      - imprimible_default: si se incluye en el reporte LaTeX/PDF por defecto
+    El usuario puede cambiar las tres desde "Personalizar columnas…", y
+    marcar como favorita/imprimible una columna que hoy no lo es (o
+    viceversa) sin tocar los otros dos atributos.
 
     idx debe coincidir con la posición real de la columna en la lista
     `columns` pasada al constructor de TreeTableWidget.
@@ -54,6 +55,7 @@ class ColumnaDef:
     categoria: str
     favorita_default: bool = True
     visible_default: bool = True
+    imprimible_default: bool = True
 
 
 class PersonalizarColumnasDialog(QDialog):
@@ -71,20 +73,23 @@ class PersonalizarColumnasDialog(QDialog):
         self.setMinimumSize(440, 560)
         self._tabla = tabla
         self._favoritas = tabla._favoritas()  # set[int] mutable en memoria, se persiste en cada cambio
+        self._imprimibles = tabla._imprimibles()  # idem, para la columna "Imprimible"
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
 
-        leyenda = QLabel("★ Favorita — aparece en el menú rápido de clic derecho.")
+        leyenda = QLabel(
+            "★ Favorita — aparece en el menú rápido de clic derecho.\n"
+            "🖶 Imprimible — se incluye en el reporte LaTeX/PDF."
+        )
         leyenda.setStyleSheet("color: #8A97A3; font-size: 11px;")
         layout.addWidget(leyenda)
 
-        buscador = QLineEdit()
-        buscador.setPlaceholderText("🔍  Buscar columna…")
-        buscador.setClearButtonEnabled(True)
+        from frontend.ventana.iconos import search_input
+        buscador_wrapper, buscador = search_input("Buscar columna…", "dlgSearch")
         buscador.textChanged.connect(self._filtrar)
-        layout.addWidget(buscador)
+        layout.addWidget(buscador_wrapper)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -137,10 +142,17 @@ class PersonalizarColumnasDialog(QDialog):
                 chk_vis.toggled.connect(
                     lambda checked, c=col.idx: self._tabla.setColumnHidden(c, not checked))
 
+                chk_imp = QCheckBox("🖶")
+                chk_imp.setToolTip("Imprimible: se incluye en el reporte LaTeX/PDF")
+                chk_imp.setChecked(col.idx in self._imprimibles)
+                chk_imp.toggled.connect(
+                    lambda checked, c=col.idx: self._toggle_imprimible(c, checked))
+
                 lbl = QLabel(col.label)
                 fl.addWidget(lbl, 1)
                 fl.addWidget(star)
                 fl.addWidget(chk_vis)
+                fl.addWidget(chk_imp)
                 gl.addWidget(fila)
                 filas.append((fila, col, star))
             self._content_layout.addWidget(grupo)
@@ -164,6 +176,13 @@ class PersonalizarColumnasDialog(QDialog):
             self._favoritas.discard(col_idx)
         self._tabla._guardar_favoritas(self._favoritas)
         self._pintar_star(star, es_fav)
+
+    def _toggle_imprimible(self, col_idx: int, checked: bool):
+        if checked:
+            self._imprimibles.add(col_idx)
+        else:
+            self._imprimibles.discard(col_idx)
+        self._tabla._guardar_imprimibles(self._imprimibles)
 
     def _filtrar(self, texto: str):
         """Filtra filas por nombre de columna; oculta categorías vacías."""
@@ -197,6 +216,10 @@ def _menu_icon(nombre: str, size: int = 16):
 
 LINE_COLOR = QColor(LINE)
 LINE_WIDTH  = 1.5
+
+# ── Roles de datos ──────────────────────────────────────────────────
+
+FORMULA_ROLE = Qt.ItemDataRole.UserRole + 20
 
 
 # ── Utilidades de texto ───────────────────────────────────────────
@@ -349,7 +372,7 @@ class _Delegate(QStyledItemDelegate):
             idx = editor.findText(texto_limpio)
             editor.setCurrentIndex(idx if idx >= 0 else 0)
         elif isinstance(editor, QLineEdit):
-            texto = index.data(Qt.ItemDataRole.DisplayRole) or ""
+            texto = index.data(FORMULA_ROLE) or index.data(Qt.ItemDataRole.DisplayRole) or ""
             texto = texto.lstrip("\u25b6").replace("$", "").replace(",", "").strip()
             editor.setText(texto)
         else:
@@ -401,7 +424,7 @@ class _Delegate(QStyledItemDelegate):
                 tw.edit(idx)
 
     def eventFilter(self, editor, event):
-        """Intercepta Enter (cerrar), Tab (mover foco) y Escape (cancelar)."""
+        """Intercepta Enter (cerrar), Tab (mover foco), Escape (cancelar) y Ctrl+Z/Y (undo/redo)."""
         from PySide6.QtWidgets import QComboBox
         from PySide6.QtCore import QEvent
         if event.type() == QEvent.Type.KeyPress:
@@ -420,6 +443,16 @@ class _Delegate(QStyledItemDelegate):
                 return True
             if key == Qt.Key.Key_Backtab:
                 self.commitAndMove(editor, QStyledItemDelegate.EndEditHint.EditPreviousItem)
+                return True
+            if key == Qt.Key.Key_Z and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                win = self.parent().window()
+                if hasattr(win, '_on_deshacer'):
+                    win._on_deshacer()
+                return True
+            if key == Qt.Key.Key_Y and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                win = self.parent().window()
+                if hasattr(win, '_on_rehacer'):
+                    win._on_rehacer()
                 return True
         return super().eventFilter(editor, event)
 
@@ -563,6 +596,62 @@ class TreeTableWidget(QTreeWidget):
         """Persiste el set de favoritas. No-op si la tabla no define _CATALOGO_KEY."""
         if self._CATALOGO_KEY:
             Config.set(self._CATALOGO_KEY, sorted(favoritas))
+
+    # ── Imprimibles (catálogo de columnas) ──────────────────────────
+    # Tercer filtro independiente de favorita/visible: qué columnas se
+    # incluyen al generar el reporte LaTeX/PDF. Se persiste bajo una
+    # clave derivada de _CATALOGO_KEY (mismo esquema que favoritas).
+
+    def _imprimibles_key(self) -> str | None:
+        if not self._CATALOGO_KEY:
+            return None
+        if self._CATALOGO_KEY.endswith("_favoritas"):
+            return self._CATALOGO_KEY[: -len("favoritas")] + "imprimibles"
+        return f"{self._CATALOGO_KEY}_imprimibles"
+
+    def _imprimibles(self) -> set[int]:
+        """Índices de columna marcados como imprimibles (se incluyen en el
+        reporte LaTeX/PDF). Si nunca se guardó nada, usa imprimible_default
+        del catálogo. Tablas sin COLUMNAS_CATALOGO no usan este mecanismo."""
+        if not self.COLUMNAS_CATALOGO:
+            return set(range(self.columnCount()))
+        clave = self._imprimibles_key()
+        saved = Config.get(clave) if clave else None
+        if saved is not None:
+            return set(saved)
+        return {c.idx for c in self.COLUMNAS_CATALOGO if c.imprimible_default}
+
+    def _guardar_imprimibles(self, imprimibles: set[int]) -> None:
+        """Persiste el set de imprimibles. No-op si la tabla no define _CATALOGO_KEY."""
+        clave = self._imprimibles_key()
+        if clave:
+            Config.set(clave, sorted(imprimibles))
+
+    def columnas_para_imprimir(self) -> list[dict]:
+        """Columnas marcadas como imprimibles, en el orden visual actual
+        (respeta si el usuario arrastró encabezados) y con su ancho actual
+        en píxeles — lo que el generador de reportes (LaTeX) necesita para
+        armar una tabla que refleje la personalización de columnas.
+
+        Solo devuelve algo útil para tablas con COLUMNAS_CATALOGO; el resto
+        devuelve lista vacía.
+        """
+        if not self.COLUMNAS_CATALOGO:
+            return []
+        imprimibles = self._imprimibles()
+        por_idx = {c.idx: c for c in self.COLUMNAS_CATALOGO}
+        h = self.header()
+        columnas = []
+        for visual in range(self.columnCount()):
+            idx = h.logicalIndex(visual)
+            if idx not in imprimibles or idx not in por_idx:
+                continue
+            columnas.append({
+                "idx":      idx,
+                "label":    por_idx[idx].label,
+                "ancho_px": self.header().sectionSize(idx),
+            })
+        return columnas
 
     # ── Menú contextual de cabecera ───────────────────────────────
 
@@ -776,7 +865,14 @@ class TreeTableWidget(QTreeWidget):
         _select_visible(None)
 
     def keyPressEvent(self, event):
-        """Captura Ctrl+C/X/V/A; delega lo demás al comportamiento nativo."""
+        """Captura Ctrl+C/X/V/A/Z/Y, navegación de columnas con Izq/Der y
+        expandir/colapsar con Espacio; delega lo demás al comportamiento nativo.
+
+        Antes, Izquierda/Derecha expandían y colapsaban el ítem actual (comportamiento
+        nativo de QTreeWidget). Se reasignan a navegación entre columnas — más útil en
+        una tabla con muchas columnas — y esa función pasa a la tecla Espacio.
+        """
+        key = event.key()
         if event.matches(QKeySequence.StandardKey.Copy):
             self._copy()
         elif event.matches(QKeySequence.StandardKey.Cut):
@@ -785,8 +881,61 @@ class TreeTableWidget(QTreeWidget):
             self._paste()
         elif event.matches(QKeySequence.StandardKey.SelectAll):
             self.selectAll()
+        elif event.matches(QKeySequence.StandardKey.Undo):
+            self._undo()
+        elif event.matches(QKeySequence.StandardKey.Redo):
+            self._redo()
+        elif key == Qt.Key.Key_Left:
+            self._move_current_column(-1)
+        elif key == Qt.Key.Key_Right:
+            self._move_current_column(1)
+        elif key == Qt.Key.Key_Space:
+            self._toggle_current_expanded()
         else:
             super().keyPressEvent(event)
+
+    def _visible_columns(self) -> list[int]:
+        """Índices de columnas visibles, en orden, respetando columnas ocultas
+        por personalización (ver menú 'Personalizar columnas…')."""
+        return [c for c in range(self.columnCount()) if not self.isColumnHidden(c)]
+
+    def _move_current_column(self, delta: int):
+        """Mueve el foco de celda a la columna visible anterior (-1) o siguiente (+1),
+        sin salir de la fila actual. Ignora columnas ocultas."""
+        cols = self._visible_columns()
+        if not cols:
+            return
+        current = self.currentIndex()
+        if not current.isValid():
+            return
+        try:
+            pos = cols.index(current.column())
+        except ValueError:
+            # El foco estaba en una columna oculta u otro estado inesperado:
+            # aterrizar en el extremo hacia el que se navega.
+            pos = 0 if delta > 0 else len(cols) - 1
+        pos = max(0, min(len(cols) - 1, pos + delta))
+        new_col = cols[pos]
+        self.setCurrentIndex(self.model().index(current.row(), new_col, current.parent()))
+
+    def _toggle_current_expanded(self):
+        """Espacio: alterna expandir/colapsar el ítem actual (reemplaza el uso
+        nativo de Izquierda/Derecha para esta acción). No hace nada en ítems hoja."""
+        item = self.currentItem()
+        if item is not None and item.childCount() > 0:
+            item.setExpanded(not item.isExpanded())
+
+    def _undo(self):
+        """Ctrl+Z: delega al handler de la ventana principal."""
+        win = self.window()
+        if hasattr(win, '_on_deshacer'):
+            win._on_deshacer()
+
+    def _redo(self):
+        """Ctrl+Y: delega al handler de la ventana principal."""
+        win = self.window()
+        if hasattr(win, '_on_rehacer'):
+            win._on_rehacer()
 
     @staticmethod
     def _item_sort_key(item):

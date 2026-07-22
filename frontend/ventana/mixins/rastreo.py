@@ -46,10 +46,6 @@ class RastreoMixin:
         )
 
         desc = insumo.get("descripcion") or insumo.get("descripcion_corta") or ""
-        clave = insumo.get("clave", "")
-        tipo_nombre = insumo.get("tipo_nombre", "")
-        unidad = insumo.get("unidad", "")
-        es_compuesto = insumo.get("es_compuesto", False)
 
         container = QWidget()
         layout = QVBoxLayout(container)
@@ -60,43 +56,11 @@ class RastreoMixin:
         header.setContentsMargins(12, 10, 12, 8)
         header.setSpacing(8)
 
-        icon_lbl = QLabel()
-        icon_lbl.setPixmap(icono("search", 18).pixmap(18, 18))
-        header.addWidget(icon_lbl)
-
         title_lbl = QLabel(f"<b>{desc}</b>")
+        title_lbl.setWordWrap(True)
         title_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        header.addWidget(title_lbl)
-
-        if clave:
-            sep = QLabel(f"  ·  <span style='color:#7FAFD6'>{clave}</span>")
-            sep.setTextFormat(Qt.TextFormat.RichText)
-            sep.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            header.addWidget(sep)
-
-        if tipo_nombre:
-            tipo_lbl = QLabel(f"  ·  {tipo_nombre}")
-            tipo_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            header.addWidget(tipo_lbl)
-
-        if unidad:
-            uni_lbl = QLabel(f"  ·  {unidad}")
-            uni_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            header.addWidget(uni_lbl)
-
+        header.addWidget(title_lbl, 1)
         header.addStretch()
-
-        n_conceptos = sum(1 for r in filas if r["tipo_origen"] == "concepto")
-        n_compuestos = len(filas) - n_conceptos
-        count_parts = []
-        if n_conceptos:
-            count_parts.append(f"{n_conceptos} concepto{'s' if n_conceptos != 1 else ''}")
-        if n_compuestos:
-            count_parts.append(f"{n_compuestos} compuesto{'s' if n_compuestos != 1 else ''}")
-        if count_parts:
-            count_lbl = QLabel(f"<span style='color:#B7C0C8'>{', '.join(count_parts)}</span>")
-            count_lbl.setTextFormat(Qt.TextFormat.RichText)
-            header.addWidget(count_lbl)
 
         layout.addLayout(header)
 
@@ -104,6 +68,7 @@ class RastreoMixin:
             ["Tipo", "Clave", "Descripción", "Nivel", "Cantidad", "P.U.", "Importe"],
             flat=True,
         )
+        tabla.setColumnHidden(1, True)  # Clave oculta por defecto
         tabla.set_column_modes({
             c: (QHeaderView.ResizeMode.Interactive, w)
             for c, w in enumerate([120, 90, 300, 140, 90, 110, 120])

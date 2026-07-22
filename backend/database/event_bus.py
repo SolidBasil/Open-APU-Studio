@@ -96,6 +96,13 @@ class GeneradorActualizado(Evento):
 
 
 @dataclass
+class VariableFormulaActualizada(Evento):
+    variable_id: int
+    cambios: dict[str, Any]
+    registro: dict[str, Any]
+
+
+@dataclass
 class ProyectoCerrado(Evento):
     """Se emite justo antes de desmontar los servicios (EventBus,
     DataService, Api) del proyecto que se está cerrando. Ver

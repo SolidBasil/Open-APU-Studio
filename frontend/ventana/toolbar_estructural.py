@@ -278,13 +278,12 @@ class ToolbarEstructuralMixin:
         layout.setContentsMargins(8, 0, 8, 0)
         layout.setSpacing(0)
 
-        inp = QLineEdit()
-        inp.setObjectName("searchInput")
-        inp.setPlaceholderText("🔍  Buscar nudo/elemento…")
+        from frontend.ventana.iconos import search_input
+        wrapper, inp = search_input("Buscar nudo/elemento…", "searchInput")
         inp.setClearButtonEnabled(True)
         inp.textChanged.connect(self._on_search)
         self._search_input = inp
-        layout.addWidget(inp)
+        layout.addWidget(wrapper)
         parent_layout.addWidget(bar)
 
     def _on_search(self, text):
@@ -468,7 +467,7 @@ class ToolbarEstructuralMixin:
     def _make_mini_btn(self, icon_char, tip):
         btn = QToolButton()
         btn.setObjectName("tbMiniBtn")
-        btn.setIcon(icono(icon_char, 16, "#E8EDF2"))
+        btn.setIcon(icono(icon_char, 16))
         btn.setToolTip(tip)
         btn.setIconSize(QSize(16, 16))
         btn.setAutoRaise(True)
@@ -482,7 +481,7 @@ class ToolbarEstructuralMixin:
         texto   = tip[:-1].rstrip() if es_menu else tip
 
         btn = QToolButton()
-        btn.setIcon(icono(icon_char, 32, "#E8EDF2"))
+        btn.setIcon(icono(icon_char, 32))
         btn.setToolTip(texto)
         btn.setText(texto)
         btn.setIconSize(QSize(32, 32))
@@ -503,7 +502,7 @@ class ToolbarEstructuralMixin:
     def _make_stacked_btn(self, icon_char, tip, sz, fs):
         btn = QToolButton()
         btn.setObjectName("tbStackedBtn")
-        btn.setIcon(icono(icon_char, sz, "#E8EDF2"))
+        btn.setIcon(icono(icon_char, sz))
         btn.setToolTip(tip)
         btn.setText(tip)
         btn.setIconSize(QSize(sz, sz))
@@ -574,7 +573,7 @@ class ToolbarEstructuralMixin:
 
         for key in Temas.ACENTOS:
             btn = QToolButton()
-            btn.setIcon(icono("brush", 28, "#E8EDF2"))
+            btn.setIcon(icono("brush", 28))
             btn.setToolTip(Temas.nombre_acento(key))
             btn.setText(Temas.nombre_acento(key))
             btn.setIconSize(QSize(28, 28))
@@ -585,7 +584,7 @@ class ToolbarEstructuralMixin:
             bl.addWidget(btn)
 
         self._modo_btn = QToolButton()
-        self._modo_btn.setIcon(icono("moon", 28, "#E8EDF2"))
+        self._modo_btn.setIcon(icono("moon", 28))
         self._modo_btn.setToolTip("Modo")
         self._modo_btn.setText("Modo")
         self._modo_btn.setIconSize(QSize(28, 28))
@@ -599,13 +598,15 @@ class ToolbarEstructuralMixin:
         return wrap
 
     def _sync_modo_icon(self):
+        from frontend.ventana.iconos import set_default_tint
         # El botón de modo vive en la página VISTA -> puede no existir aún
         # si nunca se visitó esa pestaña (p. ej. tema cambiado desde otra).
         if not hasattr(self, "_modo_btn"):
             return
         modo = getattr(self, '_tema_modo', 'oscuro')
         icon = "moon" if modo == 'oscuro' else "sun"
-        self._modo_btn.setIcon(icono(icon, 28, "#E8EDF2"))
+        self._modo_btn.setIcon(icono(icon, 28))
+        set_default_tint("#E8EDF2" if modo == 'oscuro' else "#1A1F24")
 
     def _set_accent(self, acento: str):
         app = QApplication.instance()

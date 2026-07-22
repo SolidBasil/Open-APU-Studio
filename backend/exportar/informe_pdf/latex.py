@@ -6,7 +6,8 @@ Motor de generación de presupuestos en LaTeX / PDF para Open APU Studio.
 Flujo principal (llamado desde handlers.py)
 -------------------------------------------
     nodos = self._api.presupuesto_arbol()   # lista de nodos con hijos anidados
-    ReportePresupuesto(nombre, nodos).generar(tex_path)
+    columnas = tabla_arbol.columnas_para_reporte()  # opcional — ver arbol.py
+    ReportePresupuesto(nombre, nodos, columnas=columnas).generar(tex_path)
 
 API alternativa desde DB
 ------------------------
@@ -98,10 +99,259 @@ def _fmt_moneda(v) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Campos disponibles para la tabla de conceptos
+# ─────────────────────────────────────────────────────────────────────────────
+# Cada campo: (extractor(nodo) -> str, alineación 'l'|'c'|'r', escapar_tex)
+# alineación decide el tipo de columna en el longtable; escapar_tex=False
+# para campos que ya traen su propio escapado (moneda con "\$" literal).
+
+def _campo_estructura(n: dict) -> str:
+    return ""
+
+
+def _campo_nivel(n: dict) -> str:
+    return _fmt_wbs(n.get("wbs") or str(n.get("nivel") or ""))
+
+
+def _campo_tipo(n: dict) -> str:
+    return {"capitulo": "Capítulo", "concepto": "Concepto"}.get(n.get("tipo"), n.get("tipo") or "")
+
+
+def _campo_clave(n: dict) -> str:
+    return n.get("clave_opus") or ""
+
+
+def _campo_descripcion(n: dict) -> str:
+    return n.get("descripcion") or n.get("descripcion_corta") or ""
+
+
+def _campo_unidad(n: dict) -> str:
+    return n.get("unidad") or ""
+
+
+def _campo_cantidad(n: dict) -> str:
+    cant = n.get("cantidad")
+    if cant in (None, ""):
+        return ""
+    return f"{float(cant):,.4f}".rstrip("0").rstrip(".")
+
+
+def _campo_precio_unitario(n: dict) -> str:
+    pu = n.get("precio_unitario")
+    return _fmt_moneda(pu) if pu not in (None, "") else ""
+
+
+def _campo_total(n: dict) -> str:
+    return _fmt_moneda(n.get("total"))
+
+
+def _campo_estado(n: dict) -> str:
+    from backend.database.repos.presupuesto import ESTADO_NOMBRE
+    return ESTADO_NOMBRE.get(n.get("estado"), "")
+
+
+def _campo_notas(n: dict) -> str:
+    return n.get("notas_rapidas") or ""
+
+
+def _campo_creado(n: dict) -> str:
+    return str(n.get("creado_en") or "")
+
+
+def _campo_modificado(n: dict) -> str:
+    return str(n.get("modificado_en") or "")
+
+
+def _campo_orden(n: dict) -> str:
+    return str(n.get("orden") or "")
+
+
+def _campo_formula(n: dict) -> str:
+    return n.get("formula") or ""
+
+
+# campo -> (extractor, alineación, escapar_tex)
+_CAMPOS: dict[str, tuple] = {
+    "estructura":      (_campo_estructura,      "c", True),
+    "nivel":           (_campo_nivel,           "c", True),
+    "tipo":            (_campo_tipo,             "c", True),
+    "clave":           (_campo_clave,            "c", True),
+    "descripcion":     (_campo_descripcion,      "l", True),
+    "unidad":          (_campo_unidad,           "c", True),
+    "cantidad":        (_campo_cantidad,         "r", True),
+    "precio_unitario": (_campo_precio_unitario,  "r", False),  # ya trae \$ escapado
+    "total":           (_campo_total,            "r", False),  # ídem
+    "estado":          (_campo_estado,           "c", True),
+    "notas":           (_campo_notas,            "l", True),
+    "creado":          (_campo_creado,           "l", True),
+    "modificado":      (_campo_modificado,       "l", True),
+    "orden":           (_campo_orden,             "r", True),
+    "formula":         (_campo_formula,          "l", True),
+}
+
+# Columnas por defecto cuando no se pasa una lista explícita (ej. exportar()
+# / desde_db() invocados sin una TablaArbol de por medio). Reproduce
+# aproximadamente el layout fijo que tenía el reporte antes de que las
+# columnas fueran personalizables; los anchos son proporcionales entre sí
+# (ver _anchos_a_cm), no absolutos.
+DEFAULT_COLUMNAS: list[dict] = [
+    {"campo": "nivel",           "label": "Nivel",       "ancho_px": 40},
+    {"campo": "descripcion",     "label": "Descripción", "ancho_px": 240},
+    {"campo": "unidad",          "label": "Unidad",      "ancho_px": 48},
+    {"campo": "cantidad",        "label": "Cantidad",    "ancho_px": 80},
+    {"campo": "precio_unitario", "label": "P.U.",        "ancho_px": 56},
+    {"campo": "total",           "label": "Importe",     "ancho_px": 88},
+]
+
+# Ancho de hoja A4 en cm, según orientación — para calcular cuánto espacio
+# horizontal queda disponible para la tabla una vez descontados los
+# márgenes (ver DialogoConfigImpresion / ReportePresupuesto).
+_ANCHO_PAPEL_CM = {"vertical": 21.0, "horizontal": 29.7}
+
+_MARGENES_DEFAULT = {"sup": 2.0, "inf": 2.0, "izq": 2.0, "der": 2.0}
+
+
+def _ancho_tabla_cm(orientacion: str, margenes: dict) -> float:
+    """Ancho horizontal disponible para la tabla: ancho de hoja menos
+    márgenes izquierdo y derecho, según orientación."""
+    ancho_papel = _ANCHO_PAPEL_CM.get(orientacion, _ANCHO_PAPEL_CM["vertical"])
+    return max(5.0, ancho_papel - margenes.get("izq", 2.0) - margenes.get("der", 2.0))
+
+
+TABCOLSEP_CM = 0.211  # 6pt → cm (LaTeX default \tabcolsep)
+
+
+def _anchos_a_cm(columnas: list[dict], ancho_total_cm: float, overrides: dict | None = None) -> list[float]:
+    """Reparte ancho_total_cm entre las columnas.
+
+    Una columna con override explícito (ver DialogoConfigImpresion) usa
+    ese ancho fijo; el resto se reparte proporcionalmente al ancho en
+    píxeles que tiene cada una en pantalla, con un mínimo de 1cm para que
+    ninguna quede ilegible.
+
+    NOTA: LaTeX añade 2\tabcolsep (~0.422cm) entre columnas adyacentes,
+    incluso con @{} en los extremos del longtable. Restamos ese espacio
+    del total disponible para que la tabla no se salga de los márgenes.
+    """
+    n = len(columnas)
+    if n > 1:
+        ancho_total_cm -= (n - 1) * 2 * TABCOLSEP_CM
+
+    overrides = overrides or {}
+    anchos: list[float | None] = [None] * len(columnas)
+    resto_idx: list[int] = []
+    resto_px_total = 0
+    ancho_restante = ancho_total_cm
+
+    for i, c in enumerate(columnas):
+        ov = overrides.get(c["campo"])
+        if ov:
+            anchos[i] = ov
+            ancho_restante -= ov
+        else:
+            resto_idx.append(i)
+            resto_px_total += c["ancho_px"]
+
+    ancho_restante = max(ancho_restante, 1.0 * len(resto_idx))
+    resto_px_total = resto_px_total or 1
+    for i in resto_idx:
+        anchos[i] = max(1.0, columnas[i]["ancho_px"] / resto_px_total * ancho_restante)
+
+    return anchos
+
+
+def _tabla_colspec(columnas: list[dict], ancho_total_cm: float, overrides: dict | None = None) -> str:
+    """Construye el argumento de columnas del longtable, ej.:
+    '@{}>{\\centering\\arraybackslash}p{1.0cm} p{6.0cm} ... @{}'"""
+    anchos = _anchos_a_cm(columnas, ancho_total_cm, overrides)
+    partes = []
+    for c, ancho in zip(columnas, anchos):
+        alineacion = _CAMPOS.get(c["campo"], (None, "l", True))[1]
+        if alineacion == "c":
+            partes.append(rf">{{\centering\arraybackslash}}p{{{ancho:.2f}cm}}")
+        elif alineacion == "r":
+            partes.append(rf">{{\raggedleft\arraybackslash}}p{{{ancho:.2f}cm}}")
+        else:
+            partes.append(rf"p{{{ancho:.2f}cm}}")
+    return "@{} " + " ".join(partes) + " @{}"
+
+
+def _geometry_opts(orientacion: str, margenes: dict) -> str:
+    """Opciones para \\usepackage[...]{geometry}: papel, márgenes por lado
+    y, si aplica, orientación horizontal (landscape)."""
+    opts = (
+        f"a4paper,"
+        f"top={margenes.get('sup', 2.0)}cm,"
+        f"bottom={margenes.get('inf', 2.0)}cm,"
+        f"left={margenes.get('izq', 2.0)}cm,"
+        f"right={margenes.get('der', 2.0)}cm"
+    )
+    if orientacion == "horizontal":
+        opts += ",landscape"
+    return opts
+
+
+def _tabla_header(columnas: list[dict]) -> str:
+    """Fila de encabezado del longtable a partir de los labels de columna."""
+    celdas = [rf"\textbf{{{escape_tex(c['label'])}}}" for c in columnas]
+    return " & ".join(celdas) + r"\\"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Conversión de nodos (lista del árbol) → partidas para la plantilla
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _nodos_a_partidas(nodos_raiz: list[dict]) -> tuple[list[dict], float]:
+def _subtotal_nodo(nodo: dict) -> float:
+    """Suma recursiva de los totales de los conceptos bajo `nodo`.
+
+    Se usa en vez de leer directamente nodo.get('total') porque, al
+    imprimir solo una selección (ver filtrar_por_seleccion), el subtotal
+    impreso debe cuadrar con las filas realmente incluidas y no con el
+    total guardado del capítulo completo.
+    """
+    total = 0.0
+    for hijo in nodo.get("hijos", []):
+        if hijo.get("tipo") == "concepto":
+            total += hijo.get("total") or 0.0
+        else:
+            total += _subtotal_nodo(hijo)
+    return total
+
+
+def filtrar_por_seleccion(nodos_raiz: list[dict], ids_seleccionados: set[int]) -> list[dict]:
+    """Poda el árbol anidado para dejar solo el contenido seleccionado.
+
+    Un nodo cuyo id está en `ids_seleccionados` se incluye completo (con
+    todo su subárbol, sin más filtrado). Un nodo no seleccionado pero con
+    algún descendiente seleccionado se conserva como contenedor —para no
+    perder el contexto de jerarquía en el reporte— pero solo con esos
+    descendientes, no con sus hermanos no seleccionados.
+
+    Si `ids_seleccionados` viene vacío, devuelve `nodos_raiz` tal cual
+    (reporte completo, comportamiento sin cambios).
+    """
+    if not ids_seleccionados:
+        return nodos_raiz
+
+    def _incluir(nodo: dict) -> dict | None:
+        if nodo.get("id") in ids_seleccionados:
+            return nodo
+        hijos_incluidos = [
+            resultado for hijo in nodo.get("hijos", [])
+            if (resultado := _incluir(hijo)) is not None
+        ]
+        if hijos_incluidos:
+            return {**nodo, "hijos": hijos_incluidos}
+        return None
+
+    return [n for raiz in nodos_raiz if (n := _incluir(raiz)) is not None]
+
+
+def _nodos_a_partidas(
+    nodos_raiz: list[dict],
+    columnas: list[dict],
+    ids_seleccionados: set[int] | None = None,
+) -> tuple[list[dict], float]:
     """
     Convierte la lista de nodos del árbol del presupuesto en la estructura
     de partidas que espera _build_conceptos(), y calcula el gran total.
@@ -109,6 +359,13 @@ def _nodos_a_partidas(nodos_raiz: list[dict]) -> tuple[list[dict], float]:
     Cada nodo raíz (capítulo) se convierte en una partida.
     Sus hijos tipo 'concepto' se convierten en filas de la longtable.
     Los hijos tipo 'capitulo' se expanden recursivamente.
+
+    `columnas` es la lista {"campo","label","ancho_px"} de columnas
+    imprimibles (ver TablaArbol.columnas_para_reporte) — determina qué
+    valores se extraen de cada concepto.
+
+    `ids_seleccionados`, si viene con contenido, restringe el árbol a esos
+    nodos (ver filtrar_por_seleccion) antes de construir las partidas.
 
     Los nodos pueden venir en dos formatos:
       A) Árbol anidado: cada nodo tiene clave 'hijos' con sus hijos.
@@ -118,14 +375,17 @@ def _nodos_a_partidas(nodos_raiz: list[dict]) -> tuple[list[dict], float]:
     if nodos_raiz and "hijos" not in nodos_raiz[0]:
         nodos_raiz = _aplanar_a_arbol(nodos_raiz)
 
+    if ids_seleccionados:
+        nodos_raiz = filtrar_por_seleccion(nodos_raiz, ids_seleccionados)
+
     partidas: list[dict] = []
     gran_total = 0.0
 
     for raiz in nodos_raiz:
         conceptos: list[dict] = []
-        _extraer_conceptos(raiz.get("hijos", []), conceptos)
+        _extraer_conceptos(raiz.get("hijos", []), conceptos, columnas)
 
-        subtotal = raiz.get("total") or 0.0
+        subtotal = _subtotal_nodo(raiz)
         gran_total += subtotal
 
         partidas.append({
@@ -139,32 +399,24 @@ def _nodos_a_partidas(nodos_raiz: list[dict]) -> tuple[list[dict], float]:
     return partidas, gran_total
 
 
-def _extraer_conceptos(hijos: list[dict], acum: list[dict], _depth: int = 1) -> None:
+def _extraer_conceptos(hijos: list[dict], acum: list[dict], columnas: list[dict], _depth: int = 1) -> None:
     """Recorre el árbol recursivamente y acumula filas.
 
     capitulo → _partida=True con _depth para padding progresivo.
-    concepto → fila \\Concepto{}.
+    concepto → fila con un valor por columna imprimible, en "valores".
     """
     for hijo in hijos:
         if hijo.get("tipo") == "concepto":
-            cant = hijo.get("cantidad")
-            pu   = hijo.get("precio_unitario")
-            acum.append({
-                "nivel":           _fmt_wbs(hijo.get("wbs") or str(hijo.get("nivel") or "")),
-                "clave":           hijo.get("clave_opus") or "",
-                "descripcion":     hijo.get("descripcion") or hijo.get("descripcion_corta") or "",
-                "unidad":          hijo.get("unidad") or "",
-                "cantidad":        (
-                    f"{float(cant):,.4f}".rstrip("0").rstrip(".")
-                    if cant not in (None, "") else ""
-                ),
-                "precio_unitario": _fmt_moneda(pu) if pu not in (None, "") else "",
-                "importe":         _fmt_moneda(hijo.get("total")),
-            })
+            valores = []
+            for c in columnas:
+                extractor, _alineacion, escapar = _CAMPOS.get(c["campo"], (lambda n: "", "l", True))
+                valor = extractor(hijo)
+                valores.append(escape_tex(valor) if escapar else valor)
+            acum.append({"valores": valores})
         elif hijo.get("tipo") == "capitulo":
             sub_desc = hijo.get("descripcion") or hijo.get("descripcion_corta") or ""
             acum.append({"_partida": True, "nombre": sub_desc, "_depth": _depth, "wbs": _fmt_wbs(hijo.get("wbs", ""))})
-            _extraer_conceptos(hijo.get("hijos", []), acum, _depth + 1)
+            _extraer_conceptos(hijo.get("hijos", []), acum, columnas, _depth + 1)
 
 
 def _aplanar_a_arbol(nodos: list[dict]) -> list[dict]:
@@ -213,12 +465,11 @@ def _leer_meta_db(conn, proyecto_id: int) -> dict:
 # Construcción del bloque <<conceptos>>
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _build_conceptos(partidas: list[dict]) -> str:
+def _build_conceptos(partidas: list[dict], num_columnas: int) -> str:
     """
-    Genera el cuerpo LaTeX de la longtable usando los comandos de la plantilla:
-        \\Partida{nombre}
-        \\Concepto{nivel}{clave}{descripcion}{unidad}{cantidad}{importe}
-        \\SubtotalPartida{importe}
+    Genera el cuerpo LaTeX de la longtable. Cada fila se arma directamente
+    (sin macro \\Concepto de aridad fija) porque el número de columnas es
+    variable según cuáles estén marcadas como imprimibles.
     """
     lines: list[str] = []
 
@@ -226,29 +477,29 @@ def _build_conceptos(partidas: list[dict]) -> str:
         depth = partida.get("_depth", 0)
         padding = "\\quad " * depth
         wbs = escape_tex(partida.get("wbs", ""))
-        lines.append(rf"\Partida{{{wbs}}}{{{padding}{escape_tex(partida['nombre'])}}}")
+        titulo = f"{wbs}\\ \\ {padding}{escape_tex(partida['nombre'])}" if wbs else f"{padding}{escape_tex(partida['nombre'])}"
+        lines.append(rf"\rowcolor{{Gris2}}\multicolumn{{{num_columnas}}}{{l}}{{\textbf{{{titulo}}}}}\\")
 
         for c in partida.get("conceptos", []):
             if c.get("_partida"):
                 depth = c.get("_depth", 1)
                 padding = "\\quad " * depth
                 wbs = escape_tex(c.get("wbs", ""))
-                lines.append(rf"\Partida{{{wbs}}}{{{padding}{escape_tex(c['nombre'])}}}")
+                titulo = f"{wbs}\\ \\ {padding}{escape_tex(c['nombre'])}" if wbs else f"{padding}{escape_tex(c['nombre'])}"
+                lines.append(rf"\rowcolor{{Gris2}}\multicolumn{{{num_columnas}}}{{l}}{{\textbf{{{titulo}}}}}\\")
                 continue
-            desc = escape_tex(c.get("descripcion", ""))
-            lines.append(
-                rf"\Concepto"
-                rf"{{{escape_tex(c.get('nivel', ''))}}}"
-                rf"{{{escape_tex(c.get('clave', ''))}}}"
-                rf"{{{desc}}}"
-                rf"{{{escape_tex(c.get('unidad', ''))}}}"
-                rf"{{{escape_tex(c.get('cantidad', ''))}}}"
-                rf"{{{c.get('precio_unitario', '')}}}"
-                rf"{{{c.get('importe', '')}}}"
-            )
+            lines.append(" & ".join(c.get("valores", [])) + r"\\")
 
         if "subtotal" in partida and partida["subtotal"]:
-            lines.append(rf"\SubtotalPartida{{{partida['subtotal']}}}")
+            if num_columnas > 1:
+                lines.append(
+                    rf"\rowcolor{{Gris}}\multicolumn{{{num_columnas - 1}}}{{r}}{{\textbf{{Total partida:}}}} & "
+                    rf"\textbf{{{partida['subtotal']}}}\\"
+                )
+            else:
+                lines.append(
+                    rf"\rowcolor{{Gris}}\multicolumn{{1}}{{r}}{{\textbf{{Total partida: {partida['subtotal']}}}}}\\"
+                )
 
     return "\n".join(lines)
 
@@ -264,7 +515,10 @@ _SIMPLE_FIELDS = frozenset({
     "ubicacion", "version", "fecha", "moneda", "responsable",
 })
 
-_RAW_FIELDS = frozenset({"observaciones", "subtotal", "iva", "total"})
+_RAW_FIELDS = frozenset({
+    "observaciones", "subtotal", "iva", "total",
+    "tabla_colspec", "tabla_header", "num_columnas", "geometry_opts",
+})
 
 
 def _render_template(template: str, datos: dict) -> str:
@@ -273,7 +527,7 @@ def _render_template(template: str, datos: dict) -> str:
     def _replace(match: re.Match) -> str:
         key = match.group(1)
         if key == "conceptos":
-            return _build_conceptos(datos.get("partidas", []))
+            return _build_conceptos(datos.get("partidas", []), len(datos.get("columnas", DEFAULT_COLUMNAS)))
         if key in _RAW_FIELDS:
             return str(datos.get(key, ""))
         if key in _SIMPLE_FIELDS:
@@ -335,19 +589,48 @@ class ReportePresupuesto:
         reporte.exportar()
     """
 
-    def __init__(self, nombre_proyecto: str, nodos_o_datos):
+    def __init__(
+        self,
+        nombre_proyecto: str,
+        nodos_o_datos,
+        columnas: list[dict] | None = None,
+        ids_seleccionados: set[int] | None = None,
+        margenes: dict | None = None,
+        orientacion: str = "vertical",
+        anchos_cm: dict | None = None,
+    ):
         """
         Parámetros
         ----------
         nombre_proyecto : nombre del proyecto (stem del .db)
         nodos_o_datos   : lista de nodos del árbol  ← lo que pasa handlers.py
                           o dict de datos ya preparado (uso interno)
+        columnas        : columnas imprimibles en orden, con ancho actual
+                          en píxeles — ver TablaArbol.columnas_para_reporte().
+                          Si no se pasa (o viene vacía), se usa DEFAULT_COLUMNAS.
+        ids_seleccionados : si se pasa (no vacío), solo se incluye en el
+                          reporte el contenido seleccionado — ver
+                          TablaArbol.ids_seleccionados_arbol() y
+                          filtrar_por_seleccion(). Si es None o vacío, se
+                          imprime el presupuesto completo (comportamiento
+                          por defecto, sin cambios).
+        margenes        : dict {"sup","inf","izq","der"} en cm. Si no se
+                          pasa, usa 2cm en los cuatro lados — ver
+                          frontend/ventana/widgets/config_impresion.py.
+        orientacion     : "vertical" (default) u "horizontal".
+        anchos_cm       : overrides de ancho por campo (ver
+                          DialogoConfigImpresion) — el resto de las
+                          columnas se reparte proporcionalmente entre el
+                          espacio restante.
         """
         self.nombre = nombre_proyecto
+        columnas = columnas or DEFAULT_COLUMNAS
+        margenes = {**_MARGENES_DEFAULT, **(margenes or {})}
+        ancho_tabla_cm = _ancho_tabla_cm(orientacion, margenes)
 
         if isinstance(nodos_o_datos, list):
             # ── Caso principal: lista de nodos del árbol ──────────────────
-            partidas, gran_total = _nodos_a_partidas(nodos_o_datos)
+            partidas, gran_total = _nodos_a_partidas(nodos_o_datos, columnas, ids_seleccionados)
             iva_pct   = 16.0
             iva_monto = gran_total * (iva_pct / 100)
             total     = gran_total + iva_monto
@@ -367,6 +650,11 @@ class ReportePresupuesto:
                 "iva":                f"{iva_pct:.0f}\\% ({_fmt_moneda(iva_monto)})",
                 "total":              _fmt_moneda(total),
                 "partidas":           partidas,
+                "columnas":           columnas,
+                "tabla_colspec":      _tabla_colspec(columnas, ancho_tabla_cm, anchos_cm),
+                "tabla_header":       _tabla_header(columnas),
+                "num_columnas":       str(len(columnas)),
+                "geometry_opts":      _geometry_opts(orientacion, margenes),
             }
         else:
             # ── Caso interno: dict ya preparado (desde_db / API funcional) ─
@@ -374,16 +662,30 @@ class ReportePresupuesto:
                 **nodos_o_datos,
                 "nombre_presupuesto": nodos_o_datos.get("nombre_presupuesto", nombre_proyecto),
             }
+            self.datos.setdefault("columnas", columnas)
+            self.datos.setdefault("tabla_colspec", _tabla_colspec(self.datos["columnas"], ancho_tabla_cm, anchos_cm))
+            self.datos.setdefault("tabla_header", _tabla_header(self.datos["columnas"]))
+            self.datos.setdefault("num_columnas", str(len(self.datos["columnas"])))
+            self.datos.setdefault("geometry_opts", _geometry_opts(orientacion, margenes))
 
     # ── Constructor desde DB (enriquece con metadatos del proyecto) ───────
 
     @classmethod
-    def desde_db(cls, conn, proyecto_id: int) -> "ReportePresupuesto":
+    def desde_db(
+        cls, conn, proyecto_id: int,
+        columnas: list[dict] | None = None,
+        margenes: dict | None = None,
+        orientacion: str = "vertical",
+        anchos_cm: dict | None = None,
+    ) -> "ReportePresupuesto":
         """
         Construye el reporte leyendo datos completos desde la DB.
         Los nodos del árbol también se leen desde estructura_presupuesto.
+
+        columnas, margenes, orientacion, anchos_cm: ver __init__.
         """
         meta = _leer_meta_db(conn, proyecto_id)
+        columnas = columnas or DEFAULT_COLUMNAS
 
         # Leer nodos planos y convertir a árbol
         cur = conn.cursor()
@@ -396,7 +698,7 @@ class ReportePresupuesto:
         """, [proyecto_id]).fetchall()]
 
         raices = _aplanar_a_arbol(nodos_planos)
-        partidas, gran_total = _nodos_a_partidas(raices)
+        partidas, gran_total = _nodos_a_partidas(raices, columnas)
 
         total_obra = meta["total_obra"] or gran_total
         iva_pct    = meta["iva_pct"]
@@ -417,8 +719,9 @@ class ReportePresupuesto:
             "iva":                f"{iva_pct:.0f}\\% ({_fmt_moneda(iva_monto)})",
             "total":              _fmt_moneda(total_obra + iva_monto),
             "partidas":           partidas,
+            "columnas":           columnas,
         }
-        return cls(meta["nombre"], datos)
+        return cls(meta["nombre"], datos, margenes=margenes, orientacion=orientacion, anchos_cm=anchos_cm)
 
     # ── generar: escribe el .tex (interfaz que llama handlers.py) ─────────
 

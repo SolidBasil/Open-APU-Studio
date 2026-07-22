@@ -12,7 +12,7 @@ from PySide6.QtGui import QColor, QBrush
 
 from PySide6.QtWidgets import QHeaderView
 
-from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef
+from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef, FORMULA_ROLE
 
 
 # ── Icono desde tipo_id (Lucide SVG) ─────────────────────────────
@@ -54,7 +54,7 @@ COLUMNAS = [
     "Estado", "Notas", "Creado", "Modificado",
     "Orden", "Fórmula",
 ]
-EDITABLE    = frozenset({4, 6})        # fallback genérico (usado hoy solo por copiar/pegar)
+EDITABLE    = frozenset()               # editable_cols_fn define edición por fila
 _AGRUP_COLS = {0, 1, 4, 8}
 
 # Catálogo para el esquema de favoritas + "Personalizar columnas…" (ver
@@ -62,25 +62,47 @@ _AGRUP_COLS = {0, 1, 4, 8}
 # posición en COLUMNAS de arriba. _VISIBLE ya no se lista a mano: se
 # deriva del catálogo (visible_default) en __init__.
 COLUMNAS_CATALOGO = [
-    ColumnaDef(0,  "Estructura",  "Identificación", favorita_default=True,  visible_default=True),
-    ColumnaDef(1,  "Nivel",       "Identificación", favorita_default=True,  visible_default=True),
-    ColumnaDef(2,  "Tipo",        "Identificación", favorita_default=True,  visible_default=False),
-    ColumnaDef(3,  "Clave",       "Identificación", favorita_default=True,  visible_default=False),
-    ColumnaDef(4,  "Descripción", "Identificación", favorita_default=True,  visible_default=True),
+    ColumnaDef(0,  "Estructura",  "Identificación", favorita_default=True,  visible_default=True,  imprimible_default=False),
+    ColumnaDef(1,  "Nivel",       "Identificación", favorita_default=True,  visible_default=True,  imprimible_default=True),
+    ColumnaDef(2,  "Tipo",        "Identificación", favorita_default=True,  visible_default=False, imprimible_default=False),
+    ColumnaDef(3,  "Clave",       "Identificación", favorita_default=False, visible_default=False, imprimible_default=False),
+    ColumnaDef(4,  "Descripción", "Identificación", favorita_default=True,  visible_default=True,  imprimible_default=True),
 
-    ColumnaDef(5,  "Unidad",      "Cálculo", favorita_default=True,  visible_default=True),
-    ColumnaDef(6,  "Cant",        "Cálculo", favorita_default=True,  visible_default=True),
-    ColumnaDef(7,  "P.U.",        "Cálculo", favorita_default=True,  visible_default=True),
-    ColumnaDef(8,  "Total",       "Cálculo", favorita_default=True,  visible_default=True),
-    ColumnaDef(13, "Orden",       "Cálculo", favorita_default=False, visible_default=False),
-    ColumnaDef(14, "Fórmula",     "Cálculo", favorita_default=False, visible_default=False),
+    ColumnaDef(5,  "Unidad",      "Cálculo", favorita_default=True,  visible_default=True,  imprimible_default=True),
+    ColumnaDef(6,  "Cant",        "Cálculo", favorita_default=True,  visible_default=True,  imprimible_default=True),
+    ColumnaDef(7,  "P.U.",        "Cálculo", favorita_default=True,  visible_default=True,  imprimible_default=True),
+    ColumnaDef(8,  "Total",       "Cálculo", favorita_default=True,  visible_default=True,  imprimible_default=True),
+    ColumnaDef(13, "Orden",       "Cálculo", favorita_default=False, visible_default=False, imprimible_default=False),
+    ColumnaDef(14, "Fórmula",     "Cálculo", favorita_default=False, visible_default=False, imprimible_default=False),
 
-    ColumnaDef(9,  "Estado",      "Seguimiento", favorita_default=True,  visible_default=False),
-    ColumnaDef(10, "Notas",       "Seguimiento", favorita_default=True,  visible_default=False),
+    ColumnaDef(9,  "Estado",      "Seguimiento", favorita_default=True,  visible_default=False, imprimible_default=False),
+    ColumnaDef(10, "Notas",       "Seguimiento", favorita_default=True,  visible_default=False, imprimible_default=False),
 
-    ColumnaDef(11, "Creado",      "Auditoría", favorita_default=False, visible_default=False),
-    ColumnaDef(12, "Modificado",  "Auditoría", favorita_default=False, visible_default=False),
+    ColumnaDef(11, "Creado",      "Auditoría", favorita_default=False, visible_default=False, imprimible_default=False),
+    ColumnaDef(12, "Modificado",  "Auditoría", favorita_default=False, visible_default=False, imprimible_default=False),
 ]
+
+# Traduce cada idx de columna del árbol al nombre de campo que entiende
+# backend/exportar/informe_pdf/latex.py al armar la tabla del reporte
+# (ver ReportePresupuesto y _CAMPOS ahí). Mantiene arbol.py y latex.py
+# desacoplados: latex.py no conoce el layout de columnas de esta tabla.
+CAMPO_REPORTE = {
+    0:  "estructura",
+    1:  "nivel",
+    2:  "tipo",
+    3:  "clave",
+    4:  "descripcion",
+    5:  "unidad",
+    6:  "cantidad",
+    7:  "precio_unitario",
+    8:  "total",
+    9:  "estado",
+    10: "notas",
+    11: "creado",
+    12: "modificado",
+    13: "orden",
+    14: "formula",
+}
 
 # Columnas editables según el tipo de nodo (fila). Se usa vía editable_cols_fn
 # — el tipo se lee de TIPO_ROLE (dato explícito seteado al crear la fila),
@@ -88,12 +110,7 @@ COLUMNAS_CATALOGO = [
 # TreeTableWidget significa otra cosa (ver base.py::_Delegate).
 _EDITABLE_POR_TIPO = {
     "capitulo": {4},          # Descripción (caso especial: agrupadores)
-    "concepto": {6},          # Cant (solo cantidad, no descripción ni unidad)
-    # P.U. (col 7) NO es editable aquí a propósito: el árbol solo tiene el
-    # insumo_id, no si es compuesto, así que no podía distinguir "básico sin
-    # APU" de "compuesto" para bloquear solo este último caso (por eso sí
-    # funcionaba el bloqueo dentro del APU pero no aquí). Precio se edita
-    # desde Insumos o desde dentro del APU — nunca desde el árbol.
+    "concepto": {6},          # Cant — edita la fórmula, no el valor directo
 }
 
 
@@ -184,6 +201,20 @@ class TablaArbol(TreeTableWidget):
         self._search_cols = {4}  # búsqueda por Descripción
         self._api = None  # inyectado por conectar_eventos()
         self._event_bus = None  # inyectado por conectar_eventos()
+
+    def columnas_para_reporte(self) -> list[dict]:
+        """Columnas imprimibles en orden visual + ancho actual, traducidas a
+        los nombres de campo que espera ReportePresupuesto (ver latex.py).
+        Se pasa tal cual a ReportePresupuesto(..., columnas=...) al generar
+        el .tex del presupuesto.
+        """
+        columnas = []
+        for c in self.columnas_para_imprimir():
+            campo = CAMPO_REPORTE.get(c["idx"])
+            if campo is None:
+                continue
+            columnas.append({"campo": campo, "label": c["label"], "ancho_px": c["ancho_px"]})
+        return columnas
 
     def _context_menu_actions(self, menu):
         from frontend.ventana.widgets.base import _menu_icon
@@ -283,6 +314,7 @@ class TablaArbol(TreeTableWidget):
         item.setData(0, ID_ROLE, n.get("id"))
         item.setData(0, TIPO_ROLE, "concepto")
         item.setData(0, INSUMO_ROLE, n.get("insumo_id"))
+        item.setData(6, FORMULA_ROLE, n.get("formula") or "")
         tid = n.get("tipo_id")
         item.setIcon(0, icono(_ICONOS_TIPO_SVG.get(tid, "file-text"), 20, _COLOR_TIPO.get(tid)))
         return item
@@ -395,6 +427,22 @@ class TablaArbol(TreeTableWidget):
                     concepto_ids.extend(self._api.conceptos_bajo_nodo(cid))
         return concepto_ids
 
+    def ids_seleccionados_arbol(self) -> set[int]:
+        """IDs (estructura_presupuesto) de las filas seleccionadas en el
+        árbol tal cual — a diferencia de conceptos_seleccionados(), aquí un
+        capítulo seleccionado se deja como su propio id (no se expande a
+        sus conceptos), porque quien arma el reporte de la selección (ver
+        latex.py::filtrar_por_seleccion) ya incluye el subárbol completo de
+        cualquier capítulo cuyo id esté en el set. Devuelve set vacío si no
+        hay selección.
+        """
+        ids: set[int] = set()
+        for item in self.selectedItems():
+            nid = item.data(0, ID_ROLE)
+            if nid is not None:
+                ids.add(nid)
+        return ids
+
     def _buscar_item_por_id(self, nodo_id: int):
         """Búsqueda recursiva de la fila cuyo ID_ROLE == nodo_id."""
         def _rec(item):
@@ -443,6 +491,8 @@ class TablaArbol(TreeTableWidget):
                 item.setText(4, registro.get("descripcion", "") or "")
             if "cantidad" in evento.cambios:
                 item.setText(6, _num(registro.get("cantidad")))
+            if "formula" in evento.cambios:
+                item.setText(14, registro.get("formula") or "")
             if "total" in registro:
                 item.setText(8, _fmt(registro.get("total")))
         except Exception as e:
@@ -488,8 +538,10 @@ class TablaArbol(TreeTableWidget):
     def _on_proyecto_recalculado(self, evento):
         """ProyectoRecalculado: repuebla desde la fuente de verdad.
 
-        Preserva selección, scroll y estado expandido/colapsado
-        de los agrupadores.
+        Se difiere con QTimer.singleShot(0) para no destruir el item
+        dentro de la cadena de itemChanged que pueda estar procesando
+        Qt (p. ej. al editar una fórmula). Misma lógica que el detalle
+        APU (apu.py).
         """
         try:
             if self._api is None:
@@ -501,34 +553,39 @@ class TablaArbol(TreeTableWidget):
                 it.data(0, ID_ROLE) for it in self.selectedItems()
                 if it.data(0, ID_ROLE) is not None
             }
-            # ponytail: capturar nodos expandidos antes de repoblar
             ids_expandidos = set()
             self._collect_expanded_ids(self.invisibleRootItem(), ids_expandidos)
+            texto_busqueda = self.window()._search_input.text() if (
+                hasattr(self.window(), '_search_input')
+                and hasattr(self.window(), '_on_search')
+            ) else None
 
-            self.blockSignals(True)
-            try:
-                nodos = self._api.presupuesto_arbol()
-                self.poblar(nodos)
-            finally:
-                self.blockSignals(False)
+            def _refrescar_seguro():
+                try:
+                    self.blockSignals(True)
+                    try:
+                        nodos = self._api.presupuesto_arbol()
+                        self.poblar(nodos)
+                    finally:
+                        self.blockSignals(False)
+                    self._restore_expansion(self.invisibleRootItem(), ids_expandidos)
+                    self.verticalScrollBar().setValue(scroll_y)
+                    if id_actual is not None:
+                        item = self._buscar_item_por_id(id_actual)
+                        if item is not None:
+                            self.setCurrentItem(item)
+                    if ids_seleccionados:
+                        for nid in ids_seleccionados:
+                            item = self._buscar_item_por_id(nid)
+                            if item is not None:
+                                item.setSelected(True)
+                    if texto_busqueda is not None:
+                        self.window()._on_search(texto_busqueda)
+                except Exception as e:
+                    print(f"[eventbus] _refrescar_seguro: {type(e).__name__}: {e}")
 
-            # Restaurar expansión: colapsar todo lo que estaba cerrado
-            self._restore_expansion(self.invisibleRootItem(), ids_expandidos)
-
-            self.verticalScrollBar().setValue(scroll_y)
-            if id_actual is not None:
-                item = self._buscar_item_por_id(id_actual)
-                if item is not None:
-                    self.setCurrentItem(item)
-            if ids_seleccionados:
-                for nid in ids_seleccionados:
-                    item = self._buscar_item_por_id(nid)
-                    if item is not None:
-                        item.setSelected(True)
-
-            win = self.window()
-            if hasattr(win, '_search_input') and hasattr(win, '_on_search'):
-                win._on_search(win._search_input.text())
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(0, _refrescar_seguro)
         except Exception as e:
             print(f"[eventbus] _on_proyecto_recalculado: {type(e).__name__}: {e}")
 

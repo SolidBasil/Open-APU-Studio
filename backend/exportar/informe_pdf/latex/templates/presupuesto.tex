@@ -3,7 +3,7 @@
 \usepackage[T1]{fontenc}
 \usepackage[scaled]{helvet}
 \renewcommand{\familydefault}{\sfdefault}
-\usepackage[a4paper,margin=2cm]{geometry}
+\usepackage[<<geometry_opts>>]{geometry}
 \setlength{\headheight}{15pt}
 \usepackage{booktabs,longtable,tabularx,array}
 \usepackage[table]{xcolor}
@@ -19,21 +19,6 @@
 \fancyhead[R]{<<fecha>>}
 \fancyfoot[L]{<<nombre_presupuesto>>}
 \fancyfoot[R]{P\'agina \thepage\ de \pageref{LastPage}}
-
-% Partida: wbs col1, clave vacía col2, nombre en col3 (descripción), cols 4-7 vacías
-% #1=wbs  #2=nombre
-\newcommand{\Partida}[2]{%
-  \rowcolor{Gris2}%
-  {\fontsize{10.5}{13}\selectfont\textbf{#1}} &
-  &
-  \multicolumn{5}{l}{{\fontsize{10.5}{13}\selectfont\textbf{#2}}}\\}
-
-\newcommand{\Concepto}[7]{%
-  #1 & #2 & #3 & #4 & #5 & #6 & #7\\}
-
-\newcommand{\SubtotalPartida}[1]{%
-  \rowcolor{Gris}%
-  \multicolumn{6}{r}{\textbf{Total partida:}} & \textbf{#1}\\}
 
 \begin{document}
 
@@ -59,26 +44,27 @@
 \vspace{8mm}
 
 % ── Tabla de conceptos ───────────────────────────────────────────────────────
+% Columnas y anchos dinámicos: los define el usuario en "Personalizar
+% columnas..." (filtro Imprimible) sobre la tabla del presupuesto; ver
+% TablaArbol.columnas_para_reporte() y backend/exportar/informe_pdf/latex.py.
 {\Large\textbf{Conceptos}}
 
 \renewcommand{\arraystretch}{1.2}
-\begin{longtable}{@{}>{\centering\arraybackslash}p{1cm} >{\centering\arraybackslash}p{2cm} p{6cm} >{\centering\arraybackslash}p{1.2cm} >{\raggedleft\arraybackslash}p{2cm} >{\raggedleft\arraybackslash}p{1.4cm} >{\raggedleft\arraybackslash}p{2.2cm}@{}}
+\begin{longtable}{<<tabla_colspec>>}
   \toprule
   \rowcolor{Gris2}
-  \textbf{Nivel} & \textbf{Clave} & \textbf{Descripci\'on} &
-  \textbf{Unidad} & \textbf{Cantidad} & \textbf{P.U.} & \textbf{Importe}\\
+  <<tabla_header>>
   \midrule
   \endfirsthead
 
   \toprule
   \rowcolor{Gris2}
-  \textbf{Nivel} & \textbf{Clave} & \textbf{Descripci\'on} &
-  \textbf{Unidad} & \textbf{Cantidad} & \textbf{P.U.} & \textbf{Importe}\\
+  <<tabla_header>>
   \midrule
   \endhead
 
   \midrule
-  \multicolumn{7}{r}{\textit{Contin\'ua...}}\\
+  \multicolumn{<<num_columnas>>}{r}{\textit{Contin\'ua...}}\\
   \endfoot
 
   \bottomrule

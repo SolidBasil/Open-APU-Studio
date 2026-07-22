@@ -56,6 +56,24 @@ _INSUMOS_COLOR["Todos"] = "#E8EDF2"
 _INSUMOS_COLOR["Matrices"] = "#8B6FB5"
 
 
+class _ExploradorTree(QTreeWidget):
+    """QTreeWidget del sidebar Explorador.
+
+    Con el mouse, un clic en un grupo (Propuesta/Insumos/Ejecución) lo
+    expande o colapsa. QTreeWidget nativo no ofrece un equivalente de
+    teclado para eso (Espacio no hace nada por defecto); se agrega aquí
+    igual que ya existe en TreeTableWidget (ver widgets/base.py).
+    """
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Space:
+            item = self.currentItem()
+            if item is not None and item.childCount() > 0:
+                item.setExpanded(not item.isExpanded())
+                return
+        super().keyPressEvent(event)
+
+
 class PanelesMixin:
     """Mixin de paneles — se mezcla en VentanaPrincipal."""
 
@@ -76,7 +94,7 @@ class PanelesMixin:
 
     def _build_sidebar(self):
         """Construye el explorador lateral."""
-        tree = QTreeWidget()
+        tree = _ExploradorTree()
         tree.setHeaderLabel("Explorador")
         tree.setMinimumWidth(150)
         tree.setAnimated(True)
@@ -145,6 +163,7 @@ class PanelesMixin:
         QShortcut(QKeySequence("Alt+Right"), self).activated.connect(self._on_derecha)
         QShortcut(QKeySequence("Delete"),    self).activated.connect(self._on_eliminar)
         QShortcut(QKeySequence("Insert"),        self).activated.connect(self._on_insert_contextual)
+        QShortcut(QKeySequence("Ctrl+Insert"),   self).activated.connect(self._on_agregar_agrupador)
         QShortcut(QKeySequence("Ctrl+Z"),         self).activated.connect(self._on_deshacer)
         QShortcut(QKeySequence("Ctrl+Y"),         self).activated.connect(self._on_rehacer)
         QShortcut(QKeySequence("Ctrl+Shift+Z"),   self).activated.connect(self._on_rehacer)

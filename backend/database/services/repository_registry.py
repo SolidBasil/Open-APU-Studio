@@ -54,7 +54,7 @@ def crear_registry(db: Database) -> RepositoryRegistry:
     from backend.database.repos import (
         InsumoRepo, NodoRepo, ApuMatricesRepo, ProyectoRepo,
         FactoresSobrecostoRepo, FamiliaRepo, SubfamiliaRepo,
-        GeneradorRepo,
+        GeneradorRepo, VariableFormulaRepo,
     )
 
     registry = RepositoryRegistry(db)
@@ -66,4 +66,5 @@ def crear_registry(db: Database) -> RepositoryRegistry:
     registry.registrar("familias", FamiliaRepo)
     registry.registrar("subfamilias", SubfamiliaRepo)
     registry.registrar("generadores", GeneradorRepo)
+    registry.registrar("variables_formula", VariableFormulaRepo)
     return registry

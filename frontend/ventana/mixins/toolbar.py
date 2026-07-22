@@ -69,6 +69,7 @@ _HANDLERS = {
     "Parámetros proyecto": "_on_info_proyecto",
     "Presupuesto":       "_on_generar_presupuesto",
     "Compilar PDF":      "_on_compilar_pdf",
+    "Configurar impresión": "_on_config_impresion",
     "Vista previa":      "_on_vista_previa",
     "Eliminar":          "_on_eliminar",
     "Agregar agrupador": "_on_agregar_agrupador",
@@ -125,6 +126,7 @@ _TOOLBAR_CFG = {
         ]),
         ("Plantilla", [
             ("brush", "Tema LaTeX"),
+            ("printer", "Configurar impresión"),
         ]),
     ],
     "VISTA": [
@@ -151,11 +153,10 @@ _TOOLBAR_CFG = {
     "PRINCIPAL": [
         ("Historial",    [[("undo-2", "Deshacer"), ("redo-2", "Rehacer")]]),
         ("Portapapeles", [("clipboard", "Copiar"), [("scissors", "Cortar"), ("file-text", "Pegar"), ("check-square", "Seleccionar todo")]]),
-        ("Editar",       [[("square-plus", "Agregar agrupador"), ("plus", "Agregar concepto")], ("pen-line", "Modificar"), ("corner-down-right", "Desglosar"), ("x", "Eliminar")]),
+        ("Editar",       [[("square-plus", "Agregar agrupador"), ("plus", "Agregar concepto")], ("pen-line", "Modificar"), [("corner-down-right", "Desglosar"), ("search", "Rastrear uso")], ("x", "Eliminar")]),
         ("Estructura",   [[("chevron-left", "Izquierda"), ("chevron-right", "Derecha")],[("chevron-up", "Subir"), ("chevron-down", "Bajar")]]),
         ("Buscar",       [("book-open", "En catálogos"), ("eye", "En vista")]),
         ("Desplegar",    [("hash", "Primer nivel"), ("sigma", "Resumen agrupadores"), ("square-plus", "Todo"), ("align-left", "Nivel")]),
-        ("Rastreo",      [("search", "Rastrear uso")]),
         ("Cálculo",      [("refresh-cw", "Recalcular")]),
     ],
     "HERRAMIENTAS": [
@@ -213,6 +214,7 @@ class ToolbarMixin:
 
     def _build_search_bar(self, parent_layout):
         """Crea barra de búsqueda con QLineEdit y menú contextual de columnas."""
+        from frontend.ventana.iconos import search_input
         bar = QWidget()
         bar.setObjectName("searchBar")
         bar.setFixedHeight(32)
@@ -220,15 +222,12 @@ class ToolbarMixin:
         layout.setContentsMargins(8, 0, 8, 0)
         layout.setSpacing(0)
 
-        inp = QLineEdit()
-        inp.setObjectName("searchInput")
-        inp.setPlaceholderText("🔍  Buscar en el proyecto…")
-        inp.setClearButtonEnabled(True)
+        wrapper, inp = search_input("Buscar en el proyecto…", "searchInput")
         inp.textChanged.connect(self._on_search)
         inp.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         inp.customContextMenuRequested.connect(self._on_search_context_menu)
         self._search_input = inp
-        layout.addWidget(inp)
+        layout.addWidget(wrapper)
         parent_layout.addWidget(bar)
 
     def _on_search_context_menu(self, pos):
@@ -411,13 +410,14 @@ class ToolbarMixin:
     def _make_big_btn(self, icon_char, tip):
         """Botón grande con icono arriba y texto abajo (ToolButtonTextUnderIcon)."""
         btn = QToolButton()
-        btn.setIcon(icono(icon_char, 40, "#E8EDF2"))
+        btn.setIcon(icono(icon_char, 40))
         btn.setToolTip(tip)
         btn.setText(tip)
         btn.setIconSize(QSize(40, 40))
         btn.setAutoRaise(True)
         btn.setMinimumSize(80, 56)
         btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+        btn.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._conectar_btn(btn, tip)
         self._style_toolbar_btn(btn)
         return btn
@@ -426,12 +426,13 @@ class ToolbarMixin:
         """Botón pequeño para grupos apilados (ToolButtonTextBesideIcon)."""
         btn = QToolButton()
         btn.setObjectName("tbStackedBtn")
-        btn.setIcon(icono(icon_char, sz, "#E8EDF2"))
+        btn.setIcon(icono(icon_char, sz))
         btn.setToolTip(tip)
         btn.setText(tip)
         btn.setIconSize(QSize(sz, sz))
         btn.setAutoRaise(True)
         btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        btn.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._conectar_btn(btn, tip)
         self._style_toolbar_btn(btn)
         return btn
@@ -493,7 +494,7 @@ class ToolbarMixin:
 
         for key in Temas.ACENTOS:
             btn = QToolButton()
-            btn.setIcon(icono("brush", 28, "#E8EDF2"))
+            btn.setIcon(icono("brush", 28))
             btn.setToolTip(Temas.nombre_acento(key))
             btn.setText(Temas.nombre_acento(key))
             btn.setIconSize(QSize(28, 28))
@@ -506,7 +507,7 @@ class ToolbarMixin:
 
         # Toggle modo
         self._modo_btn = QToolButton()
-        self._modo_btn.setIcon(icono("moon", 28, "#E8EDF2"))
+        self._modo_btn.setIcon(icono("moon", 28))
         self._modo_btn.setToolTip("Modo")
         self._modo_btn.setText("Modo")
         self._modo_btn.setIconSize(QSize(28, 28))
@@ -517,13 +518,28 @@ class ToolbarMixin:
         self._modo_btn.clicked.connect(self._toggle_mode)
         bl.addWidget(self._modo_btn)
 
+        # Selector de conjunto de iconos
+        self._iconos_btn = QToolButton()
+        self._iconos_btn.setIcon(icono("layers", 28))
+        self._iconos_btn.setToolTip("Conjunto de iconos")
+        self._iconos_btn.setText("Iconos")
+        self._iconos_btn.setIconSize(QSize(28, 28))
+        self._iconos_btn.setAutoRaise(True)
+        self._iconos_btn.setMinimumSize(68, 48)
+        self._iconos_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+        self._iconos_btn._conectado = True
+        self._iconos_btn.clicked.connect(self._show_iconos_menu)
+        bl.addWidget(self._iconos_btn)
+
         self._sync_modo_icon()
         return wrap
 
     def _sync_modo_icon(self):
+        from frontend.ventana.iconos import set_default_tint
         modo = getattr(self, '_tema_modo', 'oscuro')
         icon = "moon" if modo == 'oscuro' else "sun"
-        self._modo_btn.setIcon(icono(icon, 28, "#E8EDF2"))
+        self._modo_btn.setIcon(icono(icon, 28))
+        set_default_tint("#E8EDF2" if modo == 'oscuro' else "#1A1F24")
 
     def _set_accent(self, acento: str):
         app = QApplication.instance()
@@ -545,6 +561,34 @@ class ToolbarMixin:
         self._sync_modo_icon()
         self._switch_tab(self._tab_activa)
         self._update_statusbar()
+
+    def _show_iconos_menu(self):
+        """Mini menu para elegir conjunto de iconos."""
+        from frontend.ventana.iconos import set_iconos, get_iconos
+        from PySide6.QtWidgets import QMenu
+        menu = QMenu(self._iconos_btn)
+        actual = get_iconos()
+        opciones = [
+            ("Lucide", "lucide"),
+            ("Icons8 Color", "icons8"),
+        ]
+        for label, key in opciones:
+            act = menu.addAction(label)
+            act.setCheckable(True)
+            act.setChecked(key == actual)
+            act.triggered.connect(lambda checked=False, k=key: self._on_iconos_change(k))
+        menu.exec(self._iconos_btn.mapToGlobal(self._iconos_btn.rect().bottomLeft()))
+
+    def _on_iconos_change(self, conjunto: str):
+        from frontend.ventana.iconos import set_iconos
+        set_iconos(conjunto)
+        from backend.database.db import Config
+        Config.set("iconos", conjunto)
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.information(
+            self, "Conjunto de iconos",
+            "Reinicia la aplicación para que los cambios surtan efecto."
+        )
 
     # ── Handlers de toolbar recién cableados ────────────────────────
 

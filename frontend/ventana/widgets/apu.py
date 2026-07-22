@@ -26,9 +26,19 @@ compartiendo el mismo widget).
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import QComboBox, QDialog, QHeaderView, QMessageBox
 
-from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef, UNIDADES
+from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef, UNIDADES, FORMULA_ROLE
 from frontend.ventana.iconos import icono
 from frontend.ventana.tipos_insumo import COLOR as _COLOR_TIPO
+
+_TIPO_ID_ROLE = Qt.ItemDataRole.UserRole + 2
+
+# ponytail: mapping totales dict key → tipo_id, mirrors recalculo.py keys
+_TOTALES_CLAVE_TIPO = {
+    "materiales": 1, "mano_obra": 2, "herramienta": 4,
+    "equipo": 8, "auxiliares": 16, "subcontratos": 32,
+    "fletes": 64, "trabajos": 128,
+}
+_TIPO_ID_TO_TOTALES_CLAVE = {v: k for k, v in _TOTALES_CLAVE_TIPO.items()}
 
 COLUMNAS = ["Tipo", "Clave", "Descripción", "Unidad", "P.U.", "Op", "Valor", "Importe",
             "Fórmula", "Creado", "Modificado"]
@@ -37,14 +47,14 @@ ANCHOS = [110, 90, 250, 50, 100, 40, 80, 110, 160, 130, 130]
 
 COLUMNAS_CATALOGO = [
     ColumnaDef(0, "Tipo",        "Identificación", favorita_default=True,  visible_default=True),
-    ColumnaDef(1, "Clave",       "Identificación", favorita_default=True,  visible_default=True),
+    ColumnaDef(1, "Clave",       "Identificación", favorita_default=False, visible_default=False),
     ColumnaDef(2, "Descripción", "Identificación", favorita_default=True,  visible_default=True),
     ColumnaDef(3, "Unidad",      "Identificación", favorita_default=True,  visible_default=True),
     ColumnaDef(4, "P.U.",        "Costos",         favorita_default=True,  visible_default=True),
     ColumnaDef(5, "Op",          "Cálculo",        favorita_default=True,  visible_default=True),
     ColumnaDef(6, "Valor",       "Cálculo",        favorita_default=True,  visible_default=True),
     ColumnaDef(7, "Importe",     "Cálculo",        favorita_default=True,  visible_default=True),
-    ColumnaDef(8, "Fórmula",     "Cálculo",        favorita_default=False, visible_default=False),
+    ColumnaDef(8, "Fórmula",     "Cálculo", favorita_default=False, visible_default=False),
     ColumnaDef(9, "Creado",      "Auditoría",      favorita_default=False, visible_default=False),
     ColumnaDef(10, "Modificado", "Auditoría",      favorita_default=False, visible_default=False),
 ]
@@ -53,6 +63,7 @@ COLUMNAS_CATALOGO = [
 def _editable_cols_detalle(item):
     # Descripción y unidad se editan vía popup (doble clic), no inline —
     # misma filosofía que el árbol de presupuesto.
+    # Col 6 (Valor) edita la fórmula — el delegado muestra formula via FORMULA_ROLE
     if item.data(0, Qt.ItemDataRole.UserRole + 1):
         return {5, 6}
     return {4, 5, 6}
@@ -89,6 +100,8 @@ class TablaApuDetalle(TreeTableWidget):
     _search_cols = {1, 2}
 
     resumen_actualizado = Signal(str)  # texto enriquecido para el encabezado del contenedor
+    tipos_actualizados = Signal(object)  # dict[int, float] — Signal(dict) no convierte en PySide6
+    total_actualizado = Signal(float)    # costo_directo
 
     def __init__(self, matriz_id: int, descripcion: str = "", on_apu_click=None, parent=None):
         """matriz_id positivo = concepto; negativo = insumo compuesto (ver api.apu()).
@@ -97,7 +110,7 @@ class TablaApuDetalle(TreeTableWidget):
         """
         super().__init__(
             COLUMNAS, flat=True,
-            editable_cols=frozenset({5}),
+            editable_cols=frozenset({5, 6}),
             editable_cols_fn=_editable_cols_detalle,
             column_editors={3: _combo_unidad, 5: _combo_operador},
             parent=parent,
@@ -173,7 +186,9 @@ class TablaApuDetalle(TreeTableWidget):
                         row_item.setIcon(2, icono("combine", 16))
                     row_item.setData(0, Qt.ItemDataRole.UserRole, r.get("insumo_id"))
                     row_item.setData(0, Qt.ItemDataRole.UserRole + 1, es_compuesto)
+                    row_item.setData(0, _TIPO_ID_ROLE, r.get("tipo_id"))
                     row_item.setData(5, Qt.ItemDataRole.UserRole, r.get("id"))
+                    row_item.setData(6, FORMULA_ROLE, r.get("formula") or "")
         finally:
             self.blockSignals(False)
 
@@ -184,6 +199,22 @@ class TablaApuDetalle(TreeTableWidget):
                 if it.data(5, Qt.ItemDataRole.UserRole) == comp_actual:
                     self.setCurrentItem(it, col_actual)
                     break
+
+        # Emit tipos detected for filter bar
+        tipos_ids: set[int] = set()
+        subtotales: dict[int, float] = {}
+        if resultado:
+            for r in resultado.get("detalle", []):
+                tid = r.get("tipo_id")
+                if tid:
+                    tipos_ids.add(tid)
+            totales_data = resultado.get("totales") or {}
+            for tid in tipos_ids:
+                clave = _TIPO_ID_TO_TOTALES_CLAVE.get(tid)
+                if clave:
+                    subtotales[tid] = totales_data.get(clave, 0)
+        self.tipos_actualizados.emit(subtotales)
+        self.total_actualizado.emit(total)
 
     def _consultar(self):
         if not self._api:
@@ -247,6 +278,17 @@ class TablaApuDetalle(TreeTableWidget):
         self._event_bus = None
         self._handlers = {}
 
+    # ── Filtro por tipo ──────────────────────────────────────────────
+
+    def filtrar_por_tipo(self, tipo_id: int | None):
+        """Muestra solo filas cuyo tipo_id coincide; si tipo_id es None, muestra todas."""
+        for i in range(self.topLevelItemCount()):
+            item = self.topLevelItem(i)
+            if tipo_id is None:
+                item.setHidden(False)
+            else:
+                item.setHidden(item.data(0, _TIPO_ID_ROLE) != tipo_id)
+
     # ── Interacción ───────────────────────────────────────────────────
 
     def _on_item_dblclick(self, item, column):
@@ -271,7 +313,9 @@ class TablaApuDetalle(TreeTableWidget):
                 self._on_apu_click(insumo_id)
 
     def _on_item_editado(self, item, column):
-        """Persiste edición de Precio (col 4), Operador (col 5) o Valor (col 6).
+        """Persiste edición: Precio (col 4), Operador (col 5) o Valor como fórmula (col 6).
+
+        Col 6 (Valor) edita la fórmula — el delegado muestra formula via FORMULA_ROLE.
 
         No hace falta recalcular nada a mano aquí: api.apu_actualizar_*()
         emite ApuComponenteActualizado/InsumoActualizado de forma SÍNCRONA
@@ -296,17 +340,13 @@ class TablaApuDetalle(TreeTableWidget):
             return
 
         if column == 6:
-            try:
-                texto = item.text(column).replace(",", "").strip()
-                valor = float(texto)
-            except ValueError:
-                return
             if not comp_id:
                 return
+            texto = item.text(column).strip()
             try:
-                self._api.apu_actualizar_valor(comp_id, valor)
+                self._api.apu_actualizar_valor(comp_id, valor=0, formula=texto or None)
             except ValueError as e:
-                QMessageBox.warning(self.window(), "Cantidad inválida", str(e))
+                QMessageBox.warning(self.window(), "Fórmula inválida", str(e))
                 self._revertir_item(item, column, "apu_matrices", comp_id, "valor", ":,.8f")
             return
 
@@ -333,7 +373,14 @@ class TablaApuDetalle(TreeTableWidget):
         tw.blockSignals(True)
         row = self._api.campo_valor(tabla, campo, reg_id)
         if row:
-            val = row[campo] or 0
-            txt = f"${val:,.2f}" if "$" in fmt else f"{val:,.8f}".rstrip("0").rstrip(".")
+            val = row[campo]
+            if val is None:
+                txt = ""
+            elif isinstance(val, str):
+                txt = val
+            elif "$" in fmt:
+                txt = f"${val:,.2f}"
+            else:
+                txt = f"{val:,.8f}".rstrip("0").rstrip(".")
             item.setText(column, txt)
         tw.blockSignals(False)

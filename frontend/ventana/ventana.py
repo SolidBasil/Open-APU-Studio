@@ -60,6 +60,13 @@ class VentanaPrincipal(
 
         # ── Estado de instancia ───────────────────────────────────────────
         self._tema_modo, self._tema_acento = Temas.cargar_preferencia()
+
+        # Inicializar conjunto de iconos desde config
+        from frontend.ventana.iconos import set_iconos, set_default_tint
+        from backend.database.db import Config
+        set_iconos(Config.get("iconos", "lucide"))
+        set_default_tint("#E8EDF2" if self._tema_modo == 'oscuro' else "#1A1F24")
+
         self._tab_activa = "PROYECTO"                    # pestaña toolbar activa
         self._tab_temp   = None                          # pestaña temporal (click simple)
         self._db         = None                          # Database abierta o None

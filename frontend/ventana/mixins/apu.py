@@ -12,18 +12,22 @@ from PySide6.QtCore import Qt
 class ApuMixin:
     """Mixin de APU — se mezcla en VentanaPrincipal."""
 
-    def _build_apu_tab(self, matriz_id: int, descripcion: str = ""):
+    def _build_apu_tab(self, matriz_id: int, descripcion: str = "", *,
+                       resultado: dict | None = None):
         """Pestaña de desglose APU: componentes de un concepto o insumo compuesto.
 
-        Arma el contenedor (encabezado con título/total + botón "abrir
-        presupuesto en popup") y le mete una TablaApuDetalle (ver
-        frontend/ventana/widgets/apu.py) — la parte con estado (filas,
-        suscripción a eventos, edición) vive ahí como clase propia, ya no
-        aquí como closures (ver docs/PLAN_REPARACION.md #21).
+        resultado opcional evita una segunda consulta a la API cuando quien
+        llama ya lo obtuvo (ver _abrir_apu_resultado).
+        Incluye una barra de filtros por tipo de insumo entre el encabezado
+        y la tabla.
         """
-        from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
+        from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout,
+                                       QLabel, QPushButton, QFrame)
         from frontend.ventana.widgets.apu import TablaApuDetalle
+        from frontend.ventana.widgets.apu import _TIPO_ID_TO_TOTALES_CLAVE
         from frontend.ventana.iconos import icono
+        from frontend.ventana.tipos_insumo import ICONO as _INS_ICONO
+        from frontend.ventana.tipos_insumo import NOMBRES as _INS_NOMBRES
 
         container = QWidget()
         layout = QVBoxLayout(container)
@@ -36,20 +40,92 @@ class ApuMixin:
         lbl.setTextFormat(Qt.TextFormat.RichText)
         lbl.setWordWrap(True)
         hdr.addWidget(lbl, 1)
-
-        btn_presupuesto = QPushButton()
-        btn_presupuesto.setIcon(icono("external-link", 16))
-        btn_presupuesto.setFixedSize(28, 28)
-        btn_presupuesto.setToolTip("Abrir presupuesto en ventana emergente")
-        btn_presupuesto.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_presupuesto.clicked.connect(self._abrir_popup_presupuesto)
-        hdr.addWidget(btn_presupuesto)
-
         layout.addLayout(hdr)
         layout.addSpacing(2)
 
-        detail = TablaApuDetalle(matriz_id, descripcion, on_apu_click=self._abrir_apu_insumo)
+        # ── Filter bar ─────────────────────────────────────────────
+        filter_frame = QFrame()
+        filter_frame.setObjectName("apuFilterBar")
+        filter_layout = QHBoxLayout(filter_frame)
+        filter_layout.setContentsMargins(8, 2, 8, 2)
+        filter_layout.setSpacing(6)
+        layout.addWidget(filter_frame)
+        layout.addSpacing(2)
+
+        def _construir_filtros(subtotales: dict):
+            if not subtotales:
+                return
+            while filter_layout.count():
+                item = filter_layout.takeAt(0)
+                w = item.widget()
+                if w:
+                    w.deleteLater()
+
+            def _set_filtro(tipo_id, clicked_btn):
+                for i in range(filter_layout.count()):
+                    w = filter_layout.itemAt(i).widget()
+                    if isinstance(w, QPushButton):
+                        w.setChecked(w is clicked_btn)
+                detail.filtrar_por_tipo(tipo_id)
+
+            # "Todos" button
+            btn_todos = QPushButton("Todos")
+            btn_todos.setCheckable(True)
+            btn_todos.setChecked(True)
+            STYLE = (
+                "QPushButton{background:#005A9E;color:#fff;border:none;"
+                "border-radius:4px;padding:3px 10px;font-size:12px}"
+                "QPushButton:!checked{background:#2d2d2d;color:#E8EDF2;"
+                "border:1px solid #3d3d3d}"
+                "QPushButton:hover{border-color:#005A9E}"
+            )
+            btn_todos.setStyleSheet(STYLE)
+            btn_todos.clicked.connect(
+                lambda checked, b=btn_todos: _set_filtro(None, b))
+            filter_layout.addWidget(btn_todos)
+
+            # One button per tipo
+            STYLE_INACTIVE = (
+                "QPushButton{background:#2d2d2d;color:#E8EDF2;"
+                "border:1px solid #3d3d3d;border-radius:4px;"
+                "padding:3px 10px;font-size:12px}"
+                "QPushButton:checked{background:#005A9E;color:#fff;"
+                "border-color:#005A9E}"
+                "QPushButton:hover{border-color:#005A9E}"
+            )
+            for tid in sorted(subtotales.keys()):
+                subtotal = subtotales[tid]
+                emoji = _INS_ICONO.get(tid, "")
+                nombre = _INS_NOMBRES.get(tid, "")
+                btn = QPushButton(f"{emoji} {nombre}  ${subtotal:,.2f}")
+                btn.setCheckable(True)
+                btn.setStyleSheet(STYLE_INACTIVE)
+                btn.clicked.connect(
+                    lambda checked, t=tid, b=btn: _set_filtro(t, b))
+                filter_layout.addWidget(btn)
+
+            filter_layout.addStretch(1)
+
+        # ── Obtain resultado ───────────────────────────────────────
+        if resultado is None:
+            resultado = (self._api.apu(nodo_id=matriz_id) if matriz_id > 0
+                         else self._api.apu(insumo_id=-matriz_id))
+
+        # Initial filter bar
+        tipos_ids = {r.get("tipo_id") for r in (resultado.get("detalle") or [])}
+        totales_data = resultado.get("totales") or {}
+        subtotales = {}
+        for tid in tipos_ids:
+            clave = _TIPO_ID_TO_TOTALES_CLAVE.get(tid)
+            if clave:
+                subtotales[tid] = totales_data.get(clave, 0)
+        _construir_filtros(subtotales)
+
+        # ── Table ──────────────────────────────────────────────────
+        detail = TablaApuDetalle(matriz_id, descripcion,
+                                 on_apu_click=self._abrir_apu_insumo)
         detail.resumen_actualizado.connect(lbl.setText)
+        detail.tipos_actualizados.connect(_construir_filtros)
         detail.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         detail.customContextMenuRequested.connect(
             lambda pos: self._on_rastrear_context_menu(detail, pos))
@@ -60,10 +136,7 @@ class ApuMixin:
         # antes que conectar_eventos(). desconectar_eventos() no necesita
         # wiring aquí — _cerrar_tab_widget() ya recorre findChildren(QWidget)
         # y lo llama solo en cualquier hijo que lo tenga (ver handlers/__init__.py).
-        detail.poblar(
-            self._api.apu(nodo_id=matriz_id) if matriz_id > 0
-            else self._api.apu(insumo_id=-matriz_id)
-        )
+        detail.poblar(resultado)
         detail.conectar_eventos(self._event_bus, self._api)
 
         return container
@@ -117,16 +190,20 @@ class ApuMixin:
         tipo = item.text(2)
 
         if column == 6:
+            from PySide6.QtWidgets import QMessageBox
+            from frontend.ventana.widgets.arbol import _num
+            texto = item.text(column).strip()
             try:
-                texto = item.text(column).strip().replace("$", "")
-                if texto.count(",") == 1 and texto.count(".") == 0:
-                    texto = texto.replace(",", ".")
-                else:
-                    texto = texto.replace(",", "")
-                cantidad = float(texto)
-            except ValueError:
-                return
-            self._api.concepto_actualizar_cantidad(nodo_id, cantidad)
+                self._api.concepto_actualizar_cantidad(nodo_id, cantidad=0, formula=texto or None)
+            except ValueError as e:
+                QMessageBox.warning(self, "Fórmula inválida", str(e))
+                # revertir celda al valor numérico guardado en DB
+                tree = item.treeWidget()
+                if tree:
+                    tree.blockSignals(True)
+                    nodo = self._api.campo_valor("estructura_presupuesto", "cantidad", nodo_id)
+                    item.setText(6, _num((nodo or {}).get("cantidad")))
+                    tree.blockSignals(False)
 
         elif column == 4:
             if tipo == "Capítulo":
@@ -199,8 +276,8 @@ class ApuMixin:
         for i in range(self._tabs.count()):
             if self._tabs.tabText(i) == title:
                 self._cerrar_tab_widget(i)
-                idx = self._tabs.insertTab(i, self._build_apu_tab(matriz_id, descripcion), title)
+                idx = self._tabs.insertTab(i, self._build_apu_tab(matriz_id, descripcion, resultado=resultado), title)
                 self._tabs.setCurrentIndex(idx)
                 return
-        idx = self._tabs.addTab(self._build_apu_tab(matriz_id, descripcion), title)
+        idx = self._tabs.addTab(self._build_apu_tab(matriz_id, descripcion, resultado=resultado), title)
         self._tabs.setCurrentIndex(idx)

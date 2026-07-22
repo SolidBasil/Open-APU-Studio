@@ -76,10 +76,10 @@ COLUMNAS_CATALOGO = [
     ColumnaDef(19, "Comentarios",       "Datos adicionales", favorita_default=False, visible_default=False),
 
     ColumnaDef(11, "Hash",              "Auditoría",      favorita_default=True,  visible_default=False),
-    ColumnaDef(22, "Creado",            "Auditoría",      favorita_default=False, visible_default=False),
-    ColumnaDef(24, "Creado Por",        "Auditoría",      favorita_default=False, visible_default=False),
-    ColumnaDef(25, "Modificado",        "Auditoría",      favorita_default=False, visible_default=False),
-    ColumnaDef(26, "Modificado Por",    "Auditoría",      favorita_default=False, visible_default=False),
+    ColumnaDef(20, "Creado",            "Auditoría",      favorita_default=False, visible_default=False),
+    ColumnaDef(21, "Creado Por",        "Auditoría",      favorita_default=False, visible_default=False),
+    ColumnaDef(22, "Modificado",        "Auditoría",      favorita_default=False, visible_default=False),
+    ColumnaDef(23, "Modificado Por",    "Auditoría",      favorita_default=False, visible_default=False),
 ]
 
 TIPO_TRABAJO_NOMBRE = {

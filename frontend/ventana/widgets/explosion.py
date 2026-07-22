@@ -409,16 +409,17 @@ class TablaExplosion(TreeTableWidget):
         self.set_column_modes({
             0: (QHeaderView.ResizeMode.Interactive, 100),
             1: (QHeaderView.ResizeMode.Interactive, 75),
-            2: (QHeaderView.ResizeMode.Interactive, 140),
+            2: (QHeaderView.ResizeMode.Interactive, 280),
             3: (QHeaderView.ResizeMode.Interactive, 45),
             4: (QHeaderView.ResizeMode.Interactive, 75),
             5: (QHeaderView.ResizeMode.Interactive, 75),
             6: (QHeaderView.ResizeMode.Interactive, 90),
-            7: (QHeaderView.ResizeMode.Interactive, 50),
+            7: (QHeaderView.ResizeMode.Interactive, 100),
         })
         self.header().setMaximumSectionSize(400)
         self._search_cols = {0, 1, 2}
         self._restore_header_state()
+        self.setColumnHidden(1, True)  # Clave oculta
 
     def poblar(self, filas: list[dict], total_global: float):
         """Llena la tabla agrupando filas por tipo de insumo, con subtotales y total general."""

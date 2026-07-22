@@ -143,6 +143,12 @@ class SchemaRegistry:
             "obra_latitud": FloatField(min=-90, max=90),
             "obra_longitud": FloatField(min=-180, max=180),
         },
+        "variables_formula": {
+            "proyecto_id": IntField(min=1),
+            "nombre": StringField(required=True),
+            "expresion": StringField(),
+            "descripcion": StringField(),
+        },
         "indirectos": {
             "tipo": StringField(choices=("campo", "oficina")),
             "periodo_dias": FloatField(min=0),
