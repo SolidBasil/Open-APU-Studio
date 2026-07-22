@@ -142,19 +142,22 @@ class PersonalizarColumnasDialog(QDialog):
                 chk_vis.toggled.connect(
                     lambda checked, c=col.idx: self._tabla.setColumnHidden(c, not checked))
 
-                chk_imp = QCheckBox("🖶")
-                chk_imp.setToolTip("Imprimible: se incluye en el reporte LaTeX/PDF")
-                chk_imp.setChecked(col.idx in self._imprimibles)
-                chk_imp.toggled.connect(
-                    lambda checked, c=col.idx: self._toggle_imprimible(c, checked))
+                es_imp = col.idx in self._imprimibles
+                imp = QLabel("⎙")
+                imp.setToolTip("Imprimible: se incluye en el reporte LaTeX/PDF")
+                imp.setCursor(Qt.CursorShape.PointingHandCursor)
+                imp.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                imp.setFixedWidth(24)
+                self._pintar_imp(imp, es_imp)
+                imp.mousePressEvent = lambda _e, s=imp, c=col.idx: self._toggle_imp(s, c)
 
                 lbl = QLabel(col.label)
                 fl.addWidget(lbl, 1)
                 fl.addWidget(star)
                 fl.addWidget(chk_vis)
-                fl.addWidget(chk_imp)
+                fl.addWidget(imp)
                 gl.addWidget(fila)
-                filas.append((fila, col, star))
+                filas.append((fila, col, star, imp))
             self._content_layout.addWidget(grupo)
             self._grupos.append((grupo, filas))
 
@@ -177,19 +180,30 @@ class PersonalizarColumnasDialog(QDialog):
         self._tabla._guardar_favoritas(self._favoritas)
         self._pintar_star(star, es_fav)
 
-    def _toggle_imprimible(self, col_idx: int, checked: bool):
+    def _pintar_imp(self, imp: QLabel, checked: bool):
+        imp.setStyleSheet(
+            "QLabel { color: #7FAFD6; font-size: 16px; padding: 2px 4px; border-radius: 3px; }"
+            f"QLabel:hover {{ background-color: {SEL_BG}; }}"
+            if checked else
+            "QLabel { color: #4A5560; font-size: 16px; padding: 2px 4px; border-radius: 3px; }"
+            f"QLabel:hover {{ background-color: {SEL_BG}; }}"
+        )
+
+    def _toggle_imp(self, imp: QLabel, col_idx: int):
+        checked = col_idx not in self._imprimibles
         if checked:
             self._imprimibles.add(col_idx)
         else:
             self._imprimibles.discard(col_idx)
         self._tabla._guardar_imprimibles(self._imprimibles)
+        self._pintar_imp(imp, checked)
 
     def _filtrar(self, texto: str):
         """Filtra filas por nombre de columna; oculta categorías vacías."""
         texto = texto.strip().lower()
         for grupo, filas in self._grupos:
             alguna_visible = False
-            for fila, col, _star in filas:
+            for fila, col, _star, _imp in filas:
                 coincide = not texto or texto in col.label.lower()
                 fila.setVisible(coincide)
                 alguna_visible = alguna_visible or coincide
