@@ -14,9 +14,7 @@ de aquí en vez de definir sus propias clases.
 Jerarquía:
     DataServiceError            — base, para capturar "cualquier error de escritura"
     ├── ValidationError         — un campo no pasó las reglas de SchemaRegistry
-    ├── RepositoryError         — falló el repo (SQL, integridad, etc.)
-    └── ConflictError           — conflicto de concurrencia (registro
-                                   modificado por otro proceso)
+    └── RepositoryError         — falló el repo (SQL, integridad, etc.)
 
 Uso típico desde la UI:
     try:
@@ -38,7 +36,3 @@ class ValidationError(DataServiceError):
 
 class RepositoryError(DataServiceError):
     """Error en operación de repositorio (SQL, integridad, etc.)."""
-
-
-class ConflictError(DataServiceError):
-    """Conflicto de concurrencia (registro modificado por otro proceso)."""

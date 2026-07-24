@@ -293,6 +293,9 @@ CREATE TABLE IF NOT EXISTS estructura_presupuesto (
     -- Nota rápida inline
     notas_rapidas   TEXT,
 
+    -- Fuera de presupuesto (conceptos extra que no forman parte del presupuesto legal)
+    es_extra        INTEGER NOT NULL DEFAULT 0,
+
     -- Soft-delete y auditoría
     activo          INTEGER NOT NULL DEFAULT 1,
     creado_por      INTEGER NOT NULL DEFAULT 1 REFERENCES usuarios(id),
@@ -533,7 +536,8 @@ CREATE TABLE IF NOT EXISTS generador_renglones (
     generador_id    INTEGER NOT NULL REFERENCES generadores(id) ON DELETE CASCADE,
     orden           INTEGER NOT NULL DEFAULT 0,
 
-    ubicacion       TEXT    NOT NULL DEFAULT '',
+    eje             TEXT    NOT NULL DEFAULT '',
+    tramo           TEXT    NOT NULL DEFAULT '',
     veces           REAL    NOT NULL DEFAULT 1,
     largo           REAL,
     ancho           REAL,

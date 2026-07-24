@@ -26,6 +26,7 @@ Uso:
 
 # ── imports / platformdirs ──
 import json
+import logging
 import sqlite3
 import shutil
 from pathlib import Path
@@ -264,8 +265,22 @@ class Database:
             self._conn.execute(
                 "ALTER TABLE historial ADD COLUMN deshachado_en TEXT"
             )
-        except Exception:
+        except sqlite3.OperationalError:
             pass  # columna ya existe
+        # v6: columna es_extra para conceptos fuera de presupuesto
+        try:
+            self._conn.execute(
+                "ALTER TABLE estructura_presupuesto ADD COLUMN es_extra INTEGER DEFAULT 0"
+            )
+        except sqlite3.OperationalError:
+            pass  # columna ya existe
+        # Asegurar que registros viejos tengan es_extra = 0
+        try:
+            self._conn.execute(
+                "UPDATE estructura_presupuesto SET es_extra = 0 WHERE es_extra IS NULL"
+            )
+        except sqlite3.OperationalError:
+            pass  # columna es_extra aún no existe en este punto de la migración
         self._conn.commit()
 
     def _migrar_v5(self):
@@ -278,7 +293,7 @@ class Database:
         try:
             cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='configuracion_proyecto'")
             tiene_cfg = cur.fetchone() is not None
-        except Exception:
+        except sqlite3.OperationalError:
             tiene_cfg = False
 
         # Columnas a agregar (solo si no existen)
@@ -332,7 +347,7 @@ class Database:
         for col, typedef in columnas_nuevas:
             try:
                 cur.execute(f"ALTER TABLE proyectos ADD COLUMN {col} {typedef}")
-            except Exception:
+            except sqlite3.OperationalError:
                 pass  # columna ya existe
 
         # Copiar datos de configuracion_proyecto si existe
@@ -348,15 +363,17 @@ class Database:
                 """)
                 cur.execute("DROP TABLE IF EXISTS configuracion_proyecto")
                 self._conn.commit()
-            except Exception:
-                pass  # tabla ya no existe o error menor
+            except sqlite3.OperationalError:
+                pass  # tabla configuracion_proyecto ya no existe
 
         # Eliminar tabla apu_resumen_totales si existe (v5 la elimina)
         try:
             cur.execute("DROP TABLE IF EXISTS apu_resumen_totales")
             self._conn.commit()
-        except Exception:
-            pass
+        except sqlite3.OperationalError as e:
+            # DROP TABLE IF EXISTS no debería fallar por ausencia de la tabla;
+            # si llega aquí es un error real de sqlite — se deja registro.
+            logging.getLogger(__name__).warning("No se pudo eliminar apu_resumen_totales: %s", e)
 
     # ── Instanciación ────────────────────────────────────────────────
 

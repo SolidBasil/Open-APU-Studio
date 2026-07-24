@@ -351,11 +351,26 @@ class DataService:
 
         gen_repo = GeneradorRepo(self._db.conn)
 
-        # Calcular subtotal antes de persistir
-        veces = float(campos.get("veces", 1))
-        largo = campos.get("largo")
-        ancho = campos.get("ancho")
-        alto = campos.get("alto")
+        # Para ediciones inline solo llega el campo que cambió (ej. sólo
+        # "ancho"). Si el subtotal se calculara nada más con `campos`, los
+        # campos ausentes se tratarían como veces=1 / largo=ancho=alto=None,
+        # y el subtotal terminaba siendo literalmente el único valor editado
+        # en vez de la multiplicación real. Por eso, al actualizar un
+        # renglón existente, se completan los campos faltantes con lo que
+        # ya está guardado en la BD antes de calcular.
+        existente = gen_repo.buscar_renglon(renglon_id) if renglon_id else None
+
+        def _campo(nombre, default=None):
+            if nombre in campos:
+                return campos[nombre]
+            if existente is not None:
+                return existente.get(nombre, default)
+            return default
+
+        veces = float(_campo("veces", 1) or 1)
+        largo = _campo("largo")
+        ancho = _campo("ancho")
+        alto = _campo("alto")
         campos["subtotal"] = GeneradorRepo.calcular_subtotal(
             veces,
             float(largo) if largo is not None else None,
@@ -364,6 +379,7 @@ class DataService:
         )
 
         conceptos_ids = []
+        proyecto_id = None
 
         try:
             with self._db.transaction():
@@ -382,10 +398,9 @@ class DataService:
                     cid = gen["concepto_id"]
                     gen_repo.recalcular_concepto(cid)
                     conceptos_ids.append(cid)
+                    proyecto_id = gen["proyecto_id"]
                     # Propagar total (cantidad × precio) hacia capítulos padres
-                    RecalculoRepo(self._db.conn).recalcular_proyecto(
-                        gen["proyecto_id"]
-                    )
+                    RecalculoRepo(self._db.conn).recalcular_proyecto(proyecto_id)
         except Exception as e:
             raise RepositoryError(str(e)) from e
 
@@ -393,6 +408,20 @@ class DataService:
             generador_id=generador_id,
             conceptos_ids=conceptos_ids,
         ))
+        if conceptos_ids:
+            from backend.database.repos import NodoRepo
+            nodo_repo = NodoRepo(self._db.conn)
+            for cid in conceptos_ids:
+                registro = nodo_repo.buscar(cid)
+                if registro:
+                    from backend.database.event_bus import ConceptoActualizado
+                    self._event_bus.emit(ConceptoActualizado(
+                        concepto_id=cid,
+                        cambios={"cantidad", "total"},
+                        registro=registro,
+                    ))
+        if proyecto_id is not None:
+            self._event_bus.emit(ProyectoRecalculado(proyecto_id))
         return renglon_id
 
     def eliminar_renglon_generador(self, renglon_id: int,
@@ -408,6 +437,7 @@ class DataService:
 
         generador_id = rn["generador_id"]
         conceptos_ids = []
+        proyecto_id = None
 
         try:
             with self._db.transaction():
@@ -419,9 +449,8 @@ class DataService:
                     cid = gen["concepto_id"]
                     gen_repo.recalcular_concepto(cid)
                     conceptos_ids.append(cid)
-                    RecalculoRepo(self._db.conn).recalcular_proyecto(
-                        gen["proyecto_id"]
-                    )
+                    proyecto_id = gen["proyecto_id"]
+                    RecalculoRepo(self._db.conn).recalcular_proyecto(proyecto_id)
         except Exception as e:
             raise RepositoryError(str(e)) from e
 
@@ -429,6 +458,20 @@ class DataService:
             generador_id=generador_id,
             conceptos_ids=conceptos_ids,
         ))
+        if conceptos_ids:
+            from backend.database.repos import NodoRepo
+            nodo_repo = NodoRepo(self._db.conn)
+            for cid in conceptos_ids:
+                registro = nodo_repo.buscar(cid)
+                if registro:
+                    from backend.database.event_bus import ConceptoActualizado
+                    self._event_bus.emit(ConceptoActualizado(
+                        concepto_id=cid,
+                        cambios={"cantidad", "total"},
+                        registro=registro,
+                    ))
+        if proyecto_id is not None:
+            self._event_bus.emit(ProyectoRecalculado(proyecto_id))
 
     def reasignar_generador(self, generador_id: int,
                             nuevo_concepto_id: int | None,
@@ -439,6 +482,7 @@ class DataService:
 
         gen_repo = GeneradorRepo(self._db.conn)
         afectados = gen_repo.conceptos_afectados(generador_id, nuevo_concepto_id)
+        proyecto_id = None
 
         try:
             with self._db.transaction():
@@ -448,9 +492,8 @@ class DataService:
                 if afectados:
                     gen = gen_repo.buscar(generador_id)
                     if gen:
-                        RecalculoRepo(self._db.conn).recalcular_proyecto(
-                            gen["proyecto_id"]
-                        )
+                        proyecto_id = gen["proyecto_id"]
+                        RecalculoRepo(self._db.conn).recalcular_proyecto(proyecto_id)
         except Exception as e:
             raise RepositoryError(str(e)) from e
 
@@ -458,6 +501,20 @@ class DataService:
             generador_id=generador_id,
             conceptos_ids=afectados,
         ))
+        if afectados:
+            from backend.database.repos import NodoRepo
+            nodo_repo = NodoRepo(self._db.conn)
+            for cid in afectados:
+                registro = nodo_repo.buscar(cid)
+                if registro:
+                    from backend.database.event_bus import ConceptoActualizado
+                    self._event_bus.emit(ConceptoActualizado(
+                        concepto_id=cid,
+                        cambios={"cantidad", "total"},
+                        registro=registro,
+                    ))
+        if proyecto_id is not None:
+            self._event_bus.emit(ProyectoRecalculado(proyecto_id))
 
     # ── Helpers internos ────────────────────────────────────────────
 

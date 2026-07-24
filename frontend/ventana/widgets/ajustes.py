@@ -14,7 +14,6 @@ Uso:
     dlg.exec()
 """
 
-from PySide6.QtCore    import Qt
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QWidget, QFrame, QPushButton, QListWidget, QListWidgetItem,

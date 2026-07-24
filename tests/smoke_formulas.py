@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from backend.formulas import (
     ErrorFormula, evaluar_formula, nombres_referenciados, resolver_variables,
-    FUNCIONES_PERMITIDAS, sustituir_variable_eliminada,
+    sustituir_variable_eliminada,
 )
 
 

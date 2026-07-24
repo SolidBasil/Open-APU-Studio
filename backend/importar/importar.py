@@ -36,9 +36,6 @@ Uso:
     )
 """
 
-import sqlite3
-import sys
-import uuid
 from pathlib import Path
 
 from backend.database.core import generar_hash
@@ -198,7 +195,7 @@ def importar(
     if not carpeta.is_dir():
         raise ValueError(f"Carpeta no válida: {carpeta}")
 
-    print(f"\n=== Importando proyecto ===")
+    print("\n=== Importando proyecto ===")
     prefijo, formato = _detectar(carpeta)
     print(f"  Prefijo : {prefijo!r}")
     print(f"  Formato : {formato}")
@@ -221,7 +218,6 @@ def importar(
 
     regs_p = dbf("P")
     regs_f = dbf("F")
-    regs_n = dbf("N")
     regs_z = dbf("Z")
     regs_c = dbf("C")
     regs_1 = dbf("1")
@@ -486,11 +482,9 @@ def importar(
     from backend.database.repos import RecalculoRepo
     RecalculoRepo(con).recalcular_totales_conceptos(proyecto_id)
     con.commit()
-    print(f"  → totales de conceptos recalculados con precio real del insumo")
+    print("  → totales de conceptos recalculados con precio real del insumo")
 
     # ── APU NODOS (sintéticos para insumos compuestos fuera del árbol) ─────
-    insumo_por_clave = {_s(r.get("NOMBRE")): r for r in regs_p if _s(r.get("NOMBRE"))}
-
     # apu_auxiliares eliminado — insumos compuestos ya están en insumos (es_compuesto=1)
 
     # ── APU matrices (componentes del APU) ──────────────────────────────
@@ -613,7 +607,6 @@ def _arbol_numerico(con, cur, proyecto_id, regs_1, regs_a, regs_p) -> dict:
     egp     = {_s(r.get("NOMBRE")): r for r in regs_p if _s(r.get("NOMBRE"))}
 
     nodos_ord  = sorted(regs_1, key=lambda r: _s(r.get("PRE_WBS")))
-    activos_id = {int(r.get("PRE_ID") or 0) for r in nodos_ord}
 
     nodo_id_sqlite: dict[int, int] = {}
     wbs_a_sqlite:   dict[str, int] = {}
@@ -651,15 +644,12 @@ def _arbol_numerico(con, cur, proyecto_id, regs_1, regs_a, regs_p) -> dict:
         if es_concepto:
             rec  = egp.get(pre_com, {})
             desc = _s(rec.get("DESCRIPCIO") or rec.get("DESCCORTA"))
-            desc_corta = _s(rec.get("DESCCORTA"))
-            unidad     = _s(rec.get("UNIDAD"))
             cantidad   = _f(r.get("PRE_VOL"))
             pu         = _f(r.get("PRE_PRE"))
         else:
             rec  = nombres.get(pre_iduni, {})
             desc = _s(rec.get("DESC") or rec.get("DESCRIPCION") or rec.get("DESCCORTA"))
-            desc_corta = _s(rec.get("DESCCORTA") or rec.get("DESC"))
-            unidad = cantidad = pu = None
+            cantidad = pu = None
 
         total = cantidad * pu if es_concepto and cantidad and pu else 0
         formula_pres = _s(r.get("PRE_EXP")) or None

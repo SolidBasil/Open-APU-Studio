@@ -11,12 +11,12 @@ def _parse_float(texto: str) -> float | None:
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QFont, QDoubleValidator
+from PySide6.QtGui import QDoubleValidator
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QListWidget,
     QListWidgetItem, QLabel, QPushButton, QWidget, QFrame,
     QTreeWidgetItem, QAbstractItemView, QComboBox, QMessageBox,
-    QCheckBox, QGroupBox, QGridLayout, QDoubleSpinBox,
+    QCheckBox, QGroupBox, QGridLayout, QDoubleSpinBox, QPlainTextEdit,
 )
 
 from frontend.ventana.colores import ACCENT, SEL_BG as _SEL_BG, WARNING
@@ -335,7 +335,7 @@ from frontend.ventana.tipos_insumo import (
     TIPOS_INSUMO as _TIPOS_INSUMO,
     COLOR as _COLOR_TIPO,
 )
-from frontend.ventana.iconos import icono
+from frontend.ventana.iconos import icono, search_input
 
 
 # ── Diálogo de selección de insumo ─────────────────────────────────
@@ -412,7 +412,7 @@ class DialogoSeleccionarInsumo(QDialog):
         layout.addLayout(tb)
 
         # ── Results tree (usa TablaInsumos internamente) ────────
-        from frontend.ventana.widgets.insumos import TablaInsumos, COLUMNAS_CATALOGO
+        from frontend.ventana.widgets.insumos import TablaInsumos
         self._tree = TablaInsumos()
         self._tree.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._tree.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -446,7 +446,8 @@ class DialogoSeleccionarInsumo(QDialog):
         """Carga todos los insumos del proyecto en la tabla."""
         try:
             filas = self._api.insumos()
-        except Exception:
+        except Exception as e:
+            print(f"Error cargando insumos: {e}")
             filas = []
         self._tree.poblar(filas)
         for i in range(self._tree.topLevelItemCount()):
@@ -554,8 +555,10 @@ class InsumoDialog(QDialog):
 
         # ── Descripción * ─────────────────────────────────────────
         layout.addWidget(QLabel("Descripción *:"))
-        self._desc = QLineEdit()
+        self._desc = QPlainTextEdit()
         self._desc.setPlaceholderText("Descripción del insumo")
+        self._desc.setMinimumHeight(72)
+        self._desc.setTabChangesFocus(True)
         layout.addWidget(self._desc)
 
         # ── Desc. corta ──────────────────────────────────────────
@@ -714,7 +717,7 @@ class InsumoDialog(QDialog):
         idx = self._tipo.findData(insumo.get("tipo_id"))
         if idx >= 0:
             self._tipo.setCurrentIndex(idx)
-        self._desc.setText(insumo.get("descripcion", ""))
+        self._desc.setPlainText(insumo.get("descripcion", ""))
         u = insumo.get("unidad", "")
         idx = self._unidad.findText(u)
         if idx >= 0:
@@ -809,7 +812,7 @@ class InsumoDialog(QDialog):
         return sfid
 
     def _guardar(self):
-        desc = self._desc.text().strip()
+        desc = self._desc.toPlainText().strip()
         if not desc:
             QMessageBox.warning(self, "Campo requerido", "La descripción no puede estar vacía.")
             return

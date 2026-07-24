@@ -74,18 +74,21 @@ class GestionProyectosMixin:
         if ctor and self._event_bus:
             try:
                 self._event_bus.emit(ctor(data))
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[eventbus] error reemitiendo '{nombre_evento}': {e}")
 
     def _start_server(self) -> str | None:
         """Arranca el servidor embebido como subprocess (SRV-11).
         Devuelve la URL base o None si falla."""
-        import sys, subprocess, time
+        import sys
+        import subprocess
+        import time
         cmd = [sys.executable, "-u", "-m", "server.servidor", "--embedded", "--port", "0"]
         try:
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                                     stderr=subprocess.DEVNULL, text=True, bufsize=1)
-        except Exception:
+        except Exception as e:
+            print(f"No se pudo arrancar el servidor embebido: {e}")
             return None
         self._server_proc = proc
         deadline = time.time() + 10
@@ -105,6 +108,7 @@ class GestionProyectosMixin:
 
     def _stop_server(self):
         """Detiene el servidor embebido y el cliente WS (SRV-13)."""
+        import subprocess
         self._stop_ws_client()
         proc = getattr(self, "_server_proc", None)
         if proc is None:
@@ -112,7 +116,7 @@ class GestionProyectosMixin:
         proc.terminate()
         try:
             proc.wait(timeout=3)
-        except Exception:
+        except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait(timeout=2)
         self._server_proc = None
@@ -193,7 +197,6 @@ class GestionProyectosMixin:
         if not self._db:
             return
         from PySide6.QtWidgets import QMessageBox
-        from backend.database.db import Database
 
         msg = QMessageBox(self)
         msg.setWindowTitle("Cerrar proyecto")
@@ -264,7 +267,7 @@ class GestionProyectosMixin:
         """Renombra un proyecto .db."""
         from pathlib import Path
         from PySide6.QtWidgets import QDialog, QInputDialog, QMessageBox
-        from backend.database.db import Rutas, Database
+        from backend.database.db import Rutas
         from frontend.ventana.widgets.dialogs import ProjectDialog
 
         proyectos = Rutas.listar_proyectos()
@@ -307,7 +310,7 @@ class GestionProyectosMixin:
         """Elimina permanentemente un proyecto .db con doble confirmación."""
         from pathlib import Path
         from PySide6.QtWidgets import QDialog, QMessageBox
-        from backend.database.db import Rutas, Database
+        from backend.database.db import Rutas
         from frontend.ventana.widgets.dialogs import ProjectDialog
 
         proyectos = Rutas.listar_proyectos()
@@ -345,7 +348,7 @@ class GestionProyectosMixin:
     def _on_importar_opus(self):
         """Flujo completo de importación OPUS."""
         from PySide6.QtWidgets import QFileDialog, QMessageBox
-        from backend.database.db import Config, Database, Rutas
+        from backend.database.db import Database, Rutas
         from backend.importar.importar import importar
 
         dir_path = QFileDialog.getExistingDirectory(
@@ -371,7 +374,7 @@ class GestionProyectosMixin:
             msg.setText(f"Ya existe una base de datos para '{nombre}'.")
             msg.setInformativeText("¿Cómo quieres proceder?")
             btn_rename = msg.addButton("Renombrar anterior", QMessageBox.ButtonRole.ActionRole)
-            btn_delete = msg.addButton("Sobrescribir", QMessageBox.ButtonRole.DestructiveRole)
+            msg.addButton("Sobrescribir", QMessageBox.ButtonRole.DestructiveRole)
             btn_cancel = msg.addButton("Cancelar", QMessageBox.ButtonRole.RejectRole)
             msg.setDefaultButton(btn_cancel)
             msg.exec()

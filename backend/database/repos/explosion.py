@@ -103,7 +103,7 @@ class ExplosionRepo(RepoBase):
         budget_cant = {r["id"]: r["cantidad"] for r in rows if r["cantidad"]}
 
         # ── 2. All insumos del proyecto ──
-        insumos = self._lista(f"""
+        insumos = self._lista("""
             SELECT i.id, i.clave_opus,
                    COALESCE(i.descripcion, i.descripcion_corta, '') AS descripcion,
                    i.unidad, i.costo_directo, i.es_compuesto, i.tipo_id,
@@ -127,7 +127,7 @@ class ExplosionRepo(RepoBase):
         }
 
         # ── 3. All APU matrices (reverse index) ──
-        matrices = self._lista(f"""
+        matrices = self._lista("""
             SELECT am.matriz_id, am.insumo_id, am.valor, am.operador, am.precio
             FROM apu_matrices am
             JOIN insumos i ON i.id = am.insumo_id

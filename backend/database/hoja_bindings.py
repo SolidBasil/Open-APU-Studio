@@ -4,7 +4,7 @@ hoja_bindings.py
 Capa de acceso a datos entre las hojas del sidebar (TreeTableWidget) y la
 base de datos SQLite del proyecto (schema.sql).
 
-Cada sub-pestaña del sidebar (ver ESTRUCTURA en sidebar_estructura.py) se
+Cada sub-pestaña del sidebar (TreeTableWidget) se
 describe con una `HojaBinding`: qué tabla SQL le corresponde y cómo se lee/
 escribe cada una de sus columnas. Con esa descripción, `cargar_hoja()` y
 `guardar_fila()` sirven para CUALQUIER hoja sin código especial por tabla.
@@ -20,7 +20,7 @@ Tipos de columna:
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 # =============================================================================

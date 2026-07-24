@@ -34,27 +34,28 @@ class NodoRepo(RepoBase):
     def delete(self, registro_id: int) -> None:
         return self._delete(self.TABLA, registro_id)
 
-    def todos(self, proyecto_id, tipo: str | None = None):
-        """Devuelve todos los nodos activos del presupuesto ordenados por
-        jerarquía real (padre_id, orden) — no por wbs, que es solo una
-        etiqueta derivada (ver reindexar()).
+    def todos(self, proyecto_id, tipo: str | None = None, extra: bool = False):
+        """Devuelve todos los nodos activos del presupuesto (es_extra=0 por defecto).
+        Con extra=True filtra nodos es_extra=1 (fuera de presupuesto).
         Si tipo se especifica ('capitulo' o 'concepto'), filtra por ese tipo.
         Para conceptos incluye unidad desde el catálogo de insumos.
         """
+        es_extra_val = 1 if extra else 0
         if tipo == "concepto":
-            return self._lista(f"""
+            return self._lista("""
                 SELECT ep.*, i.unidad
                 FROM estructura_presupuesto ep
                 LEFT JOIN insumos i ON i.id = ep.insumo_id
-                WHERE ep.proyecto_id = ? AND ep.activo = 1 AND ep.tipo = 'concepto'
+                WHERE ep.proyecto_id = ? AND ep.activo = 1
+                  AND ep.tipo = 'concepto' AND ep.es_extra = ?
                 ORDER BY ep.padre_id, ep.orden, ep.id
-            """, [proyecto_id])
-        filtro = f"AND tipo = '{tipo}'" if tipo else ""
+            """, [proyecto_id, es_extra_val])
+        filtro_tipo = f"AND tipo = '{tipo}'" if tipo else ""
         return self._lista(f"""
             SELECT * FROM estructura_presupuesto
-            WHERE proyecto_id = ? AND activo = 1 {filtro}
+            WHERE proyecto_id = ? AND activo = 1 AND es_extra = ? {filtro_tipo}
             ORDER BY padre_id, orden, id
-        """, [proyecto_id])
+        """, [proyecto_id, es_extra_val])
 
     def buscar(self, concepto_id):
         """Busca un nodo por su ID."""
@@ -84,9 +85,11 @@ class NodoRepo(RepoBase):
         """, [proyecto_id, tipo])
         return [r["id"] for r in rows]
 
-    def arbol(self, proyecto_id: int) -> list[dict]:
-        """Lee el árbol de presupuesto y lo devuelve como lista de nodos
-        raíz con sus hijos anidados en el campo 'hijos'.
+    def arbol(self, proyecto_id: int, extra: bool = False) -> list[dict]:
+        """Lee el árbol de presupuesto (es_extra=0 por defecto) y lo devuelve
+        como lista de nodos raíz con sus hijos anidados en el campo 'hijos'.
+
+        Con extra=True filtra nodos es_extra=1 (fuera de presupuesto).
 
         El árbol ya viene con padre_id correctamente resuelto desde la
         importación (algoritmo WBS) — no se necesita reconstrucción
@@ -101,20 +104,20 @@ class NodoRepo(RepoBase):
                 "nivel":            int,        # 0=raíz, 1=capítulo...
                 "tipo":             str,        # "capitulo" | "concepto"
                 "insumo_id":        int | None, # solo conceptos
-                "descripcion":      str,        # conceptos: COALESCE(i.descripcion, n.descripcion)
-                                                # capítulos: n.descripcion
-                "unidad":           str | None, # desde insumos.unidad (solo conceptos)
-                "clave_opus":       str | None, # desde insumos.clave_opus (referencial)
-                "precio_unitario":  float | None, # desde insumos.costo_final (solo conceptos)
+                "descripcion":      str,
+                "unidad":           str | None,
+                "clave_opus":       str | None,
+                "precio_unitario":  float | None,
                 "cantidad":         float | None,
-                "total":            float,      # unificado: conceptos=importe, capítulos=subtotal
+                "total":            float,
                 "notas_rapidas":    str | None,
                 "modificado_en":    str | None,
                 "creado_en":        str | None,
-                "estado":           int,        # 0=sin revisar, 1=en revisión, 2=verificado, 3=cuestionado
-                "hijos":            list[dict], # recursivo
+                "estado":           int,
+                "hijos":            list[dict],
             }
         """
+        es_extra_val = 1 if extra else 0
         filas = self._lista("""
             SELECT
                 n.id,
@@ -142,9 +145,9 @@ class NodoRepo(RepoBase):
             FROM estructura_presupuesto n
             LEFT JOIN insumos i ON i.id = n.insumo_id
             LEFT JOIN tipos_insumo t ON t.id = i.tipo_id
-            WHERE n.proyecto_id = ? AND n.activo = 1
+            WHERE n.proyecto_id = ? AND n.activo = 1 AND n.es_extra = ?
             ORDER BY n.padre_id, n.orden, n.id
-        """, [proyecto_id])
+        """, [proyecto_id, es_extra_val])
 
         if not filas:
             return []

@@ -50,7 +50,7 @@ def main():
         # ── Variables: CRUD básico ───────────────────────────────────
         assert api.variables_listar() == [], "proyecto nuevo no debe tener variables"
 
-        id_ancho = api.variables_crear("ancho_muro", expresion="3.5")
+        api.variables_crear("ancho_muro", expresion="3.5")
         id_altura = api.variables_crear("altura", expresion="2.8")
         id_area = api.variables_crear("area_muro", expresion="ancho_muro * altura")
 

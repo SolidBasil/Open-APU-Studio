@@ -132,3 +132,52 @@ Eliminado: 2026-07-11 — todos eliminados excepto 4.17 (usuario_id en Api).
   corre contra una BD SQLite real, sin mocks. Extenderlo con cada
   sección nueva que se migre a backends, antes de dar la sección por
   cerrada.
+
+## 8. Sesión de auditoría (2026-07-24)
+
+**Eliminado en esta sesión** (huérfanos confirmados, cero referencias en
+todo el proyecto):
+- Subsistema completo de "Análisis Estructural" — `toolbar_estructural.py`,
+  `widgets/viewport3d.py`, `widgets/sidebar_estructura.py` (el que la
+  sesión del 19-jul dejó "pendiente de decisión" en la sección 7).
+- 5 helpers de CAD nunca conectados: `cad/panel_capas.py`,
+  `cad/filtro_nombres.py`, `cad/calibracion.py`, `cad/busqueda_texto.py`,
+  `cad/agregacion.py`.
+- `cad/visor.py.orig` (respaldo suelto).
+- `ConflictError` (clase, ya sin uso desde que 4.19 se resolvió),
+  `lector_dxf.entities_to_json()`, y en `api.py`:
+  `concepto_actualizar_pu`, `proyectos_disponibles`, `generadores`,
+  `generador_actualizar`, `generador_eliminar` — y el
+  `GeneradorRepo.listar_por_proyecto()` que este último dejó huérfano.
+
+**Investigado y dejado tal cual — NO es código muerto, es funcionalidad
+real sin terminar de conectar. Decisión: documentar, no tocar todavía:**
+
+| Qué | Dónde | Por qué no se borra |
+|---|---|---|
+| `DataService.iniciar_sesion()`/`cerrar_sesion()` (SRV-09) | `data_service.py:62-69` | `self._sesion` SÍ se lee en `actualizar()`/`eliminar()` (línea 102, 173) — como nadie llama `iniciar_sesion()`, cada edición cae al fallback `or str(uuid.uuid4())` y genera su propia sesión en vez de agruparse. El undo campo-por-campo funciona bien; falta conectar el agrupado de operaciones batch en un solo Ctrl+Z. |
+| `DataService.reasignar_generador()` | `data_service.py:476` | Método completo y correcto (reasigna generador a otro concepto + recalcula ambos). Cero llamadores en la UI — parece una acción pensada (¿arrastrar generador a otro capítulo?) nunca cableada a un botón/menú. |
+| `DiagnosticoRepo.estadisticas()` | `diagnostico.py:136` | Su docstring dice "para el diálogo de información" — pero `_on_info_proyecto()` en `diag_dialogs.py` no la llama ni tiene conteos propios. El diálogo de info del proyecto hoy no muestra estadísticas. |
+| `DiagnosticoRepo.resumen_integridad()` | `diagnostico.py:245` | `core.py` documenta su propia migración: "`validar()` → `DiagnosticoRepo.resumen_integridad()`" (Fase 4, ver ARQUITECTURA_SERVICIOS.md). El punto que debía llamarla en su nueva ubicación nunca se actualizó. |
+
+Si se retoma alguno de estos, no hace falta re-auditar — la tabla de
+arriba ya tiene el motivo y la línea exacta donde conectar cada uno.
+
+**También de esta sesión** (ver conversación completa para detalle):
+código muerto de `except Exception` genéricos acotado a excepciones
+específicas en `db.py`; cableado de eventos de `TablaArbol`/`TablaInsumos`/
+`TablaApuDetalle` unificado vía `EVENTOS_SUSCRITOS` declarativo en
+`TreeTableWidget` (reemplaza 2.1); cableado de señales de `TablaArbol`
+unificado vía `conectar_handlers()` (encontró y corrigió un bug real:
+`PresupuestoPopup` no conectaba `agregar_agrupador`/`agregar_concepto`/
+`eliminar_seleccion`); estilo de fila vacía unificado vía
+`_estilizar_fila_vacia()` en `TreeTableWidget`.
+
+**Bug real encontrado, sin corregir** (fuera del alcance de "código
+muerto" — es lo opuesto, código que falta escribir): `cad/undo_stack.py`
+`push_undo()` nunca se llama desde `mixins/generador.py`. El botón
+"Deshacer" del panel CAD (dibujo/anotaciones) está siempre deshabilitado
+porque la pila de undo nunca se llena — no relacionado con el undo de
+SRV-09 (ese es para presupuesto/insumos vía `HistorialRepo`, y ese sí
+funciona por edición individual).
+

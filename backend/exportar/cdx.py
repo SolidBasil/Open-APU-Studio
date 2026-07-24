@@ -6,7 +6,6 @@ Used by exportar.py to create valid indexes for OPUS CMS.
 """
 
 import struct
-import os
 import re
 
 

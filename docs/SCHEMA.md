@@ -1,6 +1,6 @@
 # Esquema de base de datos — Open APU Studio
 
-Versión del esquema: **4** (cambios acumulativos en `schema.sql` — beta, sin migraciones)
+Versión del esquema: **5** (cambios acumulativos en `schema.sql` — beta, sin migraciones)
 
 Este documento explica el diseño de la base de datos SQLite, las decisiones
 de arquitectura y qué falta implementar en versiones futuras.
@@ -72,6 +72,19 @@ BLOQUE 10 — FSR (Factor de Salario Real)
 ---
 
 ## Decisiones de diseño importantes
+
+### 0. `estructura_presupuesto` — columna `es_extra`
+
+Los conceptos **fuera de presupuesto** (partidas extra que no forman parte del
+presupuesto legal/aprobado) se almacenan en la misma tabla que el presupuesto normal,
+diferenciados por la columna `es_extra INTEGER NOT NULL DEFAULT 0`.
+
+- `es_extra = 0`: presupuesto legal (default)
+- `es_extra = 1`: fuera de presupuesto
+
+Esto permite reutilizar toda la lógica de árbol (`padre_id`, `orden`, `reindexar()`),
+recalculo (`actualizar_total()`) y generadores (FK `generadores.concepto_id`) sin
+duplicar tablas ni repositorios. Las queries de lectura filtran por `es_extra`.
 
 ### 1. `estructura_presupuesto` — jerarquía por `wbs`, no por `padre_id` ni `PRE_IDPAD`
 
@@ -224,6 +237,7 @@ Los cambios se aplican directamente al archivo. Los proyectos viejos se consider
 | 3 | `concepto_id` + `insumo_compuesto_id` → `matriz_id` único, `es_compuesto` por presencia en `*F.DBF` |
 | 4 | `apu_matrices.cantidad`+`rendimiento` → `valor`+`operador`; `importe` pasa de GENERATED a REAL; columnas eliminadas de `insumos`: `rendimiento`, `cantidad`, `costo_base`, `es_basico`, `marca`, `pais_origen`; se agrega `insumos.costo_directo` |
 | 5 | Se agregan tablas `factores_fsr` y `variables_formula`; se agrega `insumos.hash`, `insumos.clave_opus`, `insumos.clave_usuario` |
+| 6 | Se agrega `estructura_presupuesto.es_extra` para conceptos fuera de presupuesto; frontend agrega pestaña Extra, toolbar y copia desde presupuesto legal |
 
 **Regla:** durante la beta, cualquier cambio en `schema.sql` rompe proyectos anteriores.
 No se escriben migraciones automáticas.
@@ -294,5 +308,5 @@ ORDER BY n.wbs;
 ```
 
 ```
-Actualizado: 2026-07-03 (hora local)
+Actualizado: 2026-07-22 (hora local)
 ```

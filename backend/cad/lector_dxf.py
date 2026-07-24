@@ -9,12 +9,10 @@ Soporta: LINE, LWPOLYLINE, CIRCLE, ARC, TEXT, MTEXT, INSERT (bloques).
 
 from __future__ import annotations
 
-import json
 import logging
 import math
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Any
 
 import ezdxf
 import ezdxf.colors as _ezcolors
@@ -629,8 +627,3 @@ def _compute_extents(entities: list[DxfEntity]) -> tuple[dict, dict]:
         return {"x": 0, "y": 0}, {"x": 100, "y": 100}
 
     return {"x": min_x, "y": min_y}, {"x": max_x, "y": max_y}
-
-
-def entities_to_json(entities: list[DxfEntity]) -> str:
-    """Serializa entidades a JSON para传输 al frontend."""
-    return json.dumps([e.to_dict() for e in entities], ensure_ascii=False)

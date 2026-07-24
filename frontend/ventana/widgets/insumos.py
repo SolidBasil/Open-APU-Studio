@@ -16,10 +16,15 @@ Uso:
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QHeaderView, QMenu
+from PySide6.QtWidgets import QHeaderView
 from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef
+from backend.database.event_bus import (
+    InsumoActualizado, NodoInsertado, NodoEliminado, ProyectoRecalculado,
+)
 from frontend.ventana.iconos import icono
 from frontend.ventana.tipos_insumo import NOMBRE as _TIPO_NOMBRE, ICONO_SVG as _TIPO_ICONO_SVG, COLOR as _COLOR_TIPO
+
+EMPTY_ROLE = Qt.ItemDataRole.UserRole + 60
 
 # Índice de la columna "Tipo" en COLUMNAS — usado para pintar el icono
 # real (QIcon) del tipo de insumo en cada fila, en vez de un emoji de texto.
@@ -110,6 +115,12 @@ class TablaInsumos(TreeTableWidget):
     rastrear_insumo = Signal(int)
     desglozar_insumo = Signal(int)
     nuevo_insumo = Signal()
+    EVENTOS_SUSCRITOS = {
+        InsumoActualizado:   '_on_insumo_actualizado',
+        NodoInsertado:       '_on_nodo_insertado',
+        NodoEliminado:       '_on_nodo_eliminado',
+        ProyectoRecalculado: '_on_proyecto_recalculado',
+    }
 
     def __init__(self, parent=None):
 
@@ -144,7 +155,9 @@ class TablaInsumos(TreeTableWidget):
 
         super().__init__(COLUMNAS, EDITABLE, flat=True, parent=parent,
                          column_editors={2: _combo_unidad, 4: _combo_tipo,
-                                         5: _combo_familia})
+                                         5: _combo_familia},
+                         paste_col_fn={4: self._resolver_tipo_pegado,
+                                       5: self._resolver_familia_pegado})
         anchos = [90, 250, 60, 100, 120, 120, 140, 85, 140, 95, 95, 90]
         anchos += [100] * (len(COLUMNAS) - len(anchos))  # columnas nuevas: ancho por defecto
         self.set_column_modes({
@@ -166,6 +179,90 @@ class TablaInsumos(TreeTableWidget):
         self._restore_header_state()
         self._api = None  # inyectado por conectar_eventos()
         self._event_bus = None  # inyectado por conectar_eventos()
+        self.itemClicked.connect(self._on_item_clicked)
+
+    # ── Cortar / pegar: resolvers y creación de filas ─────────────────
+
+    def _resolver_tipo_pegado(self, valor: str):
+        """paste_col_fn de la columna Tipo (4): el texto pegado debe
+        coincidir (sin importar mayúsculas) con el nombre de un tipo de
+        insumo conocido (Material, Mano de obra, Herramienta...). Si no
+        coincide con ninguno, no se toca la celda — pegar "asdf" en Tipo
+        no debe dejar la fila con un tipo corrompido o vacío."""
+        v = (valor or "").strip().lower()
+        if not v:
+            return None
+        for tid, nombre in _TIPO_NOMBRE.items():
+            if nombre.lower() == v:
+                return (nombre, tid)
+        return None
+
+    def _resolver_familia_pegado(self, valor: str):
+        """paste_col_fn de la columna Familia (5): busca por nombre entre
+        las familias existentes del proyecto. Una celda pegada vacía sí
+        limpia la familia (equivale a elegir "(Sin familia)" en el combo);
+        un texto que no coincide con ninguna familia existente NO se
+        escribe — evita que pegar algo mal escrito borre una familia ya
+        asignada por accidente."""
+        api = getattr(self, '_api', None)
+        v = (valor or "").strip()
+        if not v:
+            return ("", None)
+        if not api:
+            return None
+        for f in api.familias():
+            nombre = (f.get("nombre") or "").strip()
+            if nombre.lower() == v.lower():
+                return (nombre, f.get("id"))
+        return None
+
+    def crear_fila_pegado(self, item_referencia, datos_fila: dict[int, str]):
+        """Crea un insumo nuevo cuando el pegado trae más filas de las que
+        hay en la tabla (ver TreeTableWidget.crear_fila_pegado). Requiere
+        Descripción (col 1) y un Tipo reconocible (col 4); el resto de
+        columnas pegadas (Unidad, Precio, Familia) son opcionales. Usa el
+        mismo método que el diálogo "Nuevo insumo" (Api.insumo_insertar),
+        así que dispara el mismo evento NodoInsertado que ya agrega la fila
+        a esta tabla — solo hace falta ubicarla y devolverla."""
+        api = getattr(self, '_api', None)
+        if api is None:
+            return None
+
+        descripcion = (datos_fila.get(1) or "").strip()
+        if not descripcion:
+            return None
+
+        tipo_resuelto = self._resolver_tipo_pegado(datos_fila.get(4, ""))
+        if tipo_resuelto is None:
+            return None
+        _, tipo_id = tipo_resuelto
+
+        unidad = (datos_fila.get(2) or "").strip() or None
+
+        costo = 0.0
+        precio_txt = (datos_fila.get(3) or "").strip()
+        if precio_txt:
+            try:
+                costo = float(precio_txt.replace("$", "").replace(",", ""))
+            except ValueError:
+                costo = 0.0
+
+        familia_id = None
+        if datos_fila.get(5):
+            familia_resuelta = self._resolver_familia_pegado(datos_fila[5])
+            if familia_resuelta is not None:
+                _, familia_id = familia_resuelta
+
+        try:
+            nuevo_id = api.insumo_insertar(
+                tipo_id=tipo_id, descripcion=descripcion,
+                unidad=unidad, costo=costo, familia_id=familia_id,
+            )
+        except Exception as e:
+            print(f"Error insertando insumo pegado: {e}")
+            return None
+
+        return self._item_por_insumo(nuevo_id)
 
     def _context_menu_actions(self, menu):
         from frontend.ventana.widgets.base import _menu_icon
@@ -178,7 +275,6 @@ class TablaInsumos(TreeTableWidget):
             act_rastrear = menu.addAction(_menu_icon("search"), "Rastrear uso")
             act_rastrear.setEnabled(bool(insumo_id))
             act_rastrear.triggered.connect(lambda: self._emit_rastrear(item))
-            desc = item.text(1) or ""
             es_compuesto = item.data(0, Qt.ItemDataRole.UserRole + 1)
             if es_compuesto:
                 act = menu.addAction(_menu_icon("link"), "Desglozar")
@@ -258,47 +354,27 @@ class TablaInsumos(TreeTableWidget):
                 self._set_tipo_icon(row_item, ins)
                 if tiene_sub_apu:
                     row_item.setIcon(1, icono("combine", 16))
+        self._add_empty_row()
+
+    def _add_empty_row(self):
+        """Fila visual vacía al final — al hacer clic crea un insumo nuevo."""
+        item = self.add_row(
+            ["", "Nuevo insumo...", "", "", "", "", "", "", "", "",
+             "", "", "", "", "", "", "", "", "", "", "", "", "", ""],
+            editable=False,
+        )
+        item.setData(0, EMPTY_ROLE, True)
+        self._estilizar_fila_vacia(item)
+
+    def _on_item_clicked(self, item, column):
+        """Click en fila vacía → abre diálogo de nuevo insumo."""
+        if item.data(0, EMPTY_ROLE):
+            self.nuevo_insumo.emit()
 
     # ── Fase 3: suscripción a eventos semánticos ───────────────────
     #
     # Mismo esquema que TablaArbol.conectar_eventos(): reemplaza a la vieja
     # _refrescar_tabla_insumos()/_refrescar_tab_activa() centralizadas.
-
-    def conectar_eventos(self, event_bus, api):
-        """Suscribe esta tabla al EventBus del proyecto abierto.
-
-        Llamar una sola vez tras poblar() (ver _build_insumos() en
-        paneles.py), con el EventBus/Api vigentes al momento de construir
-        la tabla.
-
-        IMPORTANTE: quien remueva esta tabla de una pestaña DEBE llamar a
-        desconectar_eventos() antes — ver la misma nota en
-        widgets/arbol.py TablaArbol.conectar_eventos().
-        """
-        from backend.database.event_bus import (
-            InsumoActualizado, NodoInsertado, NodoEliminado, ProyectoRecalculado,
-        )
-        self._api = api
-        self._event_bus = event_bus
-        event_bus.suscribir(InsumoActualizado, self._on_insumo_actualizado)
-        event_bus.suscribir(NodoInsertado, self._on_nodo_insertado)
-        event_bus.suscribir(NodoEliminado, self._on_nodo_eliminado)
-        event_bus.suscribir(ProyectoRecalculado, self._on_proyecto_recalculado)
-
-    def desconectar_eventos(self):
-        """Retira las suscripciones hechas por conectar_eventos().
-        Idempotente: no falla si nunca se conectó o ya se desconectó."""
-        bus = getattr(self, '_event_bus', None)
-        if bus is None:
-            return
-        from backend.database.event_bus import (
-            InsumoActualizado, NodoInsertado, NodoEliminado, ProyectoRecalculado,
-        )
-        bus.desuscribir(InsumoActualizado, self._on_insumo_actualizado)
-        bus.desuscribir(NodoInsertado, self._on_nodo_insertado)
-        bus.desuscribir(NodoEliminado, self._on_nodo_eliminado)
-        bus.desuscribir(ProyectoRecalculado, self._on_proyecto_recalculado)
-        self._event_bus = None
 
     def _item_por_insumo(self, insumo_id: int):
         """Tabla plana: basta recorrer topLevelItems."""

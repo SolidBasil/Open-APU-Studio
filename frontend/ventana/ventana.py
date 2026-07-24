@@ -13,7 +13,7 @@ Uso:
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QMainWindow, QStatusBar, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
+    QMainWindow, QStatusBar, QWidget, QVBoxLayout, QSplitter,
 )
 
 from frontend.temas    import Temas

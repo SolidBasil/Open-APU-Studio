@@ -23,8 +23,8 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QCheckBox,
     QLabel, QGroupBox, QScrollArea, QWidget, QDialogButtonBox,
 )
-from PySide6.QtCore import Qt, QByteArray, QRect
-from PySide6.QtGui import QColor, QKeySequence, QPainter, QPen, QFont, QIcon, QPixmap
+from PySide6.QtCore import Qt, QByteArray, QPoint, QTimer
+from PySide6.QtGui import QBrush, QColor, QKeySequence, QPainter, QPen
 
 import re
 from dataclasses import dataclass
@@ -142,22 +142,19 @@ class PersonalizarColumnasDialog(QDialog):
                 chk_vis.toggled.connect(
                     lambda checked, c=col.idx: self._tabla.setColumnHidden(c, not checked))
 
-                es_imp = col.idx in self._imprimibles
-                imp = QLabel("⎙")
-                imp.setToolTip("Imprimible: se incluye en el reporte LaTeX/PDF")
-                imp.setCursor(Qt.CursorShape.PointingHandCursor)
-                imp.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                imp.setFixedWidth(24)
-                self._pintar_imp(imp, es_imp)
-                imp.mousePressEvent = lambda _e, s=imp, c=col.idx: self._toggle_imp(s, c)
+                chk_imp = QCheckBox("🖶")
+                chk_imp.setToolTip("Imprimible: se incluye en el reporte LaTeX/PDF")
+                chk_imp.setChecked(col.idx in self._imprimibles)
+                chk_imp.toggled.connect(
+                    lambda checked, c=col.idx: self._toggle_imprimible(c, checked))
 
                 lbl = QLabel(col.label)
                 fl.addWidget(lbl, 1)
                 fl.addWidget(star)
                 fl.addWidget(chk_vis)
-                fl.addWidget(imp)
+                fl.addWidget(chk_imp)
                 gl.addWidget(fila)
-                filas.append((fila, col, star, imp))
+                filas.append((fila, col, star))
             self._content_layout.addWidget(grupo)
             self._grupos.append((grupo, filas))
 
@@ -180,30 +177,19 @@ class PersonalizarColumnasDialog(QDialog):
         self._tabla._guardar_favoritas(self._favoritas)
         self._pintar_star(star, es_fav)
 
-    def _pintar_imp(self, imp: QLabel, checked: bool):
-        imp.setStyleSheet(
-            "QLabel { color: #7FAFD6; font-size: 16px; padding: 2px 4px; border-radius: 3px; }"
-            f"QLabel:hover {{ background-color: {SEL_BG}; }}"
-            if checked else
-            "QLabel { color: #4A5560; font-size: 16px; padding: 2px 4px; border-radius: 3px; }"
-            f"QLabel:hover {{ background-color: {SEL_BG}; }}"
-        )
-
-    def _toggle_imp(self, imp: QLabel, col_idx: int):
-        checked = col_idx not in self._imprimibles
+    def _toggle_imprimible(self, col_idx: int, checked: bool):
         if checked:
             self._imprimibles.add(col_idx)
         else:
             self._imprimibles.discard(col_idx)
         self._tabla._guardar_imprimibles(self._imprimibles)
-        self._pintar_imp(imp, checked)
 
     def _filtrar(self, texto: str):
         """Filtra filas por nombre de columna; oculta categorías vacías."""
         texto = texto.strip().lower()
         for grupo, filas in self._grupos:
             alguna_visible = False
-            for fila, col, _star, _imp in filas:
+            for fila, col, _star in filas:
                 coincide = not texto or texto in col.label.lower()
                 fila.setVisible(coincide)
                 alguna_visible = alguna_visible or coincide
@@ -213,7 +199,7 @@ class PersonalizarColumnasDialog(QDialog):
 # ── Expresiones regulares ──────────────────────────────────────────
 
 # Derivado de tipos_insumo.ICONO — no hardcodear emojis aquí.
-from frontend.ventana.colores import SEL_BG, LINE
+from frontend.ventana.colores import SEL_BG, LINE, WARNING
 from frontend.ventana.tipos_insumo import ICONO as _TIPO_ICONO
 from frontend.ventana.iconos import icono as _icono
 
@@ -230,10 +216,50 @@ def _menu_icon(nombre: str, size: int = 16):
 
 LINE_COLOR = QColor(LINE)
 LINE_WIDTH  = 1.5
+EMPTY_ROLE = Qt.ItemDataRole.UserRole + 60  # fila visual vacía (no existe en DB)
 
 # ── Roles de datos ──────────────────────────────────────────────────
 
 FORMULA_ROLE = Qt.ItemDataRole.UserRole + 20
+
+
+# ── Corte pendiente (portapapeles) ────────────────────────────────
+# Solo puede haber un corte pendiente a la vez en toda la app — el
+# portapapeles del sistema es único, así que iniciar un nuevo Cortar/
+# Copiar (en cualquier tabla) cancela el corte anterior sin borrar nada.
+
+_CORTE_ACTIVO: "TreeTableWidget | None" = None
+
+
+def _cancelar_corte_activo():
+    """Cancela el corte pendiente activo, si hay alguno, en cualquier tabla."""
+    global _CORTE_ACTIVO
+    if _CORTE_ACTIVO is not None:
+        tabla = _CORTE_ACTIVO
+        _CORTE_ACTIVO = None
+        tabla._corte_pendiente = None
+        tabla.viewport().update()
+
+
+def _limpiar_celda_excel(valor: str) -> str:
+    """Quita comillas envolventes que Excel agrega cuando una celda contiene
+    comas o saltos de línea, des-escapando comillas dobles internas (""→")."""
+    valor = valor.strip()
+    if len(valor) >= 2 and valor[0] == '"' and valor[-1] == '"':
+        valor = valor[1:-1].replace('""', '"')
+    return valor
+
+
+def _parsear_portapapeles(texto: str) -> list[list[str]]:
+    """Divide el texto del portapapeles en una cuadrícula de filas/columnas —
+    así es como Excel (y la mayoría de hojas de cálculo) copian celdas: tabs
+    entre columnas, saltos de línea entre filas. Un texto sin tabs ni saltos
+    de línea da como resultado una cuadrícula de 1×1 (pegado simple de celda)."""
+    texto = texto.replace("\r\n", "\n").replace("\r", "\n")
+    if texto.endswith("\n"):
+        texto = texto[:-1]  # Excel casi siempre agrega un salto de línea final sobrante
+    return [[_limpiar_celda_excel(c) for c in linea.split("\t")]
+            for linea in texto.split("\n")]
 
 
 # ── Utilidades de texto ───────────────────────────────────────────
@@ -258,8 +284,15 @@ def draw_tree_connectors(tree, painter, rect, index, line_color=LINE_COLOR):
         parent = idx.parent()
         total  = idx.model().rowCount(parent)
         row    = idx.row()
+        # ponytail: ignorar fila vacía al contar nodos debajo
+        has_below = False
+        for r in range(row + 1, total):
+            sibling = tree.itemFromIndex(idx.model().index(r, 0, parent))
+            if not (sibling and sibling.data(0, EMPTY_ROLE)):
+                has_below = True
+                break
         info.append({
-            "has_below":    row < total - 1,
+            "has_below":    has_below,
             "has_children": idx.model().hasChildren(idx),
         })
         if not parent.isValid():
@@ -287,8 +320,11 @@ def draw_tree_connectors(tree, painter, rect, index, line_color=LINE_COLOR):
 
     if cur_depth > 0 or index.row() > 0:
         painter.drawLine(x, rect.top(), x, mid_y)
-    painter.drawLine(x, mid_y, branch_right, mid_y)
-    if info[0]["has_below"]:
+        painter.drawLine(x, mid_y, branch_right, mid_y)
+        if info[0]["has_below"]:
+            painter.drawLine(x, mid_y, x, rect.bottom())
+    elif info[0]["has_below"]:
+        painter.drawLine(x, mid_y, branch_right, mid_y)
         painter.drawLine(x, mid_y, x, rect.bottom())
 
     painter.restore()
@@ -342,6 +378,71 @@ class _Delegate(QStyledItemDelegate):
         item = self.parent().itemFromIndex(index)
         return index.column() in self._cols_for_item(item)
 
+    def paint(self, painter, option, index):
+        """Pinta la celda normal y, si su fila está en corte pendiente,
+        agrega un borde punteado (ver TreeTableWidget._corte_pendiente).
+
+        El borde marca la FILA completa (todas las columnas visibles) de
+        cualquier item que tenga al menos una celda en corte — aunque solo
+        las columnas editables se vayan a borrar al pegar, visualmente el
+        usuario cortó la fila que seleccionó, no una celda suelta.
+
+        Para que un bloque de varias filas se vea como un solo borde
+        alrededor de todo el perímetro (y no un recuadro por celda), cada
+        celda solo dibuja los lados que quedan en el borde exterior del
+        bloque: arriba/abajo se omiten si la fila vecina (itemAbove/
+        itemBelow) también está en el corte, e izquierda/derecha solo se
+        dibujan en la primera/última columna visible.
+        """
+        super().paint(painter, option, index)
+        self._dibujar_borde_corte(painter, option, index)
+
+    def _dibujar_borde_corte(self, painter, option, index):
+        """Dibuja el borde punteado de corte pendiente para (item, columna)
+        si corresponde — separado de paint() para poder probarlo sin un
+        QPainter real."""
+        tw = self.parent()
+        corte = getattr(tw, "_corte_pendiente", None)
+        if not corte:
+            return
+        item = tw.itemFromIndex(index)
+        if item is None:
+            return
+        filas_en_corte = {it for it, _c in corte}
+        if item not in filas_en_corte:
+            return
+
+        col = index.column()
+        cols_visibles = [c for c in range(tw.columnCount()) if not tw.isColumnHidden(c)]
+        if not cols_visibles:
+            return
+
+        # En árboles jerárquicos, option.rect de la columna 0 arranca DESPUÉS
+        # de la indentación/flecha de expandir (Qt las dibuja aparte, fuera
+        # del delegado) — si usáramos ese rect tal cual, el borde dejaría un
+        # hueco a la izquierda y la columna Estructura se vería como si no
+        # estuviera marcada. Por eso el ancho horizontal se calcula con la
+        # posición/ancho reales de la columna, no con option.rect (que solo
+        # es confiable para el alto de la fila, no afectado por indentación).
+        x0 = tw.columnViewportPosition(col)
+        x1 = x0 + tw.columnWidth(col) - 1
+        top = option.rect.top()
+        bottom = option.rect.bottom()
+
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        pen = QPen(QColor(WARNING), 1.5, Qt.PenStyle.DashLine)
+        painter.setPen(pen)
+        if tw.itemAbove(item) not in filas_en_corte:
+            painter.drawLine(QPoint(x0, top), QPoint(x1, top))
+        if tw.itemBelow(item) not in filas_en_corte:
+            painter.drawLine(QPoint(x0, bottom), QPoint(x1, bottom))
+        if col == cols_visibles[0]:
+            painter.drawLine(QPoint(x0, top), QPoint(x0, bottom))
+        if col == cols_visibles[-1]:
+            painter.drawLine(QPoint(x1, top), QPoint(x1, bottom))
+        painter.restore()
+
     def createEditor(self, parent, option, index):
         """Crea editor solo si la celda es editable para ese tipo de nodo."""
         if not self._es_editable(index):
@@ -368,7 +469,6 @@ class _Delegate(QStyledItemDelegate):
 
     def _on_combo_selected(self, editor):
         """Cierra popup primero, luego confirma y cierra el editor."""
-        from PySide6.QtCore import QTimer
         editor.hidePopup()
         QTimer.singleShot(0, lambda: self._commit_and_close(editor))
 
@@ -379,7 +479,7 @@ class _Delegate(QStyledItemDelegate):
 
     def setEditorData(self, editor, index):
         """Limpia formato para QLineEdit; selecciona valor actual para QComboBox."""
-        from PySide6.QtWidgets import QLineEdit, QComboBox
+        from PySide6.QtWidgets import QComboBox
         if isinstance(editor, QComboBox):
             texto = index.data(Qt.ItemDataRole.DisplayRole) or ""
             texto_limpio = texto.split(" › ")[0].strip() if " › " in texto else texto.strip()
@@ -387,7 +487,7 @@ class _Delegate(QStyledItemDelegate):
             editor.setCurrentIndex(idx if idx >= 0 else 0)
         elif isinstance(editor, QLineEdit):
             texto = index.data(FORMULA_ROLE) or index.data(Qt.ItemDataRole.DisplayRole) or ""
-            texto = texto.lstrip("\u25b6").replace("$", "").replace(",", "").strip()
+            texto = texto.lstrip("\u25b6").strip()
             editor.setText(texto)
         else:
             super().setEditorData(editor, index)
@@ -441,34 +541,33 @@ class _Delegate(QStyledItemDelegate):
         """Intercepta Enter (cerrar), Tab (mover foco), Escape (cancelar) y Ctrl+Z/Y (undo/redo)."""
         from PySide6.QtWidgets import QComboBox
         from PySide6.QtCore import QEvent
-        if event.type() != QEvent.Type.KeyPress:
-            return super().eventFilter(editor, event)
-        key = event.key()
-        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            if isinstance(editor, QComboBox) and editor.isPopupVisible():
-                editor.hidePopup()
-            self.commitData.emit(editor)
-            self.closeEditor.emit(editor, QStyledItemDelegate.EndEditHint.NoHint)
-            return True
-        if key == Qt.Key.Key_Escape:
-            self.closeEditor.emit(editor, QStyledItemDelegate.EndEditHint.RevertModelCache)
-            return True
-        if key == Qt.Key.Key_Tab:
-            self.commitAndMove(editor, QStyledItemDelegate.EndEditHint.EditNextItem)
-            return True
-        if key == Qt.Key.Key_Backtab:
-            self.commitAndMove(editor, QStyledItemDelegate.EndEditHint.EditPreviousItem)
-            return True
-        if key == Qt.Key.Key_Z and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-            win = self.parent().window()
-            if hasattr(win, '_on_deshacer'):
-                win._on_deshacer()
-            return True
-        if key == Qt.Key.Key_Y and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-            win = self.parent().window()
-            if hasattr(win, '_on_rehacer'):
-                win._on_rehacer()
-            return True
+        if event.type() == QEvent.Type.KeyPress:
+            key = event.key()
+            if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                if isinstance(editor, QComboBox) and editor.isPopupVisible():
+                    editor.hidePopup()
+                self.commitData.emit(editor)
+                self.closeEditor.emit(editor, QStyledItemDelegate.EndEditHint.NoHint)
+                return True
+            if key == Qt.Key.Key_Escape:
+                self.closeEditor.emit(editor, QStyledItemDelegate.EndEditHint.RevertModelCache)
+                return True
+            if key == Qt.Key.Key_Tab:
+                self.commitAndMove(editor, QStyledItemDelegate.EndEditHint.EditNextItem)
+                return True
+            if key == Qt.Key.Key_Backtab:
+                self.commitAndMove(editor, QStyledItemDelegate.EndEditHint.EditPreviousItem)
+                return True
+            if key == Qt.Key.Key_Z and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                win = self.parent().window()
+                if hasattr(win, '_on_deshacer'):
+                    win._on_deshacer()
+                return True
+            if key == Qt.Key.Key_Y and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                win = self.parent().window()
+                if hasattr(win, '_on_rehacer'):
+                    win._on_rehacer()
+                return True
         return super().eventFilter(editor, event)
 
 
@@ -486,7 +585,7 @@ class TreeTableWidget(QTreeWidget):
 
     def __init__(self, columns, editable_cols=frozenset(), flat=False,
                  line_color=None, parent=None, editable_cols_fn=None,
-                 column_editors=None):
+                 column_editors=None, paste_col_fn=None):
         """Inicializa QTreeWidget con columnas, editabilidad, modo plano/jerárquico y cabecera.
 
         editable_cols_fn: función opcional `item -> set[int]` para tablas donde
@@ -494,13 +593,23 @@ class TreeTableWidget(QTreeWidget):
         se pasa, editable_cols aplica igual a todas las filas.
         column_editors: dict `{col: callable(parent) -> QWidget}` para dropdowns
         u otros editores custom en columnas específicas.
+        paste_col_fn: dict opcional `{col: callable(str) -> tuple[str, Any] | None}`
+        para columnas cuyo valor guardado no es el texto tal cual (ej. columnas
+        con combo respaldado por un id en UserRole, como Tipo/Familia en
+        Catálogo de Insumos). El callable recibe el texto pegado y devuelve
+        (texto_a_mostrar, dato_para_userrole), o None si el texto pegado no se
+        pudo interpretar — en ese caso la celda no se toca. Sin resolver para
+        una columna, pegar escribe el texto tal cual (comportamiento anterior).
+        Ver _escribir_celda_pegada().
         """
         super().__init__(parent)
         self._flat          = flat
         self._line_color    = line_color or LINE_COLOR
         self._editable_cols = editable_cols
         self._editable_cols_fn = editable_cols_fn
+        self._paste_col_fn = paste_col_fn or {}
         self._search_cols: set[int] | None = None  # None = buscar en todas
+        self._corte_pendiente: set[tuple] | None = None  # {(item, col), ...} — ver _cut()
 
         self.setColumnCount(len(columns))
         self.setHeaderLabels(columns)
@@ -722,9 +831,29 @@ class TreeTableWidget(QTreeWidget):
     # ── Inserción de filas ────────────────────────────────────────
 
     def add_row(self, data, parent=None, editable=True):
-        """Agrega fila al árbol con valores de data; editable=False la bloquea."""
+        """Agrega fila al árbol con valores de data; editable=False la bloquea.
+
+        Si el nivel donde se agrega termina en una fila placeholder "agregar
+        nueva" (EMPTY_ROLE — ver Insumos/Árbol de presupuesto), la fila se
+        inserta ANTES de ese placeholder en vez de después: como
+        QTreeWidgetItem(parent, data) siempre agrega al final absoluto, sin
+        esto cualquier fila nueva (creada a mano o por crear_fila_pegado)
+        terminaría colándose debajo de "Nuevo insumo..."/"Nuevo capítulo...".
+        """
         parent = parent or self
-        item   = QTreeWidgetItem(parent, data)
+        item = QTreeWidgetItem(data)
+        if isinstance(parent, TreeTableWidget):
+            count = parent.topLevelItemCount()
+            if count > 0 and parent.topLevelItem(count - 1).data(0, EMPTY_ROLE):
+                parent.insertTopLevelItem(count - 1, item)
+            else:
+                parent.addTopLevelItem(item)
+        else:
+            count = parent.childCount()
+            if count > 0 and parent.child(count - 1).data(0, EMPTY_ROLE):
+                parent.insertChild(count - 1, item)
+            else:
+                parent.addChild(item)
         if editable:
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
         else:
@@ -735,9 +864,22 @@ class TreeTableWidget(QTreeWidget):
 
     def drawBranches(self, painter, rect, index):
         """Dibuja conectores jerárquicos entre nodos si el modo no es plano."""
+        item = self.itemFromIndex(index)
+        if item and item.data(0, EMPTY_ROLE):
+            return
         super().drawBranches(painter, rect, index)
         if not self._flat:
             draw_tree_connectors(self, painter, rect, index, self._line_color)
+
+    def mousePressEvent(self, event):
+        super().mousePressEvent(event)
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        item = self.itemAt(event.pos())
+        if item and item.childCount() > 0 and self.columnAt(event.pos().x()) == 0:
+            vrect = self.visualRect(self.indexFromItem(item))
+            if event.position().x() >= vrect.x():
+                self._toggle_current_expanded()
 
     # ── Control de expansión / visibilidad ────────────────────────
 
@@ -906,6 +1048,9 @@ class TreeTableWidget(QTreeWidget):
             self._move_current_column(1)
         elif key == Qt.Key.Key_Space:
             self._toggle_current_expanded()
+        elif key == Qt.Key.Key_Escape:
+            self._cancelar_corte_pendiente_si_hay()
+            super().keyPressEvent(event)
         else:
             super().keyPressEvent(event)
 
@@ -965,6 +1110,35 @@ class TreeTableWidget(QTreeWidget):
 
     # ── Portapapeles (copiar / pegar) ─────────────────────────────
 
+    def _es_fila_vacia(self, item) -> bool:
+        """True si item es la fila placeholder de 'agregar nueva fila'
+        (marcada con EMPTY_ROLE por Insumos/Árbol de presupuesto) — no
+        existe en la base de datos, es solo un gancho de UI para crear una
+        fila real al hacer clic. Cortar/pegar deben tratarla como si no
+        existiera en absoluto: no se corta, no se le escribe directamente
+        (ver _editable_cols_for), y al pegar de más filas dispara la
+        creación de una fila real (crear_fila_pegado) en vez de escribir
+        encima del placeholder — ver _pegar_cuadricula."""
+        return bool(item is not None and item.data(0, EMPTY_ROLE))
+
+    def _editable_cols_for(self, item) -> set[int]:
+        """Columnas editables para un item concreto — respeta editable_cols_fn
+        cuando la tabla lo define (columnas editables que dependen del tipo de
+        fila, ej. capítulo vs concepto en el árbol de presupuesto). Antes,
+        cortar/pegar consultaban directamente self._editable_cols (el set
+        estático) e ignoraban editable_cols_fn, permitiendo cortar/pegar en
+        columnas que para esa fila en particular no eran editables.
+
+        La fila placeholder (EMPTY_ROLE) nunca es editable aquí, aunque su
+        tabla declare columnas editables estáticas (ej. Insumos) — si no,
+        pegar un bloque que alcance esa fila escribiría datos reales sobre
+        el placeholder "Nuevo insumo..." en vez de crear una fila nueva."""
+        if item is None or self._es_fila_vacia(item):
+            return set()
+        if self._editable_cols_fn is not None:
+            return self._editable_cols_fn(item) or set()
+        return self._editable_cols
+
     def copy_selection(self) -> bool:
         """
         Copy selected rows as TSV (tab-separated values) to clipboard.
@@ -989,7 +1163,10 @@ class TreeTableWidget(QTreeWidget):
         return True
 
     def _copy(self):
-        """Copia selección al portapapeles como TSV; si no hay selección copia celda actual."""
+        """Copia selección al portapapeles como TSV; si no hay selección copia celda actual.
+        Cancela cualquier corte pendiente — una nueva operación de portapapeles
+        reemplaza a la anterior (mismo comportamiento que Excel)."""
+        _cancelar_corte_activo()
         if self.copy_selection():
             return
         item = self.currentItem()
@@ -999,24 +1176,236 @@ class TreeTableWidget(QTreeWidget):
         QApplication.clipboard().setText(_strip_icons(item.text(col)))
 
     def _cut(self):
-        """Corta: copia celda al portapapeles y la limpia (solo columnas editables)."""
-        item = self.currentItem()
-        col  = self.currentColumn()
-        if not item or col < 0 or col not in self._editable_cols:
+        """Corta: copia la selección al portapapeles y la marca como 'corte
+        pendiente' (borde punteado) — el contenido NO se borra todavía.
+        Solo entran al corte las celdas de columnas editables para su fila
+        (columnas calculadas/no editables se copian pero no se marcan, ya
+        que no se pueden vaciar). El borrado real ocurre al completar un
+        Pegar sobre este corte (ver _paste). Esc, o iniciar otro Copiar/
+        Cortar en cualquier tabla, cancela el corte sin borrar nada."""
+        items = self.selectedItems()
+        if items:
+            items = sorted(items, key=self._item_sort_key)
+            cols_visibles = [c for c in range(self.columnCount()) if not self.isColumnHidden(c)]
+            celdas = {(it, c) for it in items for c in cols_visibles
+                      if c in self._editable_cols_for(it)}
+        else:
+            item = self.currentItem()
+            col  = self.currentColumn()
+            if not item or col < 0 or col not in self._editable_cols_for(item):
+                return
+            celdas = {(item, col)}
+
+        if not celdas:
             return
-        self._copy()
-        item.setText(col, "")
+
+        _cancelar_corte_activo()
+        if not self.copy_selection():
+            item, col = next(iter(celdas))
+            QApplication.clipboard().setText(_strip_icons(item.text(col)))
+
+        self._corte_pendiente = celdas
+        global _CORTE_ACTIVO
+        _CORTE_ACTIVO = self
+        self.viewport().update()
+
+    def _cancelar_corte_pendiente_si_hay(self):
+        """Esc: cancela el corte pendiente de esta tabla, si lo hay."""
+        if self._corte_pendiente:
+            _cancelar_corte_activo()
+
+    def _consumir_corte_pendiente(self, celda_destino_final: tuple | None):
+        """Si hay un corte pendiente activo (de esta tabla o de otra), lo
+        consume: borra el contenido de las celdas cortadas —salvo la celda de
+        destino final, si coincide con alguna de ellas, para no autoborrar lo
+        que se acaba de pegar— y limpia el estado."""
+        global _CORTE_ACTIVO
+        if _CORTE_ACTIVO is None:
+            return
+        origen = _CORTE_ACTIVO
+        celdas = origen._corte_pendiente or set()
+        _CORTE_ACTIVO = None
+        origen._corte_pendiente = None
+        for it, c in celdas:
+            if (it, c) != celda_destino_final:
+                it.setText(c, "")
+        origen.viewport().update()
 
     def _paste(self):
-        """Pega texto del portapapeles en la celda actual si la columna es editable."""
+        """Pega el contenido del portapapeles en la celda actual.
+
+        Si el texto es una sola celda (sin tabs ni saltos de línea), pega
+        igual que siempre. Si es una cuadrícula —un bloque copiado de Excel,
+        con tabs entre columnas y saltos de línea entre filas— la expande
+        desde la celda actual hacia abajo (filas visibles) y hacia la derecha
+        (columnas editables visibles), saltando columnas no editables dentro
+        del rango. Por ahora NO crea filas nuevas si el bloque trae más filas
+        de las que hay disponibles debajo — se avisa y se descarta el resto.
+
+        Si el pegado se origina en un corte pendiente (de esta tabla u otra),
+        al completarse borra el contenido de las celdas cortadas.
+
+        Todas las escrituras de un mismo pegado (incluido el borrado del
+        origen si venía de un corte) quedan agrupadas en una sola entrada
+        de deshacer (ver Api.iniciar_sesion_undo).
+        """
         text = QApplication.clipboard().text()
         if not text:
             return
         item = self.currentItem()
         col  = self.currentColumn()
-        if not item or col < 0 or col not in self._editable_cols:
+        if not item or col < 0:
             return
-        item.setText(col, text.strip().split("\n")[0].strip())
+
+        filas = _parsear_portapapeles(text)
+        filas = self._descartar_fila_encabezado(filas)
+        if not filas:
+            return
+        win = self.window()
+        api = getattr(win, '_api', None)
+        if api is not None:
+            api.iniciar_sesion_undo()
+        try:
+            if len(filas) == 1 and len(filas[0]) <= 1:
+                if col not in self._editable_cols_for(item):
+                    return
+                valor = filas[0][0] if filas[0] else ""
+                self._escribir_celda_pegada(item, col, valor)
+                self._consumir_corte_pendiente((item, col))
+                return
+
+            self._pegar_cuadricula(item, col, filas)
+        finally:
+            if api is not None:
+                api.cerrar_sesion_undo()
+
+    def _descartar_fila_encabezado(self, filas: list[list[str]]) -> list[list[str]]:
+        """copy_selection() antepone una fila de encabezados al TSV copiado
+        (para que se vea bien si el destino es Excel) — pero si el pegado
+        vuelve a esta misma app, esa fila NO es un dato y no debe tratarse
+        como tal: pegarla escribe basura (ej. el texto "Estructura", el
+        encabezado de la primera columna, cayendo en una celda de Cantidad
+        que espera un número o fórmula, y revienta la validación).
+
+        Si la primera fila del bloque pegado coincide exactamente con los
+        encabezados visibles de esta tabla, se descarta antes de escribir.
+        Si el pegado viene de otra tabla con encabezados distintos, o de
+        Excel (que no antepone encabezados propios de esta app), la
+        primera fila no coincide y se deja intacta.
+        """
+        if not filas:
+            return filas
+        cols_visibles = [c for c in range(self.columnCount()) if not self.isColumnHidden(c)]
+        encabezados = [_strip_icons(self.headerItem().text(c)) for c in cols_visibles]
+        if filas[0] == encabezados:
+            return filas[1:]
+        return filas
+
+    def _escribir_celda_pegada(self, item, col: int, valor: str) -> bool:
+        """Escribe un valor pegado en (item, col), usando el resolver de
+        paste_col_fn si la columna lo tiene registrado (columnas respaldadas
+        por un id en UserRole, ej. Tipo/Familia — pegar solo el texto ahí no
+        alcanza, hay que resolver a qué id corresponde y guardarlo también,
+        o el guardado real se perdería/corrompería). Si el resolver no
+        reconoce el texto pegado, no toca la celda y devuelve False."""
+        resolver = self._paste_col_fn.get(col)
+        if resolver is None:
+            item.setText(col, valor)
+            return True
+        resultado = resolver(valor)
+        if resultado is None:
+            return False
+        texto, dato = resultado
+        # UserRole ANTES que el texto — mismo motivo que en _Delegate.setModelData:
+        # setText() dispara itemChanged sincrónicamente, y el handler que persiste
+        # el cambio (ej. _on_insumo_editado) lee UserRole en ese momento. Si el
+        # texto se escribe primero, el handler todavía ve el UserRole viejo.
+        item.setData(col, Qt.ItemDataRole.UserRole, dato)
+        item.setText(col, texto)
+        return True
+
+    def crear_fila_pegado(self, item_referencia, datos_fila: dict[int, str]):
+        """Hook: las subclases lo implementan para crear una fila real (vía
+        Api, igual que el botón/flujo "Agregar") cuando un pegado necesita
+        más filas de las que hay disponibles debajo del cursor.
+
+        item_referencia: última fila existente antes de necesitar una nueva
+        — en tablas jerárquicas, sirve para heredar tipo/nivel/padre (nunca
+        se debe inventar una estructura nueva).
+        datos_fila: {columna: texto_pegado} solo para las columnas editables
+        de item_referencia.
+
+        Devuelve el QTreeWidgetItem recién creado (ya con sus valores, vía
+        el evento que dispara la propia llamada a la Api), o None si esta
+        tabla no soporta crear filas por pegado o los datos pegados no
+        alcanzan para crear una (ej. falta un campo obligatorio) — la clase
+        base nunca inventa datos de negocio. Implementación por defecto:
+        no soportado.
+        """
+        return None
+
+    def _pegar_cuadricula(self, item_inicial, col_inicial: int, filas: list[list[str]]):
+        """Escribe una cuadrícula de valores empezando en (item_inicial,
+        col_inicial). Cada fila del bloque pegado va a la siguiente fila
+        visible de la tabla (itemBelow); dentro de cada fila, los valores se
+        reparten en las columnas editables visibles desde col_inicial en
+        adelante, en orden, saltando las que no son editables para esa fila
+        (ver editable_cols_fn — algunas tablas tienen columnas editables
+        distintas según el tipo de fila). Los valores que sobran para una
+        fila porque esta tiene menos columnas editables que las pegadas se
+        descartan en silencio.
+
+        Si el bloque trae más filas de las que hay debajo —o la tabla tiene
+        una fila placeholder "agregar nueva" (EMPTY_ROLE) al final, como
+        Insumos/Árbol de presupuesto— intenta crear filas nuevas vía
+        crear_fila_pegado() (ver ese método) usando la última fila real
+        como referencia, en vez de escribir encima del placeholder. Si la
+        tabla no soporta crear filas, o los datos pegados no alcanzan para
+        crear una, esa fila (y las siguientes que tampoco tengan destino)
+        se descarta con aviso.
+        """
+        fila_actual = item_inicial
+        referencia = item_inicial
+        ultima_celda = None
+        filas_sin_destino = 0
+        filas_creadas = 0
+        for valores in filas:
+            if fila_actual is None or self._es_fila_vacia(fila_actual):
+                cols_editables = [c for c in range(self.columnCount())
+                                   if c >= col_inicial and not self.isColumnHidden(c)
+                                   and c in self._editable_cols_for(referencia)]
+                datos_fila = {c: v for v, c in zip(valores, cols_editables) if v.strip()}
+                nueva = self.crear_fila_pegado(referencia, datos_fila) if datos_fila else None
+                if nueva is None:
+                    filas_sin_destino += 1
+                    continue
+                filas_creadas += 1
+                referencia = nueva
+                fila_actual = self.itemBelow(nueva)
+                continue
+            cols_editables = [c for c in range(self.columnCount())
+                               if c >= col_inicial and not self.isColumnHidden(c)
+                               and c in self._editable_cols_for(fila_actual)]
+            for valor, c in zip(valores, cols_editables):
+                if self._escribir_celda_pegada(fila_actual, c, valor):
+                    ultima_celda = (fila_actual, c)
+            referencia = fila_actual
+            fila_actual = self.itemBelow(fila_actual)
+
+        if filas_sin_destino:
+            from PySide6.QtWidgets import QMessageBox
+            pegadas = len(filas) - filas_sin_destino
+            detalle = f" ({filas_creadas} fila(s) nueva(s) creada(s))" if filas_creadas else ""
+            QMessageBox.information(
+                self, "Pegar",
+                f"Se completaron {pegadas} de {len(filas)} filas{detalle}. "
+                f"Las {filas_sin_destino} restantes no se pudieron escribir: "
+                "faltan datos requeridos en lo pegado, o esta tabla no crea "
+                "filas nuevas al pegar."
+            )
+
+        if ultima_celda:
+            self._consumir_corte_pendiente(ultima_celda)
 
     # ── Menú contextual (click derecho) ─────────────────────────────
 
@@ -1032,7 +1421,7 @@ class TreeTableWidget(QTreeWidget):
         copy_act = menu.addAction(_menu_icon("clipboard"), "Copiar")
         copy_act.setShortcut(QKeySequence.StandardKey.Copy)
         copy_act.triggered.connect(self._copy)
-        if col in self._editable_cols:
+        if col in self._editable_cols_for(item):
             cut_act = menu.addAction(_menu_icon("scissors"), "Cortar")
             cut_act.setShortcut(QKeySequence.StandardKey.Cut)
             cut_act.triggered.connect(self._cut)
@@ -1050,3 +1439,57 @@ class TreeTableWidget(QTreeWidget):
     def _context_menu_actions(self, menu: QMenu):
         """Hook: subclases agregan acciones extra al menú contextual."""
         pass
+
+    @staticmethod
+    def _estilizar_fila_vacia(item):
+        """Aplica el estilo estándar (cursiva, gris) a una fila placeholder
+        tipo "Nuevo capítulo...", "Nuevo insumo...", "Nuevo renglón..." —
+        ver _add_empty_row() en arbol.py, insumos.py, generador.py."""
+        for c in range(item.columnCount()):
+            f = item.font(c)
+            f.setItalic(True)
+            item.setFont(c, f)
+            item.setForeground(c, QBrush(QColor("#556070")))
+
+    # ── EventBus: conectar / desconectar (declarativo) ──────────────
+    #
+    # Subclases que necesitan reaccionar a eventos del proyecto abierto
+    # declaran EVENTOS_SUSCRITOS como un dict {EventoClass: 'nombre_metodo'}
+    # en vez de reimplementar conectar_eventos/desconectar_eventos — ver
+    # TablaArbol, TablaInsumos, TablaApuDetalle para ejemplos. Varios
+    # eventos pueden apuntar al mismo método si les toca la misma reacción
+    # (ver TablaApuDetalle: tres eventos → un solo refresco diferido).
+
+    EVENTOS_SUSCRITOS: dict = {}  # subclases lo sobreescriben
+
+    def conectar_eventos(self, event_bus, api):
+        """Suscribe este widget al EventBus del proyecto abierto según
+        EVENTOS_SUSCRITOS.
+
+        Debe llamarse una sola vez, justo después de poblar(), con el
+        EventBus y el Api vigentes en ese momento (ver paneles.py). Como
+        cada apertura de proyecto crea un EventBus nuevo, cada widget se
+        reconstruye desde cero en cada apertura y por lo tanto siempre
+        queda enganchado al bus correcto.
+
+        IMPORTANTE: quien remueva este widget de una pestaña (removeTab,
+        reemplazo por pestaña temporal del sidebar, etc.) DEBE llamar a
+        desconectar_eventos() antes — si no, el widget queda "zombi":
+        sigue registrado en el bus con su objeto Qt ya destruido, y la
+        próxima emisión de evento revienta con
+        RuntimeError: libshiboken...already deleted.
+        """
+        self._api = api
+        self._event_bus = event_bus
+        for evento_cls, metodo in self.EVENTOS_SUSCRITOS.items():
+            event_bus.suscribir(evento_cls, getattr(self, metodo))
+
+    def desconectar_eventos(self):
+        """Retira las suscripciones hechas por conectar_eventos().
+        Idempotente: no falla si nunca se conectó o ya se desconectó."""
+        bus = getattr(self, '_event_bus', None)
+        if bus is None:
+            return
+        for evento_cls, metodo in self.EVENTOS_SUSCRITOS.items():
+            bus.desuscribir(evento_cls, getattr(self, metodo))
+        self._event_bus = None

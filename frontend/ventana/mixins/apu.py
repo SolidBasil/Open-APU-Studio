@@ -25,7 +25,6 @@ class ApuMixin:
                                        QLabel, QPushButton, QFrame)
         from frontend.ventana.widgets.apu import TablaApuDetalle
         from frontend.ventana.widgets.apu import _TIPO_ID_TO_TOTALES_CLAVE
-        from frontend.ventana.iconos import icono
         from frontend.ventana.tipos_insumo import ICONO as _INS_ICONO
         from frontend.ventana.tipos_insumo import NOMBRES as _INS_NOMBRES
 
@@ -126,6 +125,7 @@ class ApuMixin:
                                  on_apu_click=self._abrir_apu_insumo)
         detail.resumen_actualizado.connect(lbl.setText)
         detail.tipos_actualizados.connect(_construir_filtros)
+        detail.agregar_componente.connect(self._on_agregar_componente_apu)
         detail.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         detail.customContextMenuRequested.connect(
             lambda pos: self._on_rastrear_context_menu(detail, pos))
@@ -146,18 +146,28 @@ class ApuMixin:
 
         Col 7 (P.U.) → abre APU del concepto.
         Col 4 (Descripción) en Concepto → abre selector de insumo.
+        Col 6 (Cant) en Concepto con generadores → abre generadores.
         """
         from frontend.ventana.widgets.arbol import ID_ROLE
+        nodo_id = item.data(0, ID_ROLE)
+        if not nodo_id or not self._api:
+            return
+
+        if column == 6:
+            if item.text(2) == "Concepto":
+                gens = self._api.generadores_por_concepto(nodo_id)
+                if gens:
+                    wbs = item.text(1)
+                    desc = item.text(4)
+                    self._abrir_generadores_para_concepto(nodo_id, wbs, desc)
+                return
+
         if self._es_pu(item, column):
-            nodo_id = item.data(0, ID_ROLE)
             if nodo_id:
                 self._abrir_apu_por_id(nodo_id)
             return
 
         if column == 4 and item.text(2) == "Concepto":
-            nodo_id = item.data(0, ID_ROLE)
-            if not nodo_id or not self._api:
-                return
             from PySide6.QtWidgets import QDialog
             from frontend.ventana.widgets.dialogs import DialogoSeleccionarInsumo
             dlg = DialogoSeleccionarInsumo(self._api, self)
@@ -193,7 +203,7 @@ class ApuMixin:
             from PySide6.QtWidgets import QMessageBox
             from frontend.ventana.widgets.arbol import _num
             from frontend.ventana.widgets.base import FORMULA_ROLE
-            texto = item.text(column).strip()
+            texto = item.text(column).strip().replace(",", "")
             try:
                 self._api.concepto_actualizar_cantidad(nodo_id, cantidad=0, formula=texto or None)
             except ValueError as e:
@@ -224,6 +234,9 @@ class ApuMixin:
         elif column == 5:
             if tipo == "Concepto":
                 self._api.concepto_actualizar_unidad(nodo_id, item.text(column))
+
+        elif column == 10:
+            self._api.concepto_actualizar(nodo_id, notas_rapidas=item.text(column).strip() or None)
 
     @staticmethod
     def _es_pu(item, column) -> bool:
@@ -283,3 +296,18 @@ class ApuMixin:
                 return
         idx = self._tabs.addTab(self._build_apu_tab(matriz_id, descripcion, resultado=resultado), title)
         self._tabs.setCurrentIndex(idx)
+
+    def _on_agregar_componente_apu(self, matriz_id: int):
+        """Selecciona insumo y lo agrega como componente al APU."""
+        from PySide6.QtWidgets import QDialog
+        from frontend.ventana.widgets.dialogs import DialogoSeleccionarInsumo
+        api = getattr(self, '_api', None)
+        if not api:
+            return
+        dlg = DialogoSeleccionarInsumo(api, parent=self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        insumo_id = dlg.insumo_seleccionado
+        if insumo_id is None:
+            return
+        api.apu_agregar_componente(matriz_id, insumo_id)

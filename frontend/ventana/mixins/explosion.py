@@ -82,7 +82,6 @@ class ExplosionMixin:
         from PySide6.QtWidgets import (
             QWidget, QVBoxLayout, QLabel, QAbstractItemView,
             QHeaderView, QMessageBox, QTreeWidgetItem, QTreeWidget,
-            QStyledItemDelegate,
         )
         from PySide6.QtGui import QBrush, QColor, QFont, QPen
         from PySide6.QtCore import Qt
@@ -173,7 +172,7 @@ class ExplosionMixin:
             apu = self._api.apu(nodo_id=cid)
             if apu:
                 for comp in apu["detalle"]:
-                    item = self._add_comp_row(raiz, comp, "", 1, _DEPTH_ROLE)
+                    self._add_comp_row(raiz, comp, "", 1, _DEPTH_ROLE)
                     total_conceptos += 1
             raiz.setExpanded(True)
 

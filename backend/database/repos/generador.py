@@ -15,13 +15,6 @@ class GeneradorRepo(RepoBase):
 
     # ── Generadores ─────────────────────────────────────────────────
 
-    def listar_por_proyecto(self, proyecto_id: int) -> list[dict]:
-        return self._lista(
-            "SELECT * FROM generadores WHERE proyecto_id = ? AND activo = 1 "
-            "ORDER BY nombre",
-            (proyecto_id,),
-        )
-
     def listar_por_concepto(self, proyecto_id: int,
                             concepto_id: int | None) -> list[dict]:
         """Generadores vinculados a un concepto, o sueltos si concepto_id es None."""

@@ -20,7 +20,6 @@ import argparse
 import socket
 import sys
 import threading
-from pathlib import Path
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
@@ -31,9 +30,8 @@ from backend.database.event_bus import EventBus
 from backend.database.services.repository_registry import crear_registry
 from backend.database.services.data_service import DataService
 from backend.database.repos import (
-    InsumoRepo, NodoRepo, ApuMatricesRepo, ProyectoRepo,
-    FactoresSobrecostoRepo, FamiliaRepo, SubfamiliaRepo,
-    RecalculoRepo, ExplosionRepo, HistorialRepo, GeneradorRepo,
+    InsumoRepo, NodoRepo, ApuMatricesRepo, FactoresSobrecostoRepo, FamiliaRepo, SubfamiliaRepo,
+    RecalculoRepo, ExplosionRepo,
 )
 from backend.database.exceptions import (
     ValidationError, DataServiceError, RepositoryError,

@@ -7,13 +7,12 @@ Contiene toda la lógica de construcción y gestión de la toolbar superior:
 pestañas (PROYECTO/INICIO/…), botones, temas visuales y barra de búsqueda.
 """
 
-from PySide6.QtCore    import Qt, QRect, QSize
+from PySide6.QtCore    import Qt, QSize
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QStackedWidget, QFrame, QToolButton, QLabel, QLineEdit, QMenu,
+    QStackedWidget, QFrame, QToolButton, QLabel, QMenu,
     QApplication,
 )
-from PySide6.QtGui import QIcon
 
 from frontend.temas import Temas
 from frontend.ventana.iconos import icono
@@ -80,6 +79,7 @@ _HANDLERS = {
     "Personal en indirectos": "_on_personal_indirectos",
     "Cálculo de sobrecostos": "_on_sobrecostos",
     "Generadores":        "_on_abrir_generadores",
+    "Fuera de presupuesto": "_on_abrir_extra",
     "Abrir DXF":          "_on_cad_abrir",
     "Seleccionar":        "_on_cad_tool_select",
     "Línea":              "_on_cad_tool_line",
@@ -111,6 +111,7 @@ _TOOLBAR_CFG = {
         ("Proyecto", [("settings", "Parámetros proyecto"), ("info", "Información proyecto")]),
         ("Sobrecostos", [("banknote", "Cálculo de indirectos"), ("hard-hat", "Personal en indirectos"), ("bar-chart", "Cálculo de sobrecostos")]),
         ("CAD", [("ruler", "Generadores")]),
+        ("Extra", [("zap", "Fuera de presupuesto")]),
         ("Sistema",  [("settings", "Configuración general"), ("users", "Usuarios")]),
     ],
     "INFORMES": [
@@ -564,7 +565,7 @@ class ToolbarMixin:
 
     def _show_iconos_menu(self):
         """Mini menu para elegir conjunto de iconos."""
-        from frontend.ventana.iconos import set_iconos, get_iconos
+        from frontend.ventana.iconos import get_iconos
         from PySide6.QtWidgets import QMenu
         menu = QMenu(self._iconos_btn)
         actual = get_iconos()

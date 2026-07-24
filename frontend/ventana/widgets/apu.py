@@ -9,7 +9,14 @@ Antes esta tabla no era una clase propia: se armaba con un QWidget inline
 lleno de funciones internas (closures) que capturaban `self` del mixin, y
 desconectar_eventos() se inyectaba como atributo dinámico
 (`detail.desconectar_eventos = _desconectar`) en vez de vivir como método
-de clase — el mismo patrón que sí siguen TablaArbol y TablaInsumos.
+de clase.
+
+conectar_eventos()/desconectar_eventos() ahora viven en
+TreeTableWidget (widgets/base.py) y se activan declarando
+EVENTOS_SUSCRITOS — el mismo mecanismo que usan TablaArbol y
+TablaInsumos. Aquí varios eventos comparten un solo método (_on_evento)
+porque a los tres les toca la misma reacción: refresco diferido +
+reselección de la celda activa.
 
 Sigue el ciclo de vida estándar (ver GUIA_INTERFAZ.md §7.6):
 
@@ -24,11 +31,17 @@ compartiendo el mismo widget).
 """
 
 from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QBrush
 from PySide6.QtWidgets import QComboBox, QDialog, QHeaderView, QMessageBox
 
 from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef, UNIDADES, FORMULA_ROLE
+from backend.database.event_bus import (
+    ApuComponenteActualizado, InsumoActualizado, ProyectoRecalculado,
+)
 from frontend.ventana.iconos import icono
 from frontend.ventana.tipos_insumo import COLOR as _COLOR_TIPO
+
+EMPTY_ROLE = Qt.ItemDataRole.UserRole + 60
 
 _TIPO_ID_ROLE = Qt.ItemDataRole.UserRole + 2
 
@@ -102,6 +115,12 @@ class TablaApuDetalle(TreeTableWidget):
     resumen_actualizado = Signal(str)  # texto enriquecido para el encabezado del contenedor
     tipos_actualizados = Signal(object)  # dict[int, float] — Signal(dict) no convierte en PySide6
     total_actualizado = Signal(float)    # costo_directo
+    agregar_componente = Signal(int)     # matriz_id — emitido al hacer clic en la fila vacía
+    EVENTOS_SUSCRITOS = {
+        ApuComponenteActualizado: '_on_evento',
+        InsumoActualizado:        '_on_evento',
+        ProyectoRecalculado:      '_on_evento',
+    }
 
     def __init__(self, matriz_id: int, descripcion: str = "", on_apu_click=None, parent=None):
         """matriz_id positivo = concepto; negativo = insumo compuesto (ver api.apu()).
@@ -120,7 +139,6 @@ class TablaApuDetalle(TreeTableWidget):
         self._on_apu_click = on_apu_click
         self._api = None        # inyectado por conectar_eventos()
         self._event_bus = None  # inyectado por conectar_eventos()
-        self._handlers = {}
 
         self.set_column_modes({
             c: (QHeaderView.ResizeMode.Interactive, w)
@@ -135,6 +153,7 @@ class TablaApuDetalle(TreeTableWidget):
 
         self.itemChanged.connect(self._on_item_editado)
         self.itemDoubleClicked.connect(self._on_item_dblclick)
+        self.itemClicked.connect(self._on_item_clicked)
 
     # ── Ciclo de vida (ver GUIA_INTERFAZ.md §7.6) ────────────────────────
 
@@ -215,6 +234,7 @@ class TablaApuDetalle(TreeTableWidget):
                     subtotales[tid] = totales_data.get(clave, 0)
         self.tipos_actualizados.emit(subtotales)
         self.total_actualizado.emit(total)
+        self._add_empty_row()
 
     def _consultar(self):
         if not self._api:
@@ -222,14 +242,31 @@ class TablaApuDetalle(TreeTableWidget):
         return self._api.apu(nodo_id=self._matriz_id) if self._matriz_id > 0 \
             else self._api.apu(insumo_id=-self._matriz_id)
 
+    def _add_empty_row(self):
+        item = self.add_row(
+            ["", "Nuevo componente...", "", "", "", "", "", "", "", "", ""],
+            editable=False,
+        )
+        item.setData(0, EMPTY_ROLE, True)
+        for c in range(item.columnCount()):
+            f = item.font(c)
+            f.setItalic(True)
+            item.setFont(c, f)
+            item.setForeground(c, QBrush(QColor("#556070")))
+
+    def _on_item_clicked(self, item, column):
+        if item.data(0, EMPTY_ROLE):
+            self.agregar_componente.emit(self._matriz_id)
+
     def _refrescar(self):
         """Vuelve a consultar la fuente de verdad y repuebla. Solo tiene
         efecto una vez conectado — antes de conectar_eventos() self._api
         es None y _consultar() devuelve None sin tronar."""
         self.poblar(self._consultar())
 
-    def conectar_eventos(self, event_bus, api):
-        """Suscribe el refresco a los eventos relevantes.
+    def _on_evento(self, evento):
+        """Refresco compartido para ApuComponenteActualizado, InsumoActualizado
+        y ProyectoRecalculado (ver EVENTOS_SUSCRITOS).
 
         Un cambio de precio hecho desde OTRA pestaña (Insumos, u otro APU
         que comparte el mismo insumo compuesto) debe reflejarse aquí
@@ -243,47 +280,23 @@ class TablaApuDetalle(TreeTableWidget):
         refresco se difiere con QTimer.singleShot(0, ...) al siguiente
         ciclo del event loop, nunca inline.
         """
-        self._api = api
-        self._event_bus = event_bus
-        if not event_bus:
-            return
-        from backend.database.event_bus import (
-            ApuComponenteActualizado, InsumoActualizado, ProyectoRecalculado,
-        )
+        try:
+            cur = self.currentItem()
+            row = self.indexOfTopLevelItem(cur) if cur else -1
+            col = self.currentColumn()
 
-        def _on_evento(evento):
-            try:
-                cur = self.currentItem()
-                row = self.indexOfTopLevelItem(cur) if cur else -1
-                col = self.currentColumn()
-                def _refrescar_seguro():
-                    try:
-                        self._refrescar()
-                        if row >= 0 and col >= 0:
-                            it = self.topLevelItem(row)
-                            if it:
-                                self.setCurrentItem(it, col)
-                    except Exception as e:
-                        print(f"[eventbus] _refrescar_seguro: {type(e).__name__}: {e}")
-                QTimer.singleShot(0, _refrescar_seguro)
-            except Exception as e:
-                print(f"[eventbus] _on_evento: {type(e).__name__}: {e}")
-
-        self._handlers = {
-            ApuComponenteActualizado: _on_evento,
-            InsumoActualizado:        _on_evento,
-            ProyectoRecalculado:      _on_evento,
-        }
-        for tipo, cb in self._handlers.items():
-            event_bus.suscribir(tipo, cb)
-
-    def desconectar_eventos(self):
-        """Idempotente: no falla si nunca se conectó o ya se desconectó."""
-        if self._event_bus and self._handlers:
-            for tipo, cb in self._handlers.items():
-                self._event_bus.desuscribir(tipo, cb)
-        self._event_bus = None
-        self._handlers = {}
+            def _refrescar_seguro():
+                try:
+                    self._refrescar()
+                    if row >= 0 and col >= 0:
+                        it = self.topLevelItem(row)
+                        if it:
+                            self.setCurrentItem(it, col)
+                except Exception as e:
+                    print(f"[eventbus] _refrescar_seguro: {type(e).__name__}: {e}")
+            QTimer.singleShot(0, _refrescar_seguro)
+        except Exception as e:
+            print(f"[eventbus] _on_evento: {type(e).__name__}: {e}")
 
     # ── Filtro por tipo ──────────────────────────────────────────────
 

@@ -10,13 +10,11 @@ Contiene:
   - CONFIG_INI_TEMPLATE : contenido de CONFIG.INI
 """
 
-from datetime import date
 
 # ---------------------------------------------------------------------------
 # TIPOSINS.DBF  — 8 registros fijos
 # ---------------------------------------------------------------------------
 
-from frontend.ventana.tipos_insumo import OPUS_ROWS as TIPOSINS_ROWS
 
 # ---------------------------------------------------------------------------
 # CONFIG.DBF  — campos fijos (no vienen del proyecto)

@@ -159,7 +159,6 @@ class DiagDialogsMixin:
         from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                                         QPushButton, QComboBox, QTableWidget,
                                         QTableWidgetItem, QAbstractItemView)
-        from PySide6.QtCore import Qt
         from frontend.ventana.widgets.base import UNIDADES
 
         dlg = QDialog(self)
@@ -221,7 +220,6 @@ class DiagDialogsMixin:
         from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                                         QPushButton, QTableWidget, QTableWidgetItem,
                                         QAbstractItemView)
-        from PySide6.QtCore import Qt
 
         dlg = QDialog(self)
         dlg.setWindowTitle(f"Corregir mayúsculas/minúsculas ({len(items)} insumos)")
@@ -351,7 +349,8 @@ class DiagDialogsMixin:
         dlg.exec()
 
     def _on_calculadora(self):
-        import subprocess, sys
+        import subprocess
+        import sys
         if sys.platform == "win32":
             subprocess.Popen(["calc.exe"])
         elif sys.platform == "darwin":

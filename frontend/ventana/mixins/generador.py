@@ -12,14 +12,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QMessageBox, QHeaderView, QFileDialog, QFrame,
 )
-from PySide6.QtGui import QFont
 
-from frontend.ventana.widgets.base import TreeTableWidget
 from frontend.ventana.widgets.generador import TablaGenerador
 from frontend.ventana.cad.visor import VisorCadWidget, CadTool
 
@@ -81,7 +79,6 @@ class GeneradorMixin:
 
     def _configurar_arbol_gen(self, tree):
         """Aplica formato compacto al árbol: ocultar columnas, anchos, word wrap."""
-        from PySide6.QtWidgets import QHeaderView
         for col in [0, 1, 2, 3, 7, 8, 9, 10, 11, 12, 13, 14]:
             tree.setColumnHidden(col, True)
         tree.set_column_modes({
@@ -101,6 +98,25 @@ class GeneradorMixin:
         cad_widget = self._build_cad_panel()
         self._gen_parts = (cad_widget,)
         return cad_widget
+
+    def _abrir_generadores_para_concepto(self, concepto_id: int, wbs: str = "", desc: str = ""):
+        """Abre la pestaña de generadores y carga el concepto dado."""
+        self._on_abrir_generadores()
+        self._gen_concepto_activo = concepto_id
+        label = f"{wbs} {desc}".strip() or f"Concepto #{concepto_id}"
+        self._gen_nombre_base = label
+        self._gen_concepto_lbl.setText(label)
+        gen_id = self._obtener_o_crear_generador(concepto_id)
+        if not gen_id:
+            self._gen_stacked.setCurrentIndex(0)
+            return
+        self._gen_seleccionado = gen_id
+        gen_info = self._api.generador_por_id(gen_id) or {}
+        self._gen_unidad_activa = gen_info.get("unidad") or ""
+        renglones = self._api.generador_renglones(gen_id)
+        self._gen_tabla.poblar(renglones)
+        self._gen_stacked.setCurrentIndex(1)
+        self._gen_tabla.setFocus()
 
     def _build_renglones_panel(self) -> QWidget:
         """Panel de renglones directos (sin capa de generadores)."""
@@ -135,6 +151,8 @@ class GeneradorMixin:
 
         self._gen_tabla = TablaGenerador()
         self._gen_tabla.renglon_editado.connect(self._on_renglon_editado)
+        self._gen_tabla.total_actualizado.connect(self._on_gen_total_actualizado)
+        self._gen_tabla.nuevo_renglon.connect(self._on_renglon_nuevo)
         layout.addWidget(self._gen_tabla, 1)
 
         return w
@@ -149,16 +167,17 @@ class GeneradorMixin:
 
         if es_extra or tipo == "extraordinarios":
             concepto_id = None
-            self._gen_concepto_lbl.setText("⚡ Extraordinarios (sin concepto)")
+            self._gen_nombre_base = "⚡ Extraordinarios (sin concepto)"
         elif tipo == "concepto":
             from frontend.ventana.widgets.arbol import ID_ROLE
             concepto_id = item.data(0, ID_ROLE)
             wbs = item.text(1)
             desc = item.text(4)
-            self._gen_concepto_lbl.setText(f"{wbs} {desc}")
+            self._gen_nombre_base = f"{wbs} {desc}"
         else:
             return
 
+        self._gen_concepto_lbl.setText(self._gen_nombre_base)
         self._gen_concepto_activo = concepto_id
 
         # Buscar o crear generador para este concepto
@@ -166,9 +185,12 @@ class GeneradorMixin:
         if not gen_id:
             return
         self._gen_seleccionado = gen_id
+        gen_info = self._api.generador_por_id(gen_id) or {}
+        self._gen_unidad_activa = gen_info.get("unidad") or ""
         renglones = self._api.generador_renglones(gen_id)
         self._gen_tabla.poblar(renglones)
         self._gen_stacked.setCurrentIndex(1)
+        self._gen_tabla.setFocus()
 
     def _obtener_o_crear_generador(self, concepto_id: int | None) -> int | None:
         """Busca el primer generador del concepto; si no existe, lo crea."""
@@ -183,9 +205,34 @@ class GeneradorMixin:
             texto = self._gen_concepto_lbl.text()
             wbs = texto.split(" ", 1)[0] if texto else ""
         nombre = wbs if wbs else "General"
+
+        if concepto_id is not None:
+            cant = self._api.concepto_cantidad(concepto_id)
+            if cant > 0:
+                resp = QMessageBox.question(
+                    self, "Vincular generador",
+                    f"El concepto ya tiene una cantidad de {cant}.\n"
+                    "¿Deseas borrarla y vincular la cantidad al generador?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if resp != QMessageBox.StandardButton.Yes:
+                    return None
+                self._api.concepto_actualizar(concepto_id, cantidad=0.0)
+
         return self._api.generador_crear(
             nombre=nombre, concepto_id=concepto_id,
         )
+
+    def _on_gen_total_actualizado(self, total: float):
+        """Actualiza el encabezado del concepto con el total ya medido,
+        igual que en APU (nombre — Total). Se dispara cada vez que la
+        tabla de renglones se repuebla (alta, edición, borrado o
+        medición ligada desde el CAD)."""
+        base = getattr(self, "_gen_nombre_base", "") or self._gen_concepto_lbl.text()
+        unidad = getattr(self, "_gen_unidad_activa", "") or ""
+        sufijo = f" {unidad}" if unidad else ""
+        self._gen_concepto_lbl.setText(f"{base}  —  Medido: {total:,.2f}{sufijo}")
 
     def _on_volver_arbol(self):
         """Vuelve a mostrar el árbol del presupuesto."""
@@ -196,11 +243,11 @@ class GeneradorMixin:
     def _on_renglon_nuevo(self):
         if not self._gen_seleccionado or not self._api:
             return
-        self._api.generador_renglon_guardar(
+        nuevo_id = self._api.generador_renglon_guardar(
             self._gen_seleccionado
         )
         renglones = self._api.generador_renglones(self._gen_seleccionado)
-        self._gen_tabla.poblar(renglones)
+        self._gen_tabla.poblar(renglones, seleccionar_id=nuevo_id)
 
     def _on_renglon_editado(self, renglon_id: int, campos: dict):
         if not self._gen_seleccionado or not self._api:
@@ -232,15 +279,23 @@ class GeneradorMixin:
 
         from frontend.ventana.widgets.arbol import ID_ROLE, TIPO_ROLE
         tree = self._arbol_gen
-        tree.clear()
+        tree.blockSignals(True)
         try:
             nodos = self._api.presupuesto_arbol()
             tree.poblar(nodos)
         except Exception as e:
             print(f"Error cargando presupuesto en generadores: {e}")
+        finally:
+            tree.blockSignals(False)
 
         # Re-aplicar columnas compactas tras poblar()
         self._configurar_arbol_gen(tree)
+
+        # Conectar/reactivar al bus de eventos para que refleje cambios en tiempo real.
+        # conectar_eventos ya verifica si está conectado a un bus distinto y
+        # llama a desconectar_eventos antes de re-suscribir.
+        if self._event_bus:
+            tree.conectar_eventos(self._event_bus, self._api)
 
         extra_item = tree.add_row(
             ["", "", "Extraordinarios", "", "Generadores sueltos",
@@ -306,6 +361,7 @@ class GeneradorMixin:
         self._cad_viewer = VisorCadWidget()
         self._cad_viewer.point_clicked.connect(self._on_cad_point)
         self._cad_viewer.entity_clicked.connect(self._on_cad_entity_clicked)
+        self._cad_viewer.measurement_ready.connect(self._on_cad_measurement)
         layout.addWidget(self._cad_viewer, 1)
 
         self._cad_btn_undo = self._tb_buttons_by_tip.get("Deshacer CAD")
@@ -374,6 +430,30 @@ class GeneradorMixin:
         """Maneja clics en el visor CAD (referencia visual / medición)."""
         self._cad_coords_lbl.setText(f"X: {x:.4f}  Y: {y:.4f}")
 
+    def _on_cad_measurement(self, valor: float, tipo: str):
+        """Al terminar una medición en el visor, la liga a la celda que el
+        usuario haya dejado seleccionada en la tabla de renglones
+        (Veces/Largo/Ancho/Alto). Punto y Contador acumulan (+1 por clic);
+        Línea y Área sobrescriben con el valor recién medido.
+        """
+        tabla = getattr(self, "_gen_tabla", None)
+        if tabla is None:
+            return
+        modo = "sumar" if tipo in ("punto", "conteo") else "set"
+        aplicado = tabla.aplicar_medicion(valor, modo=modo)
+        if aplicado:
+            self._cad_measurement_lbl.setText(f"✓ {valor:.4f} → celda")
+            self._cad_measurement_lbl.setStyleSheet(
+                "color: #4CAF50; font-size: 10px;"
+            )
+        else:
+            self._cad_measurement_lbl.setText(
+                "Selecciona Veces/Largo/Ancho/Alto para ligar"
+            )
+            self._cad_measurement_lbl.setStyleSheet(
+                "color: #FFA500; font-size: 10px;"
+            )
+
     def _on_cad_entity_clicked(self, handle: str):
         """Muestra qué entidad se seleccionó (herramienta Seleccionar)."""
         doc = getattr(self, "_cad_viewer", None)
@@ -391,7 +471,7 @@ class GeneradorMixin:
         """Abre diálogo de capas para encender/apagar."""
         from PySide6.QtWidgets import (
             QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
-            QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
+            QTableWidget, QTableWidgetItem, QAbstractItemView,
         )
         from PySide6.QtGui import QColor
         from backend.cad.lector_dxf import ACI_COLORS
@@ -508,7 +588,7 @@ class GeneradorMixin:
         for r in result:
             self._api.generador_renglon_guardar(
                 self._gen_seleccionado,
-                ubicacion=f"{r.layer} ({r.unit})",
+                eje=f"{r.layer} ({r.unit})",
                 veces=1 if r.primary == "count" else None,
                 largo=r.quantity if r.primary != "count" else None,
                 ancho=None,

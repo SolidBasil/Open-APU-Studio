@@ -35,12 +35,11 @@ from __future__ import annotations
 
 import math
 import logging
-from typing import Any
 
 from PySide6.QtCore import Qt, QPointF, QRectF, QPoint, Signal
 from PySide6.QtGui import (
     QPen, QColor, QBrush, QPainter, QWheelEvent, QMouseEvent,
-    QFont, QTransform,
+    QTransform,
 )
 from PySide6.QtWidgets import (
     QGraphicsView, QGraphicsScene, QGraphicsItem,
@@ -97,6 +96,7 @@ class VisorCadWidget(QGraphicsView):
     entity_clicked = Signal(str)          # entity_id
     point_clicked = Signal(float, float)  # world x, y (DXF coords, Y-up)
     snap_point = Signal(float, float)     # snapped world coords
+    measurement_ready = Signal(float, str)  # (valor, tipo: distancia|area|punto|conteo)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -649,6 +649,7 @@ class VisorCadWidget(QGraphicsView):
             self._persist_items()
             self._measure_points.clear()
             self._ortho_preview = None
+            self.measurement_ready.emit(dist, "distancia")
             return
 
         if (self._tool == CadTool.POLYGON
@@ -661,10 +662,12 @@ class VisorCadWidget(QGraphicsView):
         elif self._tool == CadTool.POINT:
             self.point_clicked.emit(pt.x(), pt.y())
             self._measure_points.clear()
+            self.measurement_ready.emit(1.0, "punto")
 
         elif self._tool == CadTool.COUNT:
             self.point_clicked.emit(pt.x(), pt.y())
             self._measure_points.clear()
+            self.measurement_ready.emit(1.0, "conteo")
 
         self._draw_measure_preview()
 
@@ -689,6 +692,7 @@ class VisorCadWidget(QGraphicsView):
         self._measure_points.clear()
         self._ortho_preview = None
         self._draw_measure_preview()
+        self.measurement_ready.emit(area, "area")
 
     def _draw_measure_preview(self):
         for item in self._preview_items:

@@ -42,14 +42,7 @@ class PresupuestoPopup(QDialog):
             return None
 
         parent = self.parent()
-        if hasattr(parent, '_on_concepto_editado'):
-            tree.itemChanged.connect(parent._on_concepto_editado)
-        if hasattr(parent, '_on_item_dblclick'):
-            tree.itemDoubleClicked.connect(parent._on_item_dblclick)
-        if hasattr(parent, '_on_rastrear_insumo'):
-            tree.rastrear_insumo.connect(parent._on_rastrear_insumo)
-        if hasattr(parent, '_abrir_apu_por_id'):
-            tree.desglozar_nodo.connect(parent._abrir_apu_por_id)
+        tree.conectar_handlers(parent)
         if event_bus and api:
             tree.conectar_eventos(event_bus, api)
 

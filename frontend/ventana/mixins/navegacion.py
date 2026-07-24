@@ -13,7 +13,7 @@ from PySide6.QtCore    import Qt, QPoint
 from PySide6.QtGui     import QFont
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QAbstractItemView,
-    QInputDialog, QMessageBox, QFileDialog, QMenu,
+    QMessageBox, QFileDialog, QMenu,
 )
 
 from frontend.ventana.mixins.paneles import INSUMOS_TITLES
@@ -214,6 +214,10 @@ class HandlersMixin:
         """Handler del botón 'Generadores' en la toolbar (pestaña INICIO)."""
         self._focus_or_open_tab("Generadores de obra", temporary=False)
 
+    def _on_abrir_extra(self):
+        """Handler del botón 'Fuera de presupuesto' en la toolbar."""
+        self._focus_or_open_tab("Fuera de presupuesto", temporary=False)
+
     def _open_sidebar_tab(self, title, temporary):
         """Abre pestaña según título del sidebar."""
         if self._tab_temp is not None:
@@ -236,6 +240,8 @@ class HandlersMixin:
                 return
         elif title in INSUMOS_TITLES:
             content = self._build_insumos(title)
+        elif title == "Fuera de presupuesto":
+            content = self._build_extra_panel()
         elif title == "Generadores de obra":
             content = self._build_generadores()
             self.poblar_generadores()
@@ -278,8 +284,7 @@ class HandlersMixin:
         title = self._tabs.tabText(idx) if idx >= 0 else ""
         es_generadores = title == "Generadores de obra"
 
-        # Panel izquierdo contextual: Generadores usa su propio panel de
-        # navegación (lista de generadores) en vez del sidebar normal.
+        # Panel izquierdo contextual
         if hasattr(self, "_left_stack"):
             splitter = self._left_stack.parent()
             prev = self._left_stack.currentIndex()
@@ -308,6 +313,8 @@ class HandlersMixin:
         ribbon_objetivo = None
         if es_generadores:
             ribbon_objetivo = "GENERADORES"
+        elif title == "Fuera de presupuesto":
+            ribbon_objetivo = "PRINCIPAL"
         elif title == "Presupuesto programable":
             ribbon_objetivo = "PRINCIPAL"
         if ribbon_objetivo and getattr(self, "_tab_activa", None) != ribbon_objetivo:

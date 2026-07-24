@@ -115,6 +115,7 @@ class PanelesMixin:
                 for title, _ in INSUMOS_ITEMS
             ]),
             ("Ejecución", "folder", "#7FAFD6", [
+                ("zap", "Fuera de presupuesto", "#E8EDF2"),
                 ("file-text", "Estimaciones", "#E8EDF2"),
                 ("plus", "Conceptos fuera de catálogo", "#E8EDF2"),
                 ("trending-up", "Ajustes de costos", "#E8EDF2"),
@@ -161,8 +162,6 @@ class PanelesMixin:
         QShortcut(QKeySequence("Alt+Down"),  self).activated.connect(self._on_bajar)
         QShortcut(QKeySequence("Alt+Left"),  self).activated.connect(self._on_izquierda)
         QShortcut(QKeySequence("Alt+Right"), self).activated.connect(self._on_derecha)
-        QShortcut(QKeySequence("Delete"),    self).activated.connect(self._on_eliminar)
-        QShortcut(QKeySequence("Insert"),        self).activated.connect(self._on_insert_contextual)
         QShortcut(QKeySequence("Ctrl+Insert"),   self).activated.connect(self._on_agregar_agrupador)
         QShortcut(QKeySequence("Ctrl+Z"),         self).activated.connect(self._on_deshacer)
         QShortcut(QKeySequence("Ctrl+Y"),         self).activated.connect(self._on_rehacer)
@@ -186,22 +185,136 @@ class PanelesMixin:
         except Exception as e:
             print(f"Error cargando presupuesto: {e}")
 
-        tree.itemChanged.connect(self._on_concepto_editado)
-        tree.itemDoubleClicked.connect(self._on_item_dblclick)
-        tree.rastrear_insumo.connect(self._on_rastrear_insumo)
-        tree.desglozar_nodo.connect(self._abrir_apu_por_id)
-        tree.agregar_agrupador.connect(self._on_agregar_agrupador)
-        tree.agregar_concepto.connect(self._on_agregar_concepto)
-        tree.eliminar_seleccion.connect(self._on_eliminar)
+        tree.conectar_handlers(self)
         self._arbol_presupuesto = tree
         if self._event_bus and self._api:
             tree.conectar_eventos(self._event_bus, self._api)
         QTimer.singleShot(0, self._on_ajustar_columnas)
         return tree
 
+    def _build_extra_panel(self):
+        """Árbol de conceptos fuera de presupuesto (es_extra=1)."""
+        from frontend.ventana.widgets.arbol import TablaArbol
+        from PySide6.QtWidgets import QVBoxLayout, QLabel
+
+        if not self._db:
+            return self._build_sin_proyecto()
+
+        w = QWidget()
+        layout = QVBoxLayout(w)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
+        # Totales informativos
+        totales = QHBoxLayout()
+        total_legal = self._calcular_total_extra(extra=False)
+        total_extra = self._calcular_total_extra(extra=True)
+        lbl_legal = QLabel(f"Presupuesto: ${total_legal:,.2f}")
+        lbl_extra = QLabel(f"Extra: ${total_extra:,.2f}")
+        lbl_total = QLabel(f"Total: ${total_legal + total_extra:,.2f}")
+        for lbl in (lbl_legal, lbl_extra, lbl_total):
+            f = lbl.font()
+            f.setBold(True)
+            lbl.setFont(f)
+        totales.addWidget(lbl_legal)
+        totales.addSpacing(16)
+        totales.addWidget(lbl_extra)
+        totales.addSpacing(16)
+        totales.addWidget(lbl_total)
+        totales.addStretch()
+        layout.addLayout(totales)
+
+        tree = TablaArbol(header_key="extra_arbol_header_state", extra=True)
+        try:
+            nodos = self._api.presupuesto_arbol(extra=True)
+            tree.poblar(nodos)
+        except Exception as e:
+            print(f"Error cargando presupuesto extra: {e}")
+
+        tree.conectar_handlers(self,
+            agregar_agrupador='_on_agregar_agrupador_extra',
+            agregar_concepto='_on_agregar_concepto_extra')
+        self._arbol_extra = tree
+        if self._event_bus and self._api:
+            tree.conectar_eventos(self._event_bus, self._api)
+        layout.addWidget(tree, 1)
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, self._on_ajustar_columnas)
+        return w
+
+    def _calcular_total_extra(self, extra: bool = False) -> float:
+        """Suma de totales de nodos raíz (es_extra=0|1)."""
+        api = getattr(self, '_api', None)
+        if not api:
+            return 0.0
+        try:
+            raices = api.presupuesto_arbol(extra=extra)
+            return sum(float(n.get("total", 0) or 0) for n in raices)
+        except Exception as e:
+            print(f"Error calculando total extra: {e}")
+            return 0.0
+
+    def _on_agregar_agrupador_extra(self):
+        """Agrega agrupador en el árbol extra."""
+        self._agregar_nodo_extra("capitulo")
+
+    def _on_agregar_concepto_extra(self):
+        """Agrega concepto en el árbol extra."""
+        self._agregar_nodo_extra("concepto")
+
+    def _agregar_nodo_extra(self, tipo: str):
+        """Inserta nodo extra. Misma lógica que _agregar_nodo pero con es_extra=True."""
+        from frontend.ventana.widgets.arbol import ID_ROLE, TIPO_ROLE
+        from PySide6.QtCore import QTimer
+
+        api = getattr(self, '_api', None)
+        t = getattr(self, '_arbol_extra', None)
+        if not t or not api:
+            return
+
+        sel = t.selectedItems()
+        padre_id = None
+        antes_de = None
+        if sel:
+            item = sel[0]
+            id_actual = item.data(0, ID_ROLE)
+            tipo_actual = item.data(0, TIPO_ROLE)
+            if tipo_actual == "capitulo":
+                padre_id = id_actual
+                if item.childCount() > 0:
+                    antes_de = item.child(0).data(0, ID_ROLE)
+            elif tipo_actual == "concepto":
+                padre_id = item.parent().data(0, ID_ROLE) if item.parent() else None
+                antes_de = id_actual
+
+        insumo_id = None
+        if tipo == "concepto":
+            from PySide6.QtWidgets import QDialog
+            from frontend.ventana.widgets.dialogs import DialogoSeleccionarInsumo
+            dlg = DialogoSeleccionarInsumo(api, parent=self)
+            if dlg.exec() != QDialog.DialogCode.Accepted:
+                return
+            insumo_id = dlg.insumo_seleccionado
+            if insumo_id is None:
+                return
+
+        nuevo_id = api.agregar_nodo(
+            tipo, padre_id=padre_id, antes_de=antes_de,
+            insumo_id=insumo_id, es_extra=True,
+        )
+        edit_col = 6 if tipo == "concepto" else 4
+
+        def _seleccionar_nuevo():
+            item = t._buscar_item_por_id(nuevo_id)
+            if item:
+                t.setCurrentItem(item)
+                if t.isColumnHidden(edit_col):
+                    t.setColumnHidden(edit_col, False)
+                t.editItem(item, edit_col)
+        QTimer.singleShot(0, _seleccionar_nuevo)
+
     def _build_sin_proyecto(self) -> QWidget:
         """Placeholder cuando no hay proyecto abierto."""
-        from PySide6.QtCore import QEvent
 
         w      = QWidget()
         layout = QVBoxLayout(w)
@@ -309,6 +422,24 @@ class PanelesMixin:
         if dlg.exec() == 1:  # Accepted
             self._on_tab_changed(idx)
 
+    def _on_modificar_insumo(self, insumo_id: int):
+        from frontend.ventana.widgets.dialogs import InsumoDialog
+        if not self._api:
+            return
+        dlg = InsumoDialog(self._api, insumo_id=insumo_id, parent=self)
+        dlg.exec()
+
+    def _on_cambiar_insumo(self, nodo_id: int):
+        from PySide6.QtWidgets import QDialog
+        from frontend.ventana.widgets.dialogs import DialogoSeleccionarInsumo
+        if not self._api:
+            return
+        dlg = DialogoSeleccionarInsumo(self._api, self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            nuevo_id = dlg.insumo_seleccionado
+            if nuevo_id is not None:
+                self._api.concepto_reasignar_insumo(nodo_id, nuevo_id)
+
     def _on_insert_contextual(self):
         """Insert: en pestaña de insumos crea insumo; en presupuesto agrega concepto."""
         idx = self._tabs.currentIndex()
@@ -407,7 +538,8 @@ class PanelesMixin:
     def _on_abrir_carpeta_bd(self):
         """Abre en el explorador la carpeta donde se guardan los .db."""
         from backend.database.db import Rutas
-        import subprocess, sys
+        import subprocess
+        import sys
         carpeta = Rutas.proyectos()
         carpeta.mkdir(parents=True, exist_ok=True)
         if sys.platform == "win32":

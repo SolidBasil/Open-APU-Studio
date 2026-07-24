@@ -15,7 +15,6 @@ if sys.platform == "win32":
     import ctypes
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("openapu.studio.1")
 
-from backend.database.db import Config, Rutas
 from frontend.temas import Temas
 from frontend.ventana import VentanaPrincipal
 

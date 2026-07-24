@@ -24,7 +24,6 @@ class RastreoMixin:
             self._sb.showMessage(f"Insumo #{insumo_id} no encontrado", 4000)
             return
         desc = insumo.get("descripcion") or insumo.get("descripcion_corta") or f"#{insumo_id}"
-        clave = insumo.get("clave", "")
         title = f"Uso: {desc[:30]}"
         for i in range(self._tabs.count()):
             if self._tabs.tabText(i) == title:

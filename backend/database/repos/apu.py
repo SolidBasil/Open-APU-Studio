@@ -15,6 +15,13 @@ class ApuMatricesRepo(RepoBase):
     def update(self, registro_id: int, campos: dict) -> None:
         return self._update(self.TABLA, registro_id, campos)
 
+    def proximo_orden(self, matriz_id: int) -> int:
+        row = self._uno(
+            "SELECT COALESCE(MAX(orden), 0) + 1 AS prox FROM apu_matrices WHERE matriz_id = ?",
+            [matriz_id],
+        )
+        return row["prox"] if row else 1
+
     def insert(self, campos: dict) -> int:
         return self._insert(self.TABLA, campos)
 

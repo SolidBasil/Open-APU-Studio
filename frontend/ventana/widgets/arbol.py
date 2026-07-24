@@ -30,6 +30,7 @@ TIPO_ROLE      = Qt.ItemDataRole.UserRole + 12  # 'capitulo' | 'concepto', setea
                                                  # al crear la fila (NO se infiere leyendo texto)
 INSUMO_ROLE    = Qt.ItemDataRole.UserRole + 13  # insumo_id ligado (solo conceptos), para
                                                  # localizar filas afectadas por InsumoActualizado
+EMPTY_ROLE     = Qt.ItemDataRole.UserRole + 60  # fila visual vacía (no existe en DB)
 
 # ── Configuración de columnas ─────────────────────────────────────
 
@@ -76,7 +77,7 @@ COLUMNAS_CATALOGO = [
     ColumnaDef(14, "Fórmula",     "Cálculo", favorita_default=False, visible_default=False, imprimible_default=False),
 
     ColumnaDef(9,  "Estado",      "Seguimiento", favorita_default=True,  visible_default=False, imprimible_default=False),
-    ColumnaDef(10, "Notas",       "Seguimiento", favorita_default=True,  visible_default=False, imprimible_default=False),
+    ColumnaDef(10, "Notas",       "Seguimiento", favorita_default=True,  visible_default=True,  imprimible_default=False),
 
     ColumnaDef(11, "Creado",      "Auditoría", favorita_default=False, visible_default=False, imprimible_default=False),
     ColumnaDef(12, "Modificado",  "Auditoría", favorita_default=False, visible_default=False, imprimible_default=False),
@@ -109,8 +110,8 @@ CAMPO_REPORTE = {
 # nunca del texto de la columna "Tipo", que en otras tablas basadas en
 # TreeTableWidget significa otra cosa (ver base.py::_Delegate).
 _EDITABLE_POR_TIPO = {
-    "capitulo": {4},          # Descripción (caso especial: agrupadores)
-    "concepto": {6},          # Cant — edita la fórmula, no el valor directo
+    "capitulo": {4, 10},      # Descripción, Notas
+    "concepto": {6, 10},      # Cant, Notas
 }
 
 
@@ -131,6 +132,9 @@ COLORES_NIVEL = [
 ]
 
 from backend.database.repos.presupuesto import ESTADO_NOMBRE
+from backend.database.event_bus import (
+    ConceptoActualizado, InsumoActualizado, NodoEliminado, ProyectoRecalculado,
+)
 
 
 # ── Formateo de valores ───────────────────────────────────────────
@@ -162,12 +166,40 @@ class TablaArbol(TreeTableWidget):
     COLUMNAS_CATALOGO = COLUMNAS_CATALOGO
     rastrear_insumo = Signal(int)
     desglozar_nodo = Signal(int)
+    EVENTOS_SUSCRITOS = {
+        ConceptoActualizado: '_on_concepto_actualizado',
+        InsumoActualizado:   '_on_insumo_actualizado',
+        NodoEliminado:       '_on_nodo_eliminado',
+        ProyectoRecalculado: '_on_proyecto_recalculado',
+    }
+    modificar_insumo = Signal(int)
+    cambiar_insumo = Signal(int)
     agregar_agrupador = Signal()
     agregar_concepto = Signal()
     eliminar_seleccion = Signal()
 
-    def __init__(self, parent=None, header_key: str | None = None):
-        """Inicializa el árbol de presupuesto con columnas fijas, modo de columnas, búsqueda y restauración del header."""
+    # Handler por defecto de cada señal, buscado por nombre en el objeto
+    # que reciba conectar_handlers(). Evita repetir este cableado en cada
+    # lugar que construye un TablaArbol (panel principal, panel "extra",
+    # popup — ver conectar_handlers()).
+    _HANDLERS_ESTANDAR = {
+        "itemChanged":         "_on_concepto_editado",
+        "itemDoubleClicked":   "_on_item_dblclick",
+        "rastrear_insumo":     "_on_rastrear_insumo",
+        "modificar_insumo":    "_on_modificar_insumo",
+        "cambiar_insumo":      "_on_cambiar_insumo",
+        "desglozar_nodo":      "_abrir_apu_por_id",
+        "agregar_agrupador":   "_on_agregar_agrupador",
+        "agregar_concepto":    "_on_agregar_concepto",
+        "eliminar_seleccion":  "_on_eliminar",
+    }
+
+    def __init__(self, parent=None, header_key: str | None = None,
+                 extra: bool = False):
+        """Inicializa el árbol de presupuesto.
+        Si extra=True, este árbol muestra nodos es_extra=1 (fuera de presupuesto).
+        """
+        self._extra = extra
         if header_key:
             self._HEADER_KEY = header_key
         super().__init__(COLUMNAS, EDITABLE, parent=parent,
@@ -201,6 +233,7 @@ class TablaArbol(TreeTableWidget):
         self._search_cols = {4}  # búsqueda por Descripción
         self._api = None  # inyectado por conectar_eventos()
         self._event_bus = None  # inyectado por conectar_eventos()
+        self.itemClicked.connect(self._on_item_clicked)
 
     def columnas_para_reporte(self) -> list[dict]:
         """Columnas imprimibles en orden visual + ancho actual, traducidas a
@@ -215,6 +248,34 @@ class TablaArbol(TreeTableWidget):
                 continue
             columnas.append({"campo": campo, "label": c["label"], "ancho_px": c["ancho_px"]})
         return columnas
+
+    def _on_item_clicked(self, item, column):
+        """Click en la fila vacía final → crea un concepto nuevo."""
+        if item.data(0, EMPTY_ROLE):
+            self.agregar_concepto.emit()
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_F2:
+            item = self.currentItem()
+            if item:
+                insumo_id = item.data(0, INSUMO_ROLE)
+                if insumo_id:
+                    self.modificar_insumo.emit(insumo_id)
+                    return
+        elif event.key() == Qt.Key.Key_F5:
+            item = self.currentItem()
+            if item and item.data(0, TIPO_ROLE) == "concepto":
+                nodo_id = item.data(0, ID_ROLE)
+                if nodo_id:
+                    self.cambiar_insumo.emit(nodo_id)
+                    return
+        elif event.key() == Qt.Key.Key_Insert:
+            self.agregar_concepto.emit()
+            return
+        elif event.key() == Qt.Key.Key_Delete:
+            self.eliminar_seleccion.emit()
+            return
+        super().keyPressEvent(event)
 
     def _context_menu_actions(self, menu):
         from frontend.ventana.widgets.base import _menu_icon
@@ -243,6 +304,8 @@ class TablaArbol(TreeTableWidget):
         if insumo_id:
             act = menu.addAction(_menu_icon("search"), "Rastrear uso")
             act.triggered.connect(lambda: self.rastrear_insumo.emit(insumo_id))
+            act = menu.addAction(_menu_icon("edit"), "Modificar insumo")
+            act.triggered.connect(lambda: self.modificar_insumo.emit(insumo_id))
         if nodo_id:
             act = menu.addAction(_menu_icon("link"), "Desglozar")
             act.triggered.connect(lambda: self.desglozar_nodo.emit(nodo_id))
@@ -325,6 +388,22 @@ class TablaArbol(TreeTableWidget):
         """Puebla el árbol completo desde lista de nodos raíz devuelta por NodoRepo.arbol()."""
         self.clear()
         self._poblar_nodos(nodos_raiz, None)
+        self._add_empty_row()
+
+    def _add_empty_row(self):
+        """Fila visual vacía al final del árbol — no existe en BD.
+        Al hacer clic crea un capítulo nuevo."""
+        item = self.add_row(
+            ["", "", "Capítulo", "", "Nuevo capítulo...",
+             "", "", "", "", "", "", "", "", "", ""],
+            editable=False,
+        )
+        item.setData(0, EMPTY_ROLE, True)
+        item.setData(0, ID_ROLE, None)
+        item.setData(0, TIPO_ROLE, "")
+        self._estilizar_fila_vacia(item)
+        item.setToolTip(4, "Haz clic para agregar un capítulo nuevo")
+        self._empty_row_item = item
 
     def _poblar_nodos(self, nodos, parent):
         """Recorre recursivamente los nodos insertando agrupadores y registros en el widget."""
@@ -349,52 +428,30 @@ class TablaArbol(TreeTableWidget):
     # es la señal de "repuebla desde la fuente de verdad", que aquí se
     # implementa preservando scroll y selección.
 
-    def conectar_eventos(self, event_bus, api):
-        """Suscribe este árbol al EventBus del proyecto abierto.
+    def conectar_handlers(self, target, **overrides):
+        """Conecta las señales estándar de este árbol a los métodos de
+        `target` que compartan nombre con _HANDLERS_ESTANDAR.
 
-        Debe llamarse una sola vez, justo después de poblar(), con el
-        EventBus y el Api vigentes en ese momento (ver _build_presupuesto()
-        en paneles.py). Como cada apertura de proyecto crea un EventBus
-        nuevo, este árbol se reconstruye desde cero en cada apertura y por
-        lo tanto siempre queda enganchado al bus correcto.
+        `overrides` permite redirigir señales puntuales a otro nombre de
+        método — por ejemplo, el panel "extra" (fuera de presupuesto) usa
+        sus propios handlers de agregar_agrupador/agregar_concepto:
 
-        IMPORTANTE: quien remueva este widget de una pestaña (removeTab,
-        reemplazo por pestaña temporal del sidebar, etc.) DEBE llamar a
-        desconectar_eventos() antes — si no, el widget queda "zombi":
-        sigue registrado en el bus con su objeto Qt ya destruido, y la
-        próxima emisión de evento revienta con
-        RuntimeError: libshiboken...already deleted.
+            tree.conectar_handlers(self,
+                agregar_agrupador='_on_agregar_agrupador_extra',
+                agregar_concepto='_on_agregar_concepto_extra')
+
+        Si `target` no tiene el método (getattr devuelve None, como puede
+        pasar en PresupuestoPopup si algún día se abre sin ventana padre
+        completa), esa señal simplemente no se conecta — mismo
+        comportamiento defensivo que tenía el cableado manual con hasattr().
         """
-        from backend.database.event_bus import (
-            ConceptoActualizado, InsumoActualizado, ProyectoRecalculado,
-            NodoEliminado,
-        )
-        self._api = api
-        self._event_bus = event_bus
-        event_bus.suscribir(ConceptoActualizado, self._on_concepto_actualizado)
-        event_bus.suscribir(InsumoActualizado, self._on_insumo_actualizado)
-        event_bus.suscribir(NodoEliminado, self._on_nodo_eliminado)
-        event_bus.suscribir(ProyectoRecalculado, self._on_proyecto_recalculado)
-
-    def desconectar_eventos(self):
-        """Retira las suscripciones hechas por conectar_eventos().
-
-        Llamar SIEMPRE antes de quitar este widget de su pestaña (ver
-        HandlersMixin._cerrar_tab_widget() en handlers/__init__.py).
-        Idempotente: no falla si nunca se conectó o ya se desconectó.
-        """
-        bus = getattr(self, '_event_bus', None)
-        if bus is None:
-            return
-        from backend.database.event_bus import (
-            ConceptoActualizado, InsumoActualizado, ProyectoRecalculado,
-            NodoEliminado,
-        )
-        bus.desuscribir(ConceptoActualizado, self._on_concepto_actualizado)
-        bus.desuscribir(InsumoActualizado, self._on_insumo_actualizado)
-        bus.desuscribir(NodoEliminado, self._on_nodo_eliminado)
-        bus.desuscribir(ProyectoRecalculado, self._on_proyecto_recalculado)
-        self._event_bus = None
+        mapa = {**self._HANDLERS_ESTANDAR, **overrides}
+        for señal_nombre, metodo_nombre in mapa.items():
+            if not metodo_nombre:
+                continue
+            handler = getattr(target, metodo_nombre, None)
+            if handler is not None:
+                getattr(self, señal_nombre).connect(handler)
 
     def conceptos_seleccionados(self) -> list[int]:
         """IDs de concepto (estructura_presupuesto) implicados en la
@@ -575,7 +632,7 @@ class TablaArbol(TreeTableWidget):
                 try:
                     self.blockSignals(True)
                     try:
-                        nodos = self._api.presupuesto_arbol()
+                        nodos = self._api.presupuesto_arbol(extra=self._extra)
                         self.poblar(nodos)
                     finally:
                         self.blockSignals(False)
