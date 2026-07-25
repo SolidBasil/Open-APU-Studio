@@ -7,15 +7,6 @@ class FamiliaRepo(RepoBase):
 
     TABLA = "familias"
 
-    def update(self, registro_id: int, campos: dict) -> None:
-        return self._update(self.TABLA, registro_id, campos)
-
-    def insert(self, campos: dict) -> int:
-        return self._insert(self.TABLA, campos)
-
-    def delete(self, registro_id: int) -> None:
-        return self._delete(self.TABLA, registro_id)
-
     def todas(self):
         """Devuelve todas las familias activas ordenadas por nombre."""
         return self._lista("SELECT * FROM familias WHERE activo = 1 ORDER BY nombre")
@@ -28,15 +19,6 @@ class FamiliaRepo(RepoBase):
 class SubfamiliaRepo(RepoBase):
 
     TABLA = "subfamilias"
-
-    def update(self, registro_id: int, campos: dict) -> None:
-        return self._update(self.TABLA, registro_id, campos)
-
-    def insert(self, campos: dict) -> int:
-        return self._insert(self.TABLA, campos)
-
-    def delete(self, registro_id: int) -> None:
-        return self._delete(self.TABLA, registro_id)
 
     def por_familia(self, familia_id):
         """Devuelve las subfamilias activas de una familia."""

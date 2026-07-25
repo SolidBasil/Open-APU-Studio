@@ -25,15 +25,6 @@ class NodoRepo(RepoBase):
 
     TABLA = "estructura_presupuesto"
 
-    def update(self, registro_id: int, campos: dict) -> None:
-        return self._update(self.TABLA, registro_id, campos)
-
-    def insert(self, campos: dict) -> int:
-        return self._insert(self.TABLA, campos)
-
-    def delete(self, registro_id: int) -> None:
-        return self._delete(self.TABLA, registro_id)
-
     def todos(self, proyecto_id, tipo: str | None = None, extra: bool = False):
         """Devuelve todos los nodos activos del presupuesto (es_extra=0 por defecto).
         Con extra=True filtra nodos es_extra=1 (fuera de presupuesto).

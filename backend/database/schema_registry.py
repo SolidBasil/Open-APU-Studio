@@ -112,6 +112,7 @@ class SchemaRegistry:
             "total": FloatField(),
             "tipo": StringField(choices=("capitulo", "concepto")),
             "descripcion": StringField(),
+            "estado": IntField(min=0, max=3),
         },
         "apu_matrices": {
             "valor": FloatField(min=0),

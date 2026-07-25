@@ -238,6 +238,9 @@ class ApuMixin:
         elif column == 10:
             self._api.concepto_actualizar(nodo_id, notas_rapidas=item.text(column).strip() or None)
 
+    def _on_estado_cambiado(self, nodo_id: int, estado: int):
+        self._api.concepto_actualizar(nodo_id, estado=estado)
+
     @staticmethod
     def _es_pu(item, column) -> bool:
         """Detecta si la columna contiene 'PU' o 'PRECIO'."""

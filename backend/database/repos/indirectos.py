@@ -12,15 +12,6 @@ class IndirectoRepo(RepoBase):
 
     TABLA = "indirectos"
 
-    def update(self, registro_id: int, campos: dict) -> None:
-        return self._update(self.TABLA, registro_id, campos)
-
-    def insert(self, campos: dict) -> int:
-        return self._insert(self.TABLA, campos)
-
-    def delete(self, registro_id: int) -> None:
-        return self._delete(self.TABLA, registro_id)
-
     def todos(self, proyecto_id: int, tipo: str | None = None) -> list[dict]:
         """Lista indirectos de un proyecto, opcionalmente filtrados por tipo."""
         if tipo:

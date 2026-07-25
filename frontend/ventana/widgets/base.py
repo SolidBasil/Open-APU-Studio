@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QHeaderView, QApplication, QStyledItemDelegate, QMenu,
     QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QCheckBox,
     QLabel, QGroupBox, QScrollArea, QWidget, QDialogButtonBox,
+    QFrame, QPushButton,
 )
 from PySide6.QtCore import Qt, QByteArray, QPoint, QTimer
 from PySide6.QtGui import QBrush, QColor, QKeySequence, QPainter, QPen
@@ -210,6 +211,61 @@ SISTEMA_PREFIJOS = re.compile(rf"^[{re.escape(_PREFIJOS)}]\s?") if _PREFIJOS els
 def _menu_icon(nombre: str, size: int = 16):
     """Icono Lucide para acciones de menú contextual."""
     return _icono(nombre, size)
+
+
+def crear_header_dialogo(icono_nombre: str, titulo: str) -> QFrame:
+    """Header estándar de diálogo: ícono + título en una franja de 48px.
+    Ver DialogoAjustes/DialogoConfigImpresion — antes cada uno construía
+    esto a mano, byte por byte igual salvo el ícono y el texto."""
+    hdr = QFrame()
+    hdr.setObjectName("dlgAjustesHeader")
+    hdr.setFixedHeight(48)
+    row = QHBoxLayout(hdr)
+    row.setContentsMargins(16, 0, 16, 0)
+
+    icon = QLabel()
+    icon.setPixmap(_icono(icono_nombre, 18).pixmap(18, 18))
+    icon.setObjectName("dlgIcon")
+    row.addWidget(icon)
+
+    title = QLabel(titulo)
+    title.setObjectName("dlgHeader")
+    row.addWidget(title)
+    row.addStretch()
+    return hdr
+
+
+def crear_footer_dialogo(dialogo, texto_guardar: str = "Guardar",
+                         on_guardar=None, botones_extra=None) -> QFrame:
+    """Footer estándar de diálogo: [botones_extra...] ····· Cancelar Guardar.
+
+    `on_guardar`, si se da, se conecta al botón de guardar en vez de
+    `dialogo.accept` (para diálogos que necesitan validar antes de cerrar
+    — ver DialogoConfigImpresion._guardar()).
+    `botones_extra`: QPushButton ya armados, se insertan antes del
+    espaciador (ej. "Restablecer" en DialogoConfigImpresion).
+    """
+    footer = QFrame()
+    footer.setObjectName("dlgAjustesFooter")
+    row = QHBoxLayout(footer)
+    row.setContentsMargins(16, 10, 16, 10)
+
+    for btn in (botones_extra or []):
+        row.addWidget(btn)
+
+    row.addStretch()
+
+    btn_cancel = QPushButton("Cancelar")
+    btn_cancel.setObjectName("dlgCancel")
+    btn_cancel.clicked.connect(dialogo.reject)
+    row.addWidget(btn_cancel)
+
+    btn_save = QPushButton(texto_guardar)
+    btn_save.setObjectName("btnPrimario")
+    btn_save.clicked.connect(on_guardar or dialogo.accept)
+    row.addWidget(btn_save)
+
+    return footer
 
 
 # ── Constantes de conectores ──────────────────────────────────────

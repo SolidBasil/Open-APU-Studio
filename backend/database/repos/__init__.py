@@ -5,7 +5,7 @@ Repositorios de acceso a datos — Open APU Studio.
 
 Cada archivo agrupa repositorios por dominio funcional:
     base.py        — RepoBase (clase raíz)
-    proyecto.py    — ProyectoRepo, SobrecostosRepo
+    proyecto.py    — ProyectoRepo, FactoresSobrecostoRepo
     presupuesto.py — NodoRepo (capítulos y conceptos del árbol)
     insumos.py     — InsumoRepo
     apu.py         — ApuMatricesRepo
@@ -13,6 +13,10 @@ Cada archivo agrupa repositorios por dominio funcional:
     catalogos.py   — FamiliaRepo, SubfamiliaRepo
     explosion.py   — ExplosionRepo
     diagnostico.py — DiagnosticoRepo
+    historial.py   — HistorialRepo
+    indirectos.py  — IndirectoRepo
+    generador.py   — GeneradorRepo
+    formulas.py    — VariableFormulaRepo
 
 Todos los imports externos siguen usando:
     from backend.database.repos import InsumoRepo

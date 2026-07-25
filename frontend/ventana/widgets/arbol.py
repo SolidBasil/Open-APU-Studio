@@ -8,7 +8,7 @@ Uso:
 """
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QBrush
+from PySide6.QtGui import QColor, QBrush, QPixmap, QPainter, QIcon
 
 from PySide6.QtWidgets import QHeaderView
 
@@ -30,6 +30,7 @@ TIPO_ROLE      = Qt.ItemDataRole.UserRole + 12  # 'capitulo' | 'concepto', setea
                                                  # al crear la fila (NO se infiere leyendo texto)
 INSUMO_ROLE    = Qt.ItemDataRole.UserRole + 13  # insumo_id ligado (solo conceptos), para
                                                  # localizar filas afectadas por InsumoActualizado
+ESTADO_ROLE    = Qt.ItemDataRole.UserRole + 14  # estado entero (0-3) para semáforo
 EMPTY_ROLE     = Qt.ItemDataRole.UserRole + 60  # fila visual vacía (no existe en DB)
 
 # ── Configuración de columnas ─────────────────────────────────────
@@ -76,7 +77,7 @@ COLUMNAS_CATALOGO = [
     ColumnaDef(13, "Orden",       "Cálculo", favorita_default=False, visible_default=False, imprimible_default=False),
     ColumnaDef(14, "Fórmula",     "Cálculo", favorita_default=False, visible_default=False, imprimible_default=False),
 
-    ColumnaDef(9,  "Estado",      "Seguimiento", favorita_default=True,  visible_default=False, imprimible_default=False),
+    ColumnaDef(9,  "Estado",      "Seguimiento", favorita_default=True,  visible_default=True,  imprimible_default=False),
     ColumnaDef(10, "Notas",       "Seguimiento", favorita_default=True,  visible_default=True,  imprimible_default=False),
 
     ColumnaDef(11, "Creado",      "Auditoría", favorita_default=False, visible_default=False, imprimible_default=False),
@@ -153,6 +154,22 @@ def _num(v, decimals=2):
     return f"{v:,.{decimals}f}" if isinstance(v, (int, float)) else str(v)
 
 
+# ── Semáforo: icono de círculo coloreado ─────────────────────────-
+
+from backend.database.repos.presupuesto import ESTADO_COLOR
+
+def _crear_icono_estado(color_hex: str) -> QIcon:
+    pixmap = QPixmap(12, 12)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pixmap)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setBrush(QBrush(QColor(color_hex)))
+    p.setPen(Qt.PenStyle.NoPen)
+    p.drawEllipse(1, 1, 10, 10)
+    p.end()
+    return QIcon(pixmap)
+
+
 # ── Tabla jerárquica del presupuesto ──────────────────────────────
 
 class TablaArbol(TreeTableWidget):
@@ -166,6 +183,7 @@ class TablaArbol(TreeTableWidget):
     COLUMNAS_CATALOGO = COLUMNAS_CATALOGO
     rastrear_insumo = Signal(int)
     desglozar_nodo = Signal(int)
+    estado_cambiado = Signal(int, int)  # nodo_id, nuevo_estado
     EVENTOS_SUSCRITOS = {
         ConceptoActualizado: '_on_concepto_actualizado',
         InsumoActualizado:   '_on_insumo_actualizado',
@@ -192,6 +210,7 @@ class TablaArbol(TreeTableWidget):
         "agregar_agrupador":   "_on_agregar_agrupador",
         "agregar_concepto":    "_on_agregar_concepto",
         "eliminar_seleccion":  "_on_eliminar",
+        "estado_cambiado":     "_on_estado_cambiado",
     }
 
     def __init__(self, parent=None, header_key: str | None = None,
@@ -250,14 +269,34 @@ class TablaArbol(TreeTableWidget):
         return columnas
 
     def _on_item_clicked(self, item, column):
-        """Click en la fila vacía final → crea un concepto nuevo."""
+        """Click en fila vacía → crear concepto. Click en col 9 → ciclar semáforo."""
         if item.data(0, EMPTY_ROLE):
             self.agregar_concepto.emit()
+            return
+        if column == 9:
+            self._ciclar_estado(item)
+
+    def _ciclar_estado(self, item):
+        """Cicla el semáforo: 0→1→2→3→0 y persiste."""
+        nodo_id = item.data(0, ID_ROLE)
+        if nodo_id is None:
+            return
+        estado = item.data(0, ESTADO_ROLE)
+        if estado is None:
+            estado = 0
+        nuevo = (estado + 1) % 4
+        self.blockSignals(True)
+        item.setData(0, ESTADO_ROLE, nuevo)
+        item.setText(9, ESTADO_NOMBRE.get(nuevo, ""))
+        item.setIcon(9, _crear_icono_estado(ESTADO_COLOR.get(nuevo, "#808080")))
+        self.blockSignals(False)
+        self.estado_cambiado.emit(nodo_id, nuevo)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_F2:
             item = self.currentItem()
-            if item:
+            col = self.currentColumn()
+            if item and col in {3, 4, 5}:  # Clave, Descripción, Unidad — insumo-sourced
                 insumo_id = item.data(0, INSUMO_ROLE)
                 if insumo_id:
                     self.modificar_insumo.emit(insumo_id)
@@ -355,6 +394,9 @@ class TablaArbol(TreeTableWidget):
         item.setData(0, ID_ROLE, n.get("id"))
         item.setData(0, TIPO_ROLE, "capitulo")
         item.setIcon(0, icono("folder-open", 20))
+        _estado = n.get("estado", 0) or 0
+        item.setData(0, ESTADO_ROLE, _estado)
+        item.setIcon(9, _crear_icono_estado(ESTADO_COLOR.get(_estado, "#808080")))
         color = COLORES_NIVEL[min(nivel, len(COLORES_NIVEL) - 1)]
         brush = QBrush(QColor(color))
         f     = item.font(0)
@@ -378,6 +420,9 @@ class TablaArbol(TreeTableWidget):
         item.setData(0, TIPO_ROLE, "concepto")
         item.setData(0, INSUMO_ROLE, n.get("insumo_id"))
         item.setData(6, FORMULA_ROLE, n.get("formula") or "")
+        _estado = n.get("estado", 0) or 0
+        item.setData(0, ESTADO_ROLE, _estado)
+        item.setIcon(9, _crear_icono_estado(ESTADO_COLOR.get(_estado, "#808080")))
         tid = n.get("tipo_id")
         item.setIcon(0, icono(_ICONOS_TIPO_SVG.get(tid, "file-text"), 20, _COLOR_TIPO.get(tid)))
         return item

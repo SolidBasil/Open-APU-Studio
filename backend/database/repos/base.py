@@ -51,6 +51,24 @@ class RepoBase:
         ).fetchone()
         return dict(row) if row else None
 
+    # ── Escritura genérica sobre self.TABLA ─────────────────────────────
+    #
+    # update()/insert()/delete() aquí cubren el caso estándar (tabla con
+    # columna 'activo' para soft-delete). Los repos con reglas propias
+    # (whitelist de campos, hard delete, cascada a tablas hijas, etc.)
+    # sobreescriben el método puntual que necesiten — ver
+    # VariableFormulaRepo (hard delete) y GeneradorRepo.delete()
+    # (cascada a generador_renglones).
+
+    def update(self, registro_id: int, campos: dict[str, Any]) -> None:
+        self._update(self.TABLA, registro_id, campos)
+
+    def insert(self, campos: dict[str, Any]) -> int:
+        return self._insert(self.TABLA, campos)
+
+    def delete(self, registro_id: int) -> None:
+        self._delete(self.TABLA, registro_id)
+
     # ── Escritura (sin commit — la transacción la controla el servicio) ──
 
     def _update(self, tabla: str, registro_id: int, campos: dict[str, Any]) -> None:

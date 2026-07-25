@@ -7,15 +7,6 @@ class ProyectoRepo(RepoBase):
 
     TABLA = "proyectos"
 
-    def update(self, registro_id: int, campos: dict) -> None:
-        return self._update(self.TABLA, registro_id, campos)
-
-    def insert(self, campos: dict) -> int:
-        return self._insert(self.TABLA, campos)
-
-    def delete(self, registro_id: int) -> None:
-        return self._delete(self.TABLA, registro_id)
-
     def buscar(self, proyecto_id):
         """Busca un proyecto por su ID."""
         return self._uno("""
@@ -32,15 +23,6 @@ class ProyectoRepo(RepoBase):
 class FactoresSobrecostoRepo(RepoBase):
 
     TABLA = "factores_sobrecosto"
-
-    def update(self, registro_id: int, campos: dict) -> None:
-        return self._update(self.TABLA, registro_id, campos)
-
-    def insert(self, campos: dict) -> int:
-        return self._insert(self.TABLA, campos)
-
-    def delete(self, registro_id: int) -> None:
-        return self._delete(self.TABLA, registro_id)
 
     @staticmethod
     def _calcular_factor(pct_indirectos_campo=0, pct_indirectos_oficina=0,

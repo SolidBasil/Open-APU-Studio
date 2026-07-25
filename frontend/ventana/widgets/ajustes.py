@@ -16,11 +16,12 @@ Uso:
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-    QWidget, QFrame, QPushButton, QListWidget, QListWidgetItem,
+    QWidget, QFrame, QListWidget, QListWidgetItem,
     QStackedWidget,
 )
 
 from frontend.ventana.iconos import icono
+from frontend.ventana.widgets.base import crear_header_dialogo, crear_footer_dialogo
 
 
 # ── Categorías de la sidebar (nombre de icono Lucide, no emoji) ──
@@ -61,22 +62,7 @@ class DialogoAjustes(QDialog):
         layout.addWidget(self._build_footer())
 
     def _build_header(self) -> QFrame:
-        hdr = QFrame()
-        hdr.setObjectName("dlgAjustesHeader")
-        hdr.setFixedHeight(48)
-        row = QHBoxLayout(hdr)
-        row.setContentsMargins(16, 0, 16, 0)
-
-        icon = QLabel()
-        icon.setPixmap(icono("settings", 18).pixmap(18, 18))
-        icon.setObjectName("dlgIcon")
-        row.addWidget(icon)
-
-        title = QLabel("Ajustes")
-        title.setObjectName("dlgHeader")
-        row.addWidget(title)
-        row.addStretch()
-        return hdr
+        return crear_header_dialogo("settings", "Ajustes")
 
     def _build_sep(self) -> QFrame:
         sep = QFrame()
@@ -171,21 +157,4 @@ class DialogoAjustes(QDialog):
     # ── Footer ──────────────────────────────────────────────────
 
     def _build_footer(self) -> QFrame:
-        footer = QFrame()
-        footer.setObjectName("dlgAjustesFooter")
-        row = QHBoxLayout(footer)
-        row.setContentsMargins(16, 10, 16, 10)
-
-        row.addStretch()
-
-        btn_cancel = QPushButton("Cancelar")
-        btn_cancel.setObjectName("dlgCancel")
-        btn_cancel.clicked.connect(self.reject)
-        row.addWidget(btn_cancel)
-
-        btn_save = QPushButton("Guardar")
-        btn_save.setObjectName("btnPrimario")
-        btn_save.clicked.connect(self.accept)
-        row.addWidget(btn_save)
-
-        return footer
+        return crear_footer_dialogo(self)

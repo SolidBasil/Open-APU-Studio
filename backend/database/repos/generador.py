@@ -30,17 +30,6 @@ class GeneradorRepo(RepoBase):
             (proyecto_id, concepto_id),
         )
 
-    def buscar(self, generador_id: int) -> dict | None:
-        return self._uno(
-            "SELECT * FROM generadores WHERE id = ?", (generador_id,)
-        )
-
-    def insert(self, campos: dict[str, Any]) -> int:
-        return self._insert("generadores", campos)
-
-    def update(self, registro_id: int, campos: dict[str, Any]) -> None:
-        self._update("generadores", registro_id, campos)
-
     def delete(self, registro_id: int) -> None:
         self._update("generadores", registro_id, {"activo": 0})
         # Desactivar renglones hijos

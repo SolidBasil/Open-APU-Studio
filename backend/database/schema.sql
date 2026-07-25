@@ -516,7 +516,7 @@ INSERT OR IGNORE INTO schema_version (version, descripcion) VALUES
 CREATE TABLE IF NOT EXISTS generadores (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     proyecto_id     INTEGER NOT NULL REFERENCES proyectos(id) ON DELETE CASCADE,
-    concepto_id     INTEGER REFERENCES estructura_presupuesto(id),  -- NULL = suelto
+    concepto_id     INTEGER REFERENCES estructura_presupuesto(id),  -- NULL = suelto, UNIQUE = 1 por concepto
     nombre          TEXT    NOT NULL DEFAULT '',
     unidad          TEXT,
     cantidad_total  REAL    NOT NULL DEFAULT 0.0,   -- SUM(renglones activos)
@@ -525,7 +525,8 @@ CREATE TABLE IF NOT EXISTS generadores (
     creado_por      INTEGER NOT NULL DEFAULT 1 REFERENCES usuarios(id),
     creado_en       TEXT    NOT NULL DEFAULT (datetime('now')),
     modificado_por  INTEGER REFERENCES usuarios(id),
-    modificado_en   TEXT    NOT NULL DEFAULT (datetime('now'))
+    modificado_en   TEXT    NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(concepto_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_gen_proyecto ON generadores(proyecto_id);

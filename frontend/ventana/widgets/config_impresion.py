@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
     QRadioButton, QButtonGroup, QDoubleSpinBox, QFormLayout, QScrollArea,
 )
 
-from frontend.ventana.iconos import icono
+from frontend.ventana.widgets.base import crear_header_dialogo, crear_footer_dialogo
 from backend.database.db import Config
 
 CONFIG_KEY = "impresion_presupuesto"
@@ -91,22 +91,7 @@ class DialogoConfigImpresion(QDialog):
         layout.addWidget(self._build_footer())
 
     def _build_header(self) -> QFrame:
-        hdr = QFrame()
-        hdr.setObjectName("dlgAjustesHeader")
-        hdr.setFixedHeight(48)
-        row = QHBoxLayout(hdr)
-        row.setContentsMargins(16, 0, 16, 0)
-
-        icon = QLabel()
-        icon.setPixmap(icono("printer", 18).pixmap(18, 18))
-        icon.setObjectName("dlgIcon")
-        row.addWidget(icon)
-
-        title = QLabel("Configuración de impresión")
-        title.setObjectName("dlgHeader")
-        row.addWidget(title)
-        row.addStretch()
-        return hdr
+        return crear_header_dialogo("printer", "Configuración de impresión")
 
     def _build_sep(self) -> QFrame:
         sep = QFrame()
@@ -239,28 +224,10 @@ class DialogoConfigImpresion(QDialog):
         return spin
 
     def _build_footer(self) -> QFrame:
-        footer = QFrame()
-        footer.setObjectName("dlgAjustesFooter")
-        row = QHBoxLayout(footer)
-        row.setContentsMargins(16, 10, 16, 10)
-
         btn_restablecer = QPushButton("Restablecer")
         btn_restablecer.clicked.connect(self._restablecer)
-        row.addWidget(btn_restablecer)
-
-        row.addStretch()
-
-        btn_cancel = QPushButton("Cancelar")
-        btn_cancel.setObjectName("dlgCancel")
-        btn_cancel.clicked.connect(self.reject)
-        row.addWidget(btn_cancel)
-
-        btn_save = QPushButton("Guardar")
-        btn_save.setObjectName("btnPrimario")
-        btn_save.clicked.connect(self._guardar)
-        row.addWidget(btn_save)
-
-        return footer
+        return crear_footer_dialogo(self, on_guardar=self._guardar,
+                                    botones_extra=[btn_restablecer])
 
     # ── Acciones ─────────────────────────────────────────────────
 

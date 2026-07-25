@@ -11,15 +11,6 @@ class InsumoRepo(RepoBase):
 
     TABLA = "insumos"
 
-    def update(self, registro_id: int, campos: dict) -> None:
-        return self._update(self.TABLA, registro_id, campos)
-
-    def insert(self, campos: dict) -> int:
-        return self._insert(self.TABLA, campos)
-
-    def delete(self, registro_id: int) -> None:
-        return self._delete(self.TABLA, registro_id)
-
     # Base SELECT reutilizada en todos los métodos de consulta.
     # Siempre agregar WHERE después de este bloque.
     #
