@@ -1,0 +1,492 @@
+{
+  "backend/__init__.py": {
+    "mtime": 1783250850.0,
+    "ast_hash": "b840938e14b834f558b004efbde2935a",
+    "semantic_hash": "b840938e14b834f558b004efbde2935a"
+  },
+  "backend/cad/__init__.py": {
+    "mtime": 1784081324.0,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "backend/cad/lector_dxf.py": {
+    "mtime": 1784950104.0,
+    "ast_hash": "8e57449503bed35d732cb9f7cb8a15f8",
+    "semantic_hash": "8e57449503bed35d732cb9f7cb8a15f8"
+  },
+  "backend/database/__init__.py": {
+    "mtime": 1783250850.0,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "backend/database/core.py": {
+    "mtime": 1783821802.0,
+    "ast_hash": "6691aa70382cffde396cb8f54c693996",
+    "semantic_hash": "6691aa70382cffde396cb8f54c693996"
+  },
+  "backend/database/db.py": {
+    "mtime": 1784897126.0,
+    "ast_hash": "bae8704fe7c07390604026b675156c69",
+    "semantic_hash": "bae8704fe7c07390604026b675156c69"
+  },
+  "backend/database/event_bus.py": {
+    "mtime": 1784895476.0,
+    "ast_hash": "02c20eaa7bb45452d6f4cd4f7a05d7cb",
+    "semantic_hash": "02c20eaa7bb45452d6f4cd4f7a05d7cb"
+  },
+  "backend/database/exceptions.py": {
+    "mtime": 1784950074.0,
+    "ast_hash": "37defd18b7fb2a8d31438e39dc3572b2",
+    "semantic_hash": "37defd18b7fb2a8d31438e39dc3572b2"
+  },
+  "backend/database/hoja_bindings.py": {
+    "mtime": 1784950180.0,
+    "ast_hash": "3505870c8362b45054d9976160481338",
+    "semantic_hash": "3505870c8362b45054d9976160481338"
+  },
+  "backend/database/repos/__init__.py": {
+    "mtime": 1784596450.0,
+    "ast_hash": "ab6fb48b16bce8d92047f18492e7e59a",
+    "semantic_hash": "ab6fb48b16bce8d92047f18492e7e59a"
+  },
+  "backend/database/repos/apu.py": {
+    "mtime": 1784969334.0,
+    "ast_hash": "0ab47f49e70e9351f374536dc6c94900",
+    "semantic_hash": "0ab47f49e70e9351f374536dc6c94900"
+  },
+  "backend/database/repos/base.py": {
+    "mtime": 1784969318.0,
+    "ast_hash": "8bfe24766c2d53455344fb2268ef6738",
+    "semantic_hash": "8bfe24766c2d53455344fb2268ef6738"
+  },
+  "backend/database/repos/catalogos.py": {
+    "mtime": 1784969346.0,
+    "ast_hash": "a1a53baa24e0eea45a31ad7eb8e6f4fe",
+    "semantic_hash": "a1a53baa24e0eea45a31ad7eb8e6f4fe"
+  },
+  "backend/database/repos/diagnostico.py": {
+    "mtime": 1783744338.0,
+    "ast_hash": "fb110bf83c2dcc4da9705ccd8ee5e7c5",
+    "semantic_hash": "fb110bf83c2dcc4da9705ccd8ee5e7c5"
+  },
+  "backend/database/repos/explosion.py": {
+    "mtime": 1784895476.0,
+    "ast_hash": "2e1f23aaa57b2ef530bfb675807eddf6",
+    "semantic_hash": "2e1f23aaa57b2ef530bfb675807eddf6"
+  },
+  "backend/database/repos/formulas.py": {
+    "mtime": 1784611556.0,
+    "ast_hash": "ba30790135afe9889bfaf707d2b3d36d",
+    "semantic_hash": "ba30790135afe9889bfaf707d2b3d36d"
+  },
+  "backend/database/repos/generador.py": {
+    "mtime": 1784969396.0,
+    "ast_hash": "378b4c9b0a4d11dfbd99bbc2d0b9878b",
+    "semantic_hash": "378b4c9b0a4d11dfbd99bbc2d0b9878b"
+  },
+  "backend/database/repos/historial.py": {
+    "mtime": 1783821772.0,
+    "ast_hash": "4340ef9175b63e9701cb7147329df9e1",
+    "semantic_hash": "4340ef9175b63e9701cb7147329df9e1"
+  },
+  "backend/database/repos/indirectos.py": {
+    "mtime": 1784969356.0,
+    "ast_hash": "a21da456d868a74da9180c57797e6863",
+    "semantic_hash": "a21da456d868a74da9180c57797e6863"
+  },
+  "backend/database/repos/insumos.py": {
+    "mtime": 1784969360.0,
+    "ast_hash": "52ddba49cd043bdd3c3b97167968d47f",
+    "semantic_hash": "52ddba49cd043bdd3c3b97167968d47f"
+  },
+  "backend/database/repos/presupuesto.py": {
+    "mtime": 1784969364.0,
+    "ast_hash": "9a729edd6eaf3b6be841bb145f76ef9e",
+    "semantic_hash": "9a729edd6eaf3b6be841bb145f76ef9e"
+  },
+  "backend/database/repos/proyecto.py": {
+    "mtime": 1784969374.0,
+    "ast_hash": "6e0ac4a77fce4e8a5ae25eff6b7975ce",
+    "semantic_hash": "6e0ac4a77fce4e8a5ae25eff6b7975ce"
+  },
+  "backend/database/repos/recalculo.py": {
+    "mtime": 1784459576.0,
+    "ast_hash": "b1dadb2ad4f1cc43f2c58c5fc7fc3a59",
+    "semantic_hash": "b1dadb2ad4f1cc43f2c58c5fc7fc3a59"
+  },
+  "backend/database/schema.sql": {
+    "mtime": 1784948513.0623276,
+    "ast_hash": "2cf208420e25b61b5d3deb2924b4bf6f",
+    "semantic_hash": "2cf208420e25b61b5d3deb2924b4bf6f"
+  },
+  "backend/database/schema_registry.py": {
+    "mtime": 1784596460.0,
+    "ast_hash": "4a25e983aedad938a5376500fa3c1618",
+    "semantic_hash": "4a25e983aedad938a5376500fa3c1618"
+  },
+  "backend/database/services/__init__.py": {
+    "mtime": 1783250850.0,
+    "ast_hash": "199e40827703e6004a29c7dff4b5364d",
+    "semantic_hash": "199e40827703e6004a29c7dff4b5364d"
+  },
+  "backend/database/services/data_service.py": {
+    "mtime": 1784895476.0,
+    "ast_hash": "1e90d9157923ea9a0cfbf97a18e6f376",
+    "semantic_hash": "1e90d9157923ea9a0cfbf97a18e6f376"
+  },
+  "backend/database/services/repository_registry.py": {
+    "mtime": 1784596454.0,
+    "ast_hash": "d04d3ab6aae8c8c9b532c69c0bc38fda",
+    "semantic_hash": "d04d3ab6aae8c8c9b532c69c0bc38fda"
+  },
+  "backend/datos_usuario/config.json": {
+    "mtime": 1784947112.586094,
+    "ast_hash": "25034e59b4d00a2f24fae9bbc0a5c37f",
+    "semantic_hash": "25034e59b4d00a2f24fae9bbc0a5c37f"
+  },
+  "backend/exportar/__init__.py": {
+    "mtime": 1783250850.0,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "backend/exportar/cdx.py": {
+    "mtime": 1784895476.0,
+    "ast_hash": "3873f10bb35b09d2920b239ac8ac5f2e",
+    "semantic_hash": "3873f10bb35b09d2920b239ac8ac5f2e"
+  },
+  "backend/exportar/exportar.py": {
+    "mtime": 1783883530.0,
+    "ast_hash": "c7a7379b8b20eea6e9101cb82bee10ef",
+    "semantic_hash": "c7a7379b8b20eea6e9101cb82bee10ef"
+  },
+  "backend/exportar/exportar_plantillas.py": {
+    "mtime": 1784895476.0,
+    "ast_hash": "f88887acf7284b1830bb116a00661aeb",
+    "semantic_hash": "f88887acf7284b1830bb116a00661aeb"
+  },
+  "backend/exportar/informe_pdf/__init__.py": {
+    "mtime": 1783250850.0,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "backend/exportar/informe_pdf/latex.py": {
+    "mtime": 1784895476.0,
+    "ast_hash": "10f466eb3b6a22820107373079ed217a",
+    "semantic_hash": "10f466eb3b6a22820107373079ed217a"
+  },
+  "backend/formulas.py": {
+    "mtime": 1784695994.0,
+    "ast_hash": "21633bc9666f0daa839377204dd7ab70",
+    "semantic_hash": "21633bc9666f0daa839377204dd7ab70"
+  },
+  "backend/importar/__init__.py": {
+    "mtime": 1783250850.0,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "backend/importar/importar.py": {
+    "mtime": 1784895658.0,
+    "ast_hash": "0b912ad6020a5e0369f362a29d7a4fa5",
+    "semantic_hash": "0b912ad6020a5e0369f362a29d7a4fa5"
+  },
+  "backend/importar/schemas_opus.json": {
+    "mtime": 1783250850.0,
+    "ast_hash": "f07ff2ddf9205c7398f9535d743a5eb0",
+    "semantic_hash": "f07ff2ddf9205c7398f9535d743a5eb0"
+  },
+  "frontend/__init__.py": {
+    "mtime": 1783250850.0,
+    "ast_hash": "ed79abedf24fb9bb1b44c80888e1749d",
+    "semantic_hash": "ed79abedf24fb9bb1b44c80888e1749d"
+  },
+  "frontend/temas/__init__.py": {
+    "mtime": 1783250850.0,
+    "ast_hash": "a5f2697336392ce12fe24940ee1c68dc",
+    "semantic_hash": "a5f2697336392ce12fe24940ee1c68dc"
+  },
+  "frontend/temas/temas.py": {
+    "mtime": 1783250850.0,
+    "ast_hash": "1f36bdc480602267c36463dd11ccd089",
+    "semantic_hash": "1f36bdc480602267c36463dd11ccd089"
+  },
+  "frontend/ventana/__init__.py": {
+    "mtime": 1783250850.0,
+    "ast_hash": "65f0a0bf639d0777d175df9e5b74dd10",
+    "semantic_hash": "65f0a0bf639d0777d175df9e5b74dd10"
+  },
+  "frontend/ventana/api.py": {
+    "mtime": 1784950148.0,
+    "ast_hash": "3c34a817b31e6ea8641e09a4cdfc4b85",
+    "semantic_hash": "3c34a817b31e6ea8641e09a4cdfc4b85"
+  },
+  "frontend/ventana/api_backends.py": {
+    "mtime": 1784513662.0,
+    "ast_hash": "0fb3250a04dfae7f56a4098155ddb4e5",
+    "semantic_hash": "0fb3250a04dfae7f56a4098155ddb4e5"
+  },
+  "frontend/ventana/api_cliente.py": {
+    "mtime": 1783746882.0,
+    "ast_hash": "d9caa817c90b6abb547b24af2ed6aca8",
+    "semantic_hash": "d9caa817c90b6abb547b24af2ed6aca8"
+  },
+  "frontend/ventana/cad/__init__.py": {
+    "mtime": 1784081368.0,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "frontend/ventana/cad/agregacion.py": {
+    "mtime": 1784084324.0,
+    "ast_hash": "7d5d9125cadec8a9f72ea40d267bba76",
+    "semantic_hash": "7d5d9125cadec8a9f72ea40d267bba76"
+  },
+  "frontend/ventana/cad/auto_quantify.py": {
+    "mtime": 1784084312.0,
+    "ast_hash": "f25da123bef6bbe9f6ffffabb45d08e9",
+    "semantic_hash": "f25da123bef6bbe9f6ffffabb45d08e9"
+  },
+  "frontend/ventana/cad/busqueda_texto.py": {
+    "mtime": 1784084476.0,
+    "ast_hash": "8aac2c091b44d6e7f274416444c7cbcf",
+    "semantic_hash": "8aac2c091b44d6e7f274416444c7cbcf"
+  },
+  "frontend/ventana/cad/calibracion.py": {
+    "mtime": 1784081422.0,
+    "ast_hash": "96375a0c271e5d899b52d6da1bcd0d8b",
+    "semantic_hash": "96375a0c271e5d899b52d6da1bcd0d8b"
+  },
+  "frontend/ventana/cad/exportar_excel.py": {
+    "mtime": 1784084452.0,
+    "ast_hash": "629fd8a045f01b2128ca633ebb2ec180",
+    "semantic_hash": "629fd8a045f01b2128ca633ebb2ec180"
+  },
+  "frontend/ventana/cad/exportar_pdf.py": {
+    "mtime": 1784084406.0,
+    "ast_hash": "e8a4d2e27975141a06acbdb02e0cf930",
+    "semantic_hash": "e8a4d2e27975141a06acbdb02e0cf930"
+  },
+  "frontend/ventana/cad/filtro_nombres.py": {
+    "mtime": 1784085048.0,
+    "ast_hash": "c51cd4e16e4781e1b85ffec4b89d9336",
+    "semantic_hash": "c51cd4e16e4781e1b85ffec4b89d9336"
+  },
+  "frontend/ventana/cad/medicion.py": {
+    "mtime": 1784081444.0,
+    "ast_hash": "6a67f4e6dc4d47e52211028f63251bf3",
+    "semantic_hash": "6a67f4e6dc4d47e52211028f63251bf3"
+  },
+  "frontend/ventana/cad/ortho.py": {
+    "mtime": 1784084286.0,
+    "ast_hash": "61a5fd536eabbe74789cf03cb4cd1b41",
+    "semantic_hash": "61a5fd536eabbe74789cf03cb4cd1b41"
+  },
+  "frontend/ventana/cad/panel_capas.py": {
+    "mtime": 1784417374.0,
+    "ast_hash": "5a15a4e3df3b0b431ffce8fcf89a3b68",
+    "semantic_hash": "5a15a4e3df3b0b431ffce8fcf89a3b68"
+  },
+  "frontend/ventana/cad/undo_stack.py": {
+    "mtime": 1784084338.0,
+    "ast_hash": "dee3ec1cbc3f248de8cc1898c4b0184d",
+    "semantic_hash": "dee3ec1cbc3f248de8cc1898c4b0184d"
+  },
+  "frontend/ventana/cad/visor.py": {
+    "mtime": 1784895476.0,
+    "ast_hash": "98ca34741a76bbf09024b08cf2faab27",
+    "semantic_hash": "98ca34741a76bbf09024b08cf2faab27"
+  },
+  "frontend/ventana/colores.py": {
+    "mtime": 1783822676.0,
+    "ast_hash": "b443faf9eca17ba5a6058eb0e98b3890",
+    "semantic_hash": "b443faf9eca17ba5a6058eb0e98b3890"
+  },
+  "frontend/ventana/iconos.py": {
+    "mtime": 1784895520.0,
+    "ast_hash": "360f593df383545ccb27c0b80629bb4f",
+    "semantic_hash": "360f593df383545ccb27c0b80629bb4f"
+  },
+  "frontend/ventana/mixins/__init__.py": {
+    "mtime": 1784457692.0,
+    "ast_hash": "1e1d781cef9cde9b0750d42d71a7082e",
+    "semantic_hash": "1e1d781cef9cde9b0750d42d71a7082e"
+  },
+  "frontend/ventana/mixins/apu.py": {
+    "mtime": 1784895476.0,
+    "ast_hash": "6f6f9f6b444557b6ade5c7336c001fbf",
+    "semantic_hash": "6f6f9f6b444557b6ade5c7336c001fbf"
+  },
+  "frontend/ventana/mixins/diag_dialogs.py": {
+    "mtime": 1784895476.0,
+    "ast_hash": "c6ef4d0aa95743a9ddc2dbb41cb71e26",
+    "semantic_hash": "c6ef4d0aa95743a9ddc2dbb41cb71e26"
+  },
+  "frontend/ventana/mixins/explosion.py": {
+    "mtime": 1784895686.0,
+    "ast_hash": "54a1e9495b894cd696eb008526f91e6e",
+    "semantic_hash": "54a1e9495b894cd696eb008526f91e6e"
+  },
+  "frontend/ventana/mixins/generador.py": {
+    "mtime": 1784895476.0,
+    "ast_hash": "81831386825be72851eba704ce0e354b",
+    "semantic_hash": "81831386825be72851eba704ce0e354b"
+  },
+  "frontend/ventana/mixins/gestion_proyectos.py": {
+    "mtime": 1784897236.0,
+    "ast_hash": "a08c4cb360aafc5395ef455acf36ea37",
+    "semantic_hash": "a08c4cb360aafc5395ef455acf36ea37"
+  },
+  "frontend/ventana/mixins/informes.py": {
+    "mtime": 1784698406.0,
+    "ast_hash": "ff93e2601f852e2deb526eb05498959a",
+    "semantic_hash": "ff93e2601f852e2deb526eb05498959a"
+  },
+  "frontend/ventana/mixins/navegacion.py": {
+    "mtime": 1784895476.0,
+    "ast_hash": "ae1704e563ce647842831474eeb82c86",
+    "semantic_hash": "ae1704e563ce647842831474eeb82c86"
+  },
+  "frontend/ventana/mixins/paneles.py": {
+    "mtime": 1784931290.0,
+    "ast_hash": "95eefe6194567e0545babc1e864065c7",
+    "semantic_hash": "95eefe6194567e0545babc1e864065c7"
+  },
+  "frontend/ventana/mixins/rastreo.py": {
+    "mtime": 1784895668.0,
+    "ast_hash": "d14d1205fc7147f0e4a59114a034a90a",
+    "semantic_hash": "d14d1205fc7147f0e4a59114a034a90a"
+  },
+  "frontend/ventana/mixins/toolbar.py": {
+    "mtime": 1784895476.0,
+    "ast_hash": "2aa26f5723ed413a030eaddf46f00c3c",
+    "semantic_hash": "2aa26f5723ed413a030eaddf46f00c3c"
+  },
+  "frontend/ventana/tipos_insumo.py": {
+    "mtime": 1784519026.0,
+    "ast_hash": "e62967a64292353f37c9398e54f9bf2c",
+    "semantic_hash": "e62967a64292353f37c9398e54f9bf2c"
+  },
+  "frontend/ventana/toolbar_estructural.py": {
+    "mtime": 1784569280.0,
+    "ast_hash": "c1ead6a395047f63809a9f6f38ea7689",
+    "semantic_hash": "c1ead6a395047f63809a9f6f38ea7689"
+  },
+  "frontend/ventana/ventana.py": {
+    "mtime": 1784895476.0,
+    "ast_hash": "708c1827f11cfa68c50e70c3752dde83",
+    "semantic_hash": "708c1827f11cfa68c50e70c3752dde83"
+  },
+  "frontend/ventana/widgets/__init__.py": {
+    "mtime": 1783250850.0,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "frontend/ventana/widgets/ajustes.py": {
+    "mtime": 1784969472.0,
+    "ast_hash": "5e8125469760456065451cc922ad7dc6",
+    "semantic_hash": "5e8125469760456065451cc922ad7dc6"
+  },
+  "frontend/ventana/widgets/apu.py": {
+    "mtime": 1784897582.0,
+    "ast_hash": "d1b28f7058e2a08450fec7600091356e",
+    "semantic_hash": "d1b28f7058e2a08450fec7600091356e"
+  },
+  "frontend/ventana/widgets/arbol.py": {
+    "mtime": 1784946786.6058252,
+    "ast_hash": "986c8ebd3db2fbd237a142eb7e9e6143",
+    "semantic_hash": "986c8ebd3db2fbd237a142eb7e9e6143"
+  },
+  "frontend/ventana/widgets/base.py": {
+    "mtime": 1784969444.0,
+    "ast_hash": "4d238e412ae41d2a23a8d32699db76af",
+    "semantic_hash": "4d238e412ae41d2a23a8d32699db76af"
+  },
+  "frontend/ventana/widgets/config_impresion.py": {
+    "mtime": 1784969594.0,
+    "ast_hash": "eb01ad9c0c73ff2a5f7d1be7c024954b",
+    "semantic_hash": "eb01ad9c0c73ff2a5f7d1be7c024954b"
+  },
+  "frontend/ventana/widgets/dialogs.py": {
+    "mtime": 1784897252.0,
+    "ast_hash": "57f6ce14b1ef031e0599f2a1730caf9f",
+    "semantic_hash": "57f6ce14b1ef031e0599f2a1730caf9f"
+  },
+  "frontend/ventana/widgets/explosion.py": {
+    "mtime": 1784895476.0,
+    "ast_hash": "256d2876c2720263a32f5e19018e337a",
+    "semantic_hash": "256d2876c2720263a32f5e19018e337a"
+  },
+  "frontend/ventana/widgets/generador.py": {
+    "mtime": 1784949570.0,
+    "ast_hash": "d7bd841245e5d7d1dc766ad85b96d839",
+    "semantic_hash": "d7bd841245e5d7d1dc766ad85b96d839"
+  },
+  "frontend/ventana/widgets/insumos.py": {
+    "mtime": 1784949564.0,
+    "ast_hash": "6b28868efe60c9b593cfc4c1d650fb10",
+    "semantic_hash": "6b28868efe60c9b593cfc4c1d650fb10"
+  },
+  "frontend/ventana/widgets/presupuesto_popup.py": {
+    "mtime": 1784931296.0,
+    "ast_hash": "c0f48aff8b749965551c285b774af93e",
+    "semantic_hash": "c0f48aff8b749965551c285b774af93e"
+  },
+  "frontend/ventana/widgets/sidebar_estructura.py": {
+    "mtime": 1784496536.0,
+    "ast_hash": "3bbe2e655c059eb5ddfa1b88b0897dcd",
+    "semantic_hash": "3bbe2e655c059eb5ddfa1b88b0897dcd"
+  },
+  "frontend/ventana/widgets/viewport3d.py": {
+    "mtime": 1783074110.0,
+    "ast_hash": "69cbc26309e8511d594672d009b3770b",
+    "semantic_hash": "69cbc26309e8511d594672d009b3770b"
+  },
+  "frontend/ventana/ws_client.py": {
+    "mtime": 1783746624.0,
+    "ast_hash": "3a4673b87e9ae649c20b44844577c5b2",
+    "semantic_hash": "3a4673b87e9ae649c20b44844577c5b2"
+  },
+  "main.py": {
+    "mtime": 1784895476.0,
+    "ast_hash": "a36785a1234767d1462ffbd891cf9065",
+    "semantic_hash": "a36785a1234767d1462ffbd891cf9065"
+  },
+  "opencode.json": {
+    "mtime": 1783250850.0,
+    "ast_hash": "8070e35e1b25263a0a548b118f72f2e1",
+    "semantic_hash": "8070e35e1b25263a0a548b118f72f2e1"
+  },
+  "server/__init__.py": {
+    "mtime": 1783745232.0,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "server/servidor.py": {
+    "mtime": 1784895476.0,
+    "ast_hash": "2476637441b21806083061cbd74c4352",
+    "semantic_hash": "2476637441b21806083061cbd74c4352"
+  },
+  "skills-lock.json": {
+    "mtime": 1783250850.0,
+    "ast_hash": "8017c85c811492136e97fe36206bf513",
+    "semantic_hash": "8017c85c811492136e97fe36206bf513"
+  },
+  "tests/smoke_api_backends.py": {
+    "mtime": 1784512172.0,
+    "ast_hash": "d838afc5de3b22360a7b2e092a1d7950",
+    "semantic_hash": "d838afc5de3b22360a7b2e092a1d7950"
+  },
+  "tests/smoke_formulas.py": {
+    "mtime": 1784895476.0,
+    "ast_hash": "3c835ca1308c9e278b278461afbe1e5a",
+    "semantic_hash": "3c835ca1308c9e278b278461afbe1e5a"
+  },
+  "tests/smoke_formulas_api.py": {
+    "mtime": 1784895696.0,
+    "ast_hash": "030acee3a991d5df3473355d6ce2497b",
+    "semantic_hash": "030acee3a991d5df3473355d6ce2497b"
+  },
+  "tests/importar excel/importar_amazona.py": {
+    "mtime": 1784844176.2947407,
+    "ast_hash": "d77813579838c8f1bb70a864b508e2d9",
+    "semantic_hash": "d77813579838c8f1bb70a864b508e2d9"
+  }
+}

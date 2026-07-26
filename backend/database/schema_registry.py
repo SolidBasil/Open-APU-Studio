@@ -17,6 +17,12 @@ from backend.database.exceptions import ValidationError  # noqa: F401 — re-exp
 # el código que hace `from backend.database.schema_registry import ValidationError`
 # sigue funcionando; la definición real vive en exceptions.py (Fase 4b).
 
+# Tasa de IVA por defecto en México. Coincide con schema.sql
+# (columna proyectos.iva_porcentaje DEFAULT 16.0) — si la tasa cambia,
+# este es el único lugar en Python que hay que tocar; antes estaba
+# repetido como número mágico en exportar.py, latex.py (x2) e importar.py.
+IVA_PORCENTAJE_DEFAULT = 16.0
+
 
 # ── Field types ────────────────────────────────────────────────────
 
@@ -112,7 +118,6 @@ class SchemaRegistry:
             "total": FloatField(),
             "tipo": StringField(choices=("capitulo", "concepto")),
             "descripcion": StringField(),
-            "estado": IntField(min=0, max=3),
         },
         "apu_matrices": {
             "valor": FloatField(min=0),

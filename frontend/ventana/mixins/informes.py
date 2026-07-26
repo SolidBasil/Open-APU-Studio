@@ -31,11 +31,12 @@ class InformesMixin:
         ids_seleccionados con contenido  → solo esos capítulos/conceptos
         (ver backend/exportar/informe_pdf/latex.py::filtrar_por_seleccion).
         """
-        from PySide6.QtWidgets import QMessageBox
+        from PySide6.QtWidgets import QMessageBox, QApplication
         from PySide6.QtGui import QDesktopServices
         from PySide6.QtCore import QUrl
         from backend.exportar.informe_pdf.latex import ReportePresupuesto, compilar_pdf
         from backend.database.db import Rutas
+        from frontend.ventana.ui_utils import cursor_espera
         from pathlib import Path
 
         if not self._api:
@@ -56,15 +57,19 @@ class InformesMixin:
 
         sufijo = "_seleccion" if ids_seleccionados else ""
         tex_path = Rutas.reportes() / f"{nombre}_presupuesto{sufijo}.tex"
-        ReportePresupuesto(
-            nombre, nodos, columnas=columnas, ids_seleccionados=ids_seleccionados,
-            margenes={"sup": cfg["margen_sup_cm"], "inf": cfg["margen_inf_cm"],
-                      "izq": cfg["margen_izq_cm"], "der": cfg["margen_der_cm"]},
-            orientacion=cfg["orientacion"],
-            anchos_cm=cfg["anchos_cm"],
-        ).generar(tex_path)
 
-        pdf = compilar_pdf(tex_path)
+        self._sb.showMessage("Generando reporte…")
+        QApplication.processEvents()
+        with cursor_espera():
+            ReportePresupuesto(
+                nombre, nodos, columnas=columnas, ids_seleccionados=ids_seleccionados,
+                margenes={"sup": cfg["margen_sup_cm"], "inf": cfg["margen_inf_cm"],
+                          "izq": cfg["margen_izq_cm"], "der": cfg["margen_der_cm"]},
+                orientacion=cfg["orientacion"],
+                anchos_cm=cfg["anchos_cm"],
+            ).generar(tex_path)
+
+            pdf = compilar_pdf(tex_path)
         if pdf:
             self._sb.showMessage(f"PDF generado: {pdf}", 5000)
             QDesktopServices.openUrl(QUrl.fromLocalFile(pdf))
@@ -82,8 +87,9 @@ class InformesMixin:
 
     def _on_compilar_pdf(self):
         """Compila el .tex seleccionado a PDF con pdflatex."""
-        from PySide6.QtWidgets import QFileDialog, QMessageBox
+        from PySide6.QtWidgets import QFileDialog, QMessageBox, QApplication
         from backend.exportar.informe_pdf.latex import compilar_pdf
+        from frontend.ventana.ui_utils import cursor_espera
 
         path, _ = QFileDialog.getOpenFileName(
             self, "Seleccionar archivo .tex",
@@ -92,7 +98,10 @@ class InformesMixin:
         if not path:
             return
 
-        pdf = compilar_pdf(path)
+        self._sb.showMessage("Compilando PDF…")
+        QApplication.processEvents()
+        with cursor_espera():
+            pdf = compilar_pdf(path)
         if pdf:
             QMessageBox.information(self, "Compilación exitosa",
                                     f"PDF generado:\n{pdf}")

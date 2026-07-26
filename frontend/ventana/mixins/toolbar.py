@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 
 from frontend.temas import Temas
 from frontend.ventana.iconos import icono
+from frontend.ventana.colores import TEXT, TEXT_INVERSO, MUTED
 
 
 
@@ -459,7 +460,7 @@ class ToolbarMixin:
         if getattr(btn, "_conectado", False):
             return
         btn.setToolTip(btn.toolTip() + " (beta)")
-        btn.setStyleSheet("color: #6B7884;")
+        btn.setStyleSheet(f"color: {MUTED};")
 
     def _switch_tab(self, name):
         """Cambia la pestaña activa de la toolbar, construye la página si es necesario."""
@@ -475,8 +476,7 @@ class ToolbarMixin:
             self._focus_or_open_tab("Generadores de obra", temporary=False)
 
     def _update_label_colors(self):
-        from frontend.ventana.colores import TEXT
-        color = TEXT if getattr(self, '_tema_modo', 'oscuro') == 'oscuro' else "#1A1F24"
+        color = TEXT if getattr(self, '_tema_modo', 'oscuro') == 'oscuro' else TEXT_INVERSO
         for lbl in self._tb_labels:
             lbl.setStyleSheet(
                 f"color: {color}; background-color: transparent;"
@@ -540,7 +540,7 @@ class ToolbarMixin:
         modo = getattr(self, '_tema_modo', 'oscuro')
         icon = "moon" if modo == 'oscuro' else "sun"
         self._modo_btn.setIcon(icono(icon, 28))
-        set_default_tint("#E8EDF2" if modo == 'oscuro' else "#1A1F24")
+        set_default_tint(TEXT if modo == 'oscuro' else TEXT_INVERSO)
 
     def _set_accent(self, acento: str):
         app = QApplication.instance()

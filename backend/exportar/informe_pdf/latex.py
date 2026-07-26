@@ -22,6 +22,8 @@ import subprocess
 from datetime import date
 from pathlib import Path
 
+from backend.database.schema_registry import IVA_PORCENTAJE_DEFAULT
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Resolución de la plantilla
 # ─────────────────────────────────────────────────────────────────────────────
@@ -454,7 +456,7 @@ def _leer_meta_db(conn, proyecto_id: int) -> dict:
         "ubicacion":      proy.get("obra_domicilio", ""),
         "version":        proy.get("reporte_version", "1.0") or "1.0",
         "moneda":         proy.get("moneda_abrev", "MXN"),
-        "iva_pct":        float(proy.get("iva_porcentaje") or 16.0),
+        "iva_pct":        float(proy.get("iva_porcentaje") or IVA_PORCENTAJE_DEFAULT),
         "responsable":    proy.get("reporte_responsable", ""),
         "observaciones":  proy.get("reporte_observaciones", ""),
         "total_obra":     proy.get("total_obra"),
@@ -631,7 +633,7 @@ class ReportePresupuesto:
         if isinstance(nodos_o_datos, list):
             # ── Caso principal: lista de nodos del árbol ──────────────────
             partidas, gran_total = _nodos_a_partidas(nodos_o_datos, columnas, ids_seleccionados)
-            iva_pct   = 16.0
+            iva_pct   = IVA_PORCENTAJE_DEFAULT
             iva_monto = gran_total * (iva_pct / 100)
             total     = gran_total + iva_monto
 

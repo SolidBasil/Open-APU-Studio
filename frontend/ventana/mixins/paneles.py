@@ -18,6 +18,7 @@ from PySide6.QtGui import QFont, QShortcut, QKeySequence
 
 from frontend.ventana.iconos import icono
 from frontend.ventana.tipos_insumo import COLOR as _COLOR_TIPO
+from frontend.ventana.colores import TEXT, ACCENT, PURPURA
 
 # ── Sidebar: títulos de pestañas de insumos ──────────────────────
 # El emoji se reemplaza por icono SVG; el title se usa como key en routing.
@@ -51,9 +52,9 @@ _INSUMOS_SVG = {
 
 # Colores por tipo de insumo — derivado de tipos_insumo.COLOR (fuente única)
 from frontend.ventana.tipos_insumo import TIPOS as _TIPOS_DATA
-_INSUMOS_COLOR = {v[2]: _COLOR_TIPO.get(tid, "#E8EDF2") for tid, v in _TIPOS_DATA.items()}
-_INSUMOS_COLOR["Todos"] = "#E8EDF2"
-_INSUMOS_COLOR["Matrices"] = "#8B6FB5"
+_INSUMOS_COLOR = {v[2]: _COLOR_TIPO.get(tid, TEXT) for tid, v in _TIPOS_DATA.items()}
+_INSUMOS_COLOR["Todos"] = TEXT
+_INSUMOS_COLOR["Matrices"] = PURPURA
 
 
 class _ExploradorTree(QTreeWidget):
@@ -103,22 +104,22 @@ class PanelesMixin:
         tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
 
         secciones = [
-            ("Propuesta", "folder", "#7FAFD6", [
+            ("Propuesta", "folder", ACCENT, [
                 ("clipboard", "Presupuesto programable"),
                 ("search", "Buscar partidas"),
                 ("package", "Explosión de insumos"),
                 ("package", "Explosión de matrices"),
                 ("truck", "Programa de suministros"),
             ]),
-            ("Insumos", "folder", "#7FAFD6", [
-                (_INSUMOS_SVG.get(title, "circle"), title, _INSUMOS_COLOR.get(title, "#E8EDF2"))
+            ("Insumos", "folder", ACCENT, [
+                (_INSUMOS_SVG.get(title, "circle"), title, _INSUMOS_COLOR.get(title, TEXT))
                 for title, _ in INSUMOS_ITEMS
             ]),
-            ("Ejecución", "folder", "#7FAFD6", [
-                ("zap", "Fuera de presupuesto", "#E8EDF2"),
-                ("file-text", "Estimaciones", "#E8EDF2"),
-                ("plus", "Conceptos fuera de catálogo", "#E8EDF2"),
-                ("trending-up", "Ajustes de costos", "#E8EDF2"),
+            ("Ejecución", "folder", ACCENT, [
+                ("zap", "Fuera de presupuesto", TEXT),
+                ("file-text", "Estimaciones", TEXT),
+                ("plus", "Conceptos fuera de catálogo", TEXT),
+                ("trending-up", "Ajustes de costos", TEXT),
             ]),
         ]
         for nombre, svg_icon, color, hijos in secciones:
@@ -130,7 +131,7 @@ class PanelesMixin:
             root.setFont(0, f)
             for item_data in hijos:
                 svg, h = item_data[0], item_data[1]
-                c = item_data[2] if len(item_data) > 2 else "#E8EDF2"
+                c = item_data[2] if len(item_data) > 2 else TEXT
                 item = QTreeWidgetItem(root, [h])
                 item.setIcon(0, icono(svg, 16, c))
 

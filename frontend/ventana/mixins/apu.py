@@ -7,6 +7,7 @@ Se mezcla en VentanaPrincipal via herencia múltiple.
 """
 
 from PySide6.QtCore import Qt, QTimer
+from frontend.ventana.colores import TEXT
 
 
 class ApuMixin:
@@ -74,7 +75,7 @@ class ApuMixin:
             STYLE = (
                 "QPushButton{background:#005A9E;color:#fff;border:none;"
                 "border-radius:4px;padding:3px 10px;font-size:12px}"
-                "QPushButton:!checked{background:#2d2d2d;color:#E8EDF2;"
+                f"QPushButton:!checked{{background:#2d2d2d;color:{TEXT};"
                 "border:1px solid #3d3d3d}"
                 "QPushButton:hover{border-color:#005A9E}"
             )
@@ -85,7 +86,7 @@ class ApuMixin:
 
             # One button per tipo
             STYLE_INACTIVE = (
-                "QPushButton{background:#2d2d2d;color:#E8EDF2;"
+                f"QPushButton{{background:#2d2d2d;color:{TEXT};"
                 "border:1px solid #3d3d3d;border-radius:4px;"
                 "padding:3px 10px;font-size:12px}"
                 "QPushButton:checked{background:#005A9E;color:#fff;"
@@ -237,9 +238,6 @@ class ApuMixin:
 
         elif column == 10:
             self._api.concepto_actualizar(nodo_id, notas_rapidas=item.text(column).strip() or None)
-
-    def _on_estado_cambiado(self, nodo_id: int, estado: int):
-        self._api.concepto_actualizar(nodo_id, estado=estado)
 
     @staticmethod
     def _es_pu(item, column) -> bool:

@@ -118,6 +118,14 @@ class GeneradorMixin:
         self._gen_stacked.setCurrentIndex(1)
         self._gen_tabla.setFocus()
 
+    def _on_abrir_generador(self, concepto_id: int):
+        """Handler desde el árbol: abre o crea generador para un concepto."""
+        from backend.database.repos.presupuesto import NodoRepo
+        nodo = NodoRepo(self._api._conn).buscar(concepto_id)
+        wbs = nodo.get("wbs", "") if nodo else ""
+        desc = nodo.get("descripcion", "") if nodo else ""
+        self._abrir_generadores_para_concepto(concepto_id, wbs, desc)
+
     def _build_renglones_panel(self) -> QWidget:
         """Panel de renglones directos (sin capa de generadores)."""
         w = QWidget()
@@ -265,6 +273,12 @@ class GeneradorMixin:
         item = items[0]
         renglon_id = item.data(0, Qt.ItemDataRole.UserRole)
         if not renglon_id:
+            return
+        resp = QMessageBox.question(
+            self, "Eliminar renglón",
+            "¿Eliminar este renglón del generador?",
+        )
+        if resp != QMessageBox.StandardButton.Yes:
             return
         self._api.generador_renglon_eliminar(renglon_id)
         renglones = self._api.generador_renglones(self._gen_seleccionado)

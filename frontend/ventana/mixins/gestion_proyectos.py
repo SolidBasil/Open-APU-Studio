@@ -146,6 +146,9 @@ class GestionProyectosMixin:
         from backend.database.event_bus import ProyectoAbierto
         self._event_bus.emit(ProyectoAbierto(self._api.proyecto_actual_id(), str(db.db_path)))
 
+        from pathlib import Path
+        self.setWindowTitle(f"{Path(db.db_path).stem} — {self._TITULO_BASE}")
+
     def eventFilter(self, obj, event):
         """Captura clics en el placeholder 'Sin proyecto' para abrir el ProjectDialog."""
         from PySide6.QtCore import QEvent
@@ -220,6 +223,7 @@ class GestionProyectosMixin:
         self._data_service = None
         self._registry = None
         self._event_bus = None
+        self.setWindowTitle(self._TITULO_BASE)
         for i in range(self._tabs.count() - 1, -1, -1):
             self._cerrar_tab_widget(i)
         self._tabs.addTab(self._build_presupuesto(), "Presupuesto programable")
@@ -389,14 +393,20 @@ class GestionProyectosMixin:
             else:
                 Path(db_path).unlink(missing_ok=True)
 
+        from PySide6.QtWidgets import QApplication
+        from frontend.ventana.ui_utils import cursor_espera
+
+        self._sb.showMessage(f"Importando '{nombre}'…")
+        QApplication.processEvents()
         try:
-            result = importar(dir_path, db_path, nombre)
-            if self._db:
-                self._db.close()
-                self._stop_server()
-            self._db = Database.abrir(db_path)
-            self._wire_servicios(self._db)
-            self._api.unificar_matrices_apu()
+            with cursor_espera():
+                result = importar(dir_path, db_path, nombre)
+                if self._db:
+                    self._db.close()
+                    self._stop_server()
+                self._db = Database.abrir(db_path)
+                self._wire_servicios(self._db)
+                self._api.unificar_matrices_apu()
             print(f"[import] {nombre}: nodos={result['nodos']}, insumos={result['insumos']}, "
                   f"apu_matrices={result['apu_matrices']}, "
                   f"insumos_compuestos={result['insumos_compuestos']}")

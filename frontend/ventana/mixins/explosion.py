@@ -7,6 +7,7 @@ Se mezcla en VentanaPrincipal via herencia múltiple.
 """
 
 from PySide6.QtCore import Qt
+from frontend.ventana.colores import ACCENT
 
 
 class ExplosionMixin:
@@ -158,7 +159,7 @@ class ExplosionMixin:
             raiz = QTreeWidgetItem(tree, [
                 f"  {idx_c}", "", f"  {descripcion}",
                 "", "", "", "",
-                f"  {total:,.2f}",
+                f"  ${total:,.2f}",
                 "",
             ])
             for c in range(tree.columnCount()):
@@ -234,10 +235,10 @@ class ExplosionMixin:
             "",
             comp.get("descripcion", ""),
             comp.get("insumo_unidad", ""),
-            f"{pu:.2f}" if pu else "",
+            f"${pu:,.2f}" if pu else "",
             op,
             f"{v:.4f}" if v else "",
-            f"{importe:.2f}" if importe else "",
+            f"${importe:,.2f}" if importe else "",
             comp.get("tipo_nombre", ""),
         ])
         item.setData(0, ID_ROLE, comp.get("insumo_id"))
@@ -285,11 +286,11 @@ class ExplosionMixin:
         spinboxes = {}
         for i, (etiqueta, clave) in enumerate(campos):
             if clave == "pct_indirectos_campo":
-                lbl_campo = QLabel(etiqueta + ' <a href="indirectos" style="color:#7FAFD6;">→</a>')
+                lbl_campo = QLabel(etiqueta + f' <a href="indirectos" style="color:{ACCENT};">→</a>')
                 lbl_campo.setTextFormat(Qt.TextFormat.RichText)
                 lbl_campo.linkActivated.connect(lambda: self._on_indirectos())
             elif clave == "pct_indirectos_oficina":
-                lbl_campo = QLabel(etiqueta + ' <a href="personal" style="color:#7FAFD6;">→</a>')
+                lbl_campo = QLabel(etiqueta + f' <a href="personal" style="color:{ACCENT};">→</a>')
                 lbl_campo.setTextFormat(Qt.TextFormat.RichText)
                 lbl_campo.linkActivated.connect(lambda: self._on_personal_indirectos())
             else:

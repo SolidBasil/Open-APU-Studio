@@ -165,7 +165,7 @@ class PersonalizarColumnasDialog(QDialog):
             "QLabel { color: #F0C060; font-size: 18px; padding: 2px 4px; border-radius: 3px; }"
             f"QLabel:hover {{ background-color: {SEL_BG}; }}"
             if es_fav else
-            "QLabel { color: #6B7884; font-size: 18px; padding: 2px 4px; border-radius: 3px; }"
+            f"QLabel {{ color: {MUTED}; font-size: 18px; padding: 2px 4px; border-radius: 3px; }}"
             f"QLabel:hover {{ background-color: {SEL_BG}; }}"
         )
 
@@ -200,7 +200,7 @@ class PersonalizarColumnasDialog(QDialog):
 # ── Expresiones regulares ──────────────────────────────────────────
 
 # Derivado de tipos_insumo.ICONO — no hardcodear emojis aquí.
-from frontend.ventana.colores import SEL_BG, LINE, WARNING
+from frontend.ventana.colores import SEL_BG, LINE, WARNING, MUTED
 from frontend.ventana.tipos_insumo import ICONO as _TIPO_ICONO
 from frontend.ventana.iconos import icono as _icono
 
@@ -518,6 +518,7 @@ class _Delegate(QStyledItemDelegate):
             return editor
         editor = super().createEditor(parent, option, index)
         if editor:
+            editor.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
             from PySide6.QtWidgets import QLineEdit
             if isinstance(editor, QLineEdit):
                 editor.selectAll()
@@ -684,6 +685,7 @@ class TreeTableWidget(QTreeWidget):
             | QAbstractItemView.EditTrigger.DoubleClicked   # doble clic
         )
         self.setItemDelegate(_Delegate(self, editable_cols, editable_cols_fn, column_editors))
+        self.itemClicked.connect(self._on_item_clicked)
 
         h = self.header()
         h.setStretchLastSection(False)
@@ -1488,12 +1490,32 @@ class TreeTableWidget(QTreeWidget):
         sel_act = menu.addAction(_menu_icon("check-square"), "Seleccionar todo")
         sel_act.setShortcut(QKeySequence.StandardKey.SelectAll)
         sel_act.triggered.connect(self.selectAll)
-        self._context_menu_actions(menu)
+        try:
+            self._context_menu_actions(menu)
+        except Exception as e:
+            print(f"[contextMenu] _context_menu_actions: {type(e).__name__}: {e}")
         if not menu.isEmpty():
             menu.exec(event.globalPos())
 
     def _context_menu_actions(self, menu: QMenu):
         """Hook: subclases agregan acciones extra al menú contextual."""
+        pass
+
+    def _on_item_clicked(self, item, column):
+        """Handler estándar de itemClicked (conectado en __init__): si el
+        item es la fila placeholder 'vacía' (EMPTY_ROLE), delega a
+        _al_click_fila_vacia(). Ver TablaArbol, TablaInsumos, TablaGenerador,
+        TablaApuDetalle — antes cada uno reimplementaba este if idéntico.
+
+        Si una subclase necesita reaccionar a clics en filas NO vacías
+        (fuera de este patrón), sobreescribe _on_item_clicked directamente
+        en vez de _al_click_fila_vacia."""
+        if item.data(0, EMPTY_ROLE):
+            self._al_click_fila_vacia()
+
+    def _al_click_fila_vacia(self):
+        """Hook: subclases emiten la señal 'agregar algo' correspondiente
+        al hacer clic en su fila placeholder (ver _add_empty_row())."""
         pass
 
     @staticmethod

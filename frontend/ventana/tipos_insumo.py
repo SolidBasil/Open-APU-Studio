@@ -10,6 +10,8 @@ Ahora: este módulo define los datos canónicos, el resto importa.
 Actualizado: 2026-07-11 (hora local)
 """
 
+from frontend.ventana.colores import ACCENT, WARNING, SUCCESS, PURPURA, TEXT, LINE
+
 # ── Datos canónicos ──────────────────────────────────────────────
 # (emoji, nombre_singular, nombre_plural, clave_opus, descripcion)
 
@@ -61,12 +63,12 @@ ICONO_SVG = {
 # ── Colores por tipo de insumo (fuente única) ──────────────────────
 # Usado en sidebar, árboles, tablas, explosión, rastreo, diálogos.
 COLOR = {
-    1:   "#7FAFD6",  # Material    — azul
-    2:   "#D5B39B",  # Mano de obra — café
-    4:   "#5B8A72",  # Herramienta — verde
-    8:   "#8B6FB5",  # Equipo      — púrpura
+    1:   ACCENT,     # Material    — azul
+    2:   WARNING,    # Mano de obra — café
+    4:   SUCCESS,    # Herramienta — verde
+    8:   PURPURA,    # Equipo      — púrpura
     16:  "#4E9298",  # Auxiliar    — teal
-    32:  "#E8EDF2",  # Concepto    — blanco
-    64:  "#5E92B8",  # Flete       — azul claro
+    32:  TEXT,       # Concepto    — blanco
+    64:  LINE,       # Flete       — azul claro
     128: "#5A9A7A",  # Trabajo     — verde oscuro
 }

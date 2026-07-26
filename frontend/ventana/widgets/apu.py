@@ -31,17 +31,14 @@ compartiendo el mismo widget).
 """
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QBrush
 from PySide6.QtWidgets import QComboBox, QDialog, QHeaderView, QMessageBox
 
-from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef, UNIDADES, FORMULA_ROLE
+from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef, UNIDADES, FORMULA_ROLE, EMPTY_ROLE
 from backend.database.event_bus import (
     ApuComponenteActualizado, InsumoActualizado, ProyectoRecalculado,
 )
 from frontend.ventana.iconos import icono
 from frontend.ventana.tipos_insumo import COLOR as _COLOR_TIPO
-
-EMPTY_ROLE = Qt.ItemDataRole.UserRole + 60
 
 _TIPO_ID_ROLE = Qt.ItemDataRole.UserRole + 2
 
@@ -153,7 +150,6 @@ class TablaApuDetalle(TreeTableWidget):
 
         self.itemChanged.connect(self._on_item_editado)
         self.itemDoubleClicked.connect(self._on_item_dblclick)
-        self.itemClicked.connect(self._on_item_clicked)
 
     # ── Ciclo de vida (ver GUIA_INTERFAZ.md §7.6) ────────────────────────
 
@@ -248,15 +244,10 @@ class TablaApuDetalle(TreeTableWidget):
             editable=False,
         )
         item.setData(0, EMPTY_ROLE, True)
-        for c in range(item.columnCount()):
-            f = item.font(c)
-            f.setItalic(True)
-            item.setFont(c, f)
-            item.setForeground(c, QBrush(QColor("#556070")))
+        self._estilizar_fila_vacia(item)
 
-    def _on_item_clicked(self, item, column):
-        if item.data(0, EMPTY_ROLE):
-            self.agregar_componente.emit(self._matriz_id)
+    def _al_click_fila_vacia(self):
+        self.agregar_componente.emit(self._matriz_id)
 
     def _refrescar(self):
         """Vuelve a consultar la fuente de verdad y repuebla. Solo tiene

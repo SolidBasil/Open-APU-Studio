@@ -9,9 +9,7 @@ Hereda TreeTableWidget — mismo patrón que TablaApuDetalle.
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QHeaderView
 
-from frontend.ventana.widgets.base import TreeTableWidget
-
-EMPTY_ROLE = Qt.ItemDataRole.UserRole + 60
+from frontend.ventana.widgets.base import TreeTableWidget, EMPTY_ROLE
 
 # Columnas: Eje, Tramo, Veces, Largo, Ancho, Alto, Subtotal, Notas
 COLUMNAS = ["Eje", "Tramo", "Veces", "Largo", "Ancho", "Alto", "Subtotal", "Notas"]
@@ -51,7 +49,6 @@ class TablaGenerador(TreeTableWidget):
         self._search_cols = {0, 1, 7}
         self._renglon_ids: dict[int, int] = {}  # item_id → renglon_id
         self.itemChanged.connect(self._on_item_changed)
-        self.itemClicked.connect(self._on_item_clicked)
 
     def poblar(self, renglones: list[dict], seleccionar_id: int | None = None):
         """Llena la tabla con renglones del generador.
@@ -117,9 +114,8 @@ class TablaGenerador(TreeTableWidget):
             return
         super().keyPressEvent(event)
 
-    def _on_item_clicked(self, item, column):
-        if item.data(0, EMPTY_ROLE):
-            self.nuevo_renglon.emit()
+    def _al_click_fila_vacia(self):
+        self.nuevo_renglon.emit()
 
     def _on_item_changed(self, item, column):
         """Persiste edición inline de renglones."""

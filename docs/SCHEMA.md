@@ -1,6 +1,6 @@
 # Esquema de base de datos — Open APU Studio
 
-Versión del esquema: **7** (cambios acumulativos en `schema.sql` — beta, sin migraciones)
+Versión del esquema: **5** (cambios acumulativos en `schema.sql` — beta, sin migraciones)
 
 Este documento explica el diseño de la base de datos SQLite, las decisiones
 de arquitectura y qué falta implementar en versiones futuras.
@@ -238,7 +238,6 @@ Los cambios se aplican directamente al archivo. Los proyectos viejos se consider
 | 4 | `apu_matrices.cantidad`+`rendimiento` → `valor`+`operador`; `importe` pasa de GENERATED a REAL; columnas eliminadas de `insumos`: `rendimiento`, `cantidad`, `costo_base`, `es_basico`, `marca`, `pais_origen`; se agrega `insumos.costo_directo` |
 | 5 | Se agregan tablas `factores_fsr` y `variables_formula`; se agrega `insumos.hash`, `insumos.clave_opus`, `insumos.clave_usuario` |
 | 6 | Se agrega `estructura_presupuesto.es_extra` para conceptos fuera de presupuesto; frontend agrega pestaña Extra, toolbar y copia desde presupuesto legal |
-| 7 | `generadores.concepto_id` pasa a `UNIQUE` (1 generador por concepto); se incorpora `SchemaRegistry` validación `estructura_presupuesto.estado` para semáforo |
 
 **Regla:** durante la beta, cualquier cambio en `schema.sql` rompe proyectos anteriores.
 No se escriben migraciones automáticas.
@@ -309,5 +308,5 @@ ORDER BY n.wbs;
 ```
 
 ```
-Actualizado: 2026-07-25 17:00 (hora local)
+Actualizado: 2026-07-22 (hora local)
 ```

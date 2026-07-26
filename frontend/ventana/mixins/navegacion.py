@@ -945,10 +945,7 @@ class HandlersMixin:
         spin_dias.setRange(0, 9999)
         spin_dias.setDecimals(0)
         spin_dias.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
-        duracion_actual = float(self._api._conn.execute(
-            "SELECT COALESCE(duracion_obra_dias, 0) FROM proyectos WHERE id = ?",
-            (self._api._pid,)
-        ).fetchone()[0])
+        duracion_actual = float(self._api.proyecto_leer().get("duracion_obra_dias") or 0)
         spin_dias.setValue(duracion_actual)
         hdr_row.addWidget(lbl_dias)
         hdr_row.addWidget(spin_dias)
@@ -1050,6 +1047,14 @@ class HandlersMixin:
                 return
             id_item = tabla.item(fila, len(COLUMNAS))
             reg_id = id_item.data(Qt.ItemDataRole.UserRole) if id_item else None
+            concepto_item = tabla.item(fila, 0)
+            concepto = concepto_item.text() if concepto_item else ""
+            resp = QMessageBox.question(
+                dlg, "Eliminar indirecto",
+                f"¿Eliminar \"{concepto}\"?" if concepto else "¿Eliminar este indirecto?",
+            )
+            if resp != QMessageBox.StandardButton.Yes:
+                return
             if reg_id is not None:
                 self._api.indirectos_eliminar(reg_id)
             tabla.removeRow(fila)
@@ -1075,10 +1080,7 @@ class HandlersMixin:
             tabla.blockSignals(True)
             # Guardar duración de obra al proyecto
             nueva_duracion = int(spin_dias.value())
-            self._api._conn.execute(
-                "UPDATE proyectos SET duracion_obra_dias = ? WHERE id = ?",
-                (nueva_duracion, self._api._pid)
-            )
+            self._api.proyecto_guardar({"duracion_obra_dias": nueva_duracion})
             for fila in range(tabla.rowCount()):
                 id_item = tabla.item(fila, len(COLUMNAS))
                 reg_id = id_item.data(Qt.ItemDataRole.UserRole) if id_item else None

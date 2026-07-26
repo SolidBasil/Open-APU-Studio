@@ -22,6 +22,8 @@ from PySide6.QtCore import Qt, QRectF
 from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 
+from frontend.ventana.colores import MUTED
+
 _BASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "assets")
 _LUCIDE_DIR = os.path.join(_BASE, "icons")
 _ICONS8_DIR = os.path.join(_BASE, "icons8")
@@ -213,7 +215,7 @@ def get_iconos() -> str:
 
 
 def set_default_tint(color: str) -> None:
-    """Cambiar el tint por defecto (ej. '#1A1F24' para modo claro)."""
+    """Cambiar el tint por defecto (ej. colores.TEXT_INVERSO para modo claro)."""
     global _DEFAULT_TINT
     _DEFAULT_TINT = color
     icono.cache_clear()
@@ -309,7 +311,7 @@ def _fallback_icon(size: int, color: str | None = None) -> QIcon:
     pix = QPixmap(size, size)
     pix.fill(Qt.GlobalColor.transparent)
     p = QPainter(pix)
-    p.setPen(QColor(color or "#6B7884"))
+    p.setPen(QColor(color or MUTED))
     p.setFont(QFont("sans-serif", max(size // 2, 8)))
     p.drawText(pix.rect(), Qt.AlignmentFlag.AlignCenter, _PLACEHOLDER)
     p.end()

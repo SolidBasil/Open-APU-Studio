@@ -40,6 +40,7 @@ from pathlib import Path
 
 from backend.database.core import generar_hash
 from backend.database.db import Database
+from backend.database.schema_registry import IVA_PORCENTAJE_DEFAULT
 
 try:
     from dbfread import DBF
@@ -232,8 +233,8 @@ def importar(
             (nombre, clave_opus, moneda_nombre, moneda_simbolo,
              moneda_abrev, iva_porcentaje,
              horas_dia, tasa_seguro, tasa_interes, creado_por)
-        VALUES (?, ?, 'Peso mexicano', '$', 'MXN', 16.0, ?, ?, ?, 1)
-    """, (nombre_proyecto, prefijo,
+        VALUES (?, ?, 'Peso mexicano', '$', 'MXN', ?, ?, ?, ?, 1)
+    """, (nombre_proyecto, prefijo, IVA_PORCENTAJE_DEFAULT,
           _f(cfg.get("HORASDIA"), 8),
           _f(cfg.get("SEGURO")),
           _f(cfg.get("TASA_INTER"))))

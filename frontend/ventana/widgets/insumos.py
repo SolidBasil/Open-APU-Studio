@@ -17,14 +17,12 @@ Uso:
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QHeaderView
-from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef
+from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef, EMPTY_ROLE
 from backend.database.event_bus import (
     InsumoActualizado, NodoInsertado, NodoEliminado, ProyectoRecalculado,
 )
 from frontend.ventana.iconos import icono
 from frontend.ventana.tipos_insumo import NOMBRE as _TIPO_NOMBRE, ICONO_SVG as _TIPO_ICONO_SVG, COLOR as _COLOR_TIPO
-
-EMPTY_ROLE = Qt.ItemDataRole.UserRole + 60
 
 # Índice de la columna "Tipo" en COLUMNAS — usado para pintar el icono
 # real (QIcon) del tipo de insumo en cada fila, en vez de un emoji de texto.
@@ -179,7 +177,6 @@ class TablaInsumos(TreeTableWidget):
         self._restore_header_state()
         self._api = None  # inyectado por conectar_eventos()
         self._event_bus = None  # inyectado por conectar_eventos()
-        self.itemClicked.connect(self._on_item_clicked)
 
     # ── Cortar / pegar: resolvers y creación de filas ─────────────────
 
@@ -366,10 +363,9 @@ class TablaInsumos(TreeTableWidget):
         item.setData(0, EMPTY_ROLE, True)
         self._estilizar_fila_vacia(item)
 
-    def _on_item_clicked(self, item, column):
+    def _al_click_fila_vacia(self):
         """Click en fila vacía → abre diálogo de nuevo insumo."""
-        if item.data(0, EMPTY_ROLE):
-            self.nuevo_insumo.emit()
+        self.nuevo_insumo.emit()
 
     # ── Fase 3: suscripción a eventos semánticos ───────────────────
     #

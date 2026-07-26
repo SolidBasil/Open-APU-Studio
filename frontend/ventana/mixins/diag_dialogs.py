@@ -671,9 +671,8 @@ class DiagDialogsMixin:
                         db_path = str(base_dir / f"{nombre} ({n}).db")
                         n += 1
                     self._db = Database.abrir(db_path)
-                    self._db.conn.execute(
-                        "INSERT INTO proyectos (id, nombre) VALUES (1, ?)",
-                        (nombre,))
+                    from backend.database.repos import ProyectoRepo
+                    ProyectoRepo(self._db.conn).insert({"id": 1, "nombre": nombre})
                     self._db.conn.commit()
                     self._proyecto_abierto = db_path
                     self._wire_servicios(self._db)

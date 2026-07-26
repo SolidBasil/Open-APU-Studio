@@ -7,18 +7,18 @@ Uso:
     from frontend.widgets.arbol import TablaArbol
 """
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QBrush, QPixmap, QPainter, QIcon
+from PySide6.QtCore import Qt, Signal, QPoint
+from PySide6.QtGui import QColor, QBrush, QMouseEvent
 
-from PySide6.QtWidgets import QHeaderView
+from PySide6.QtWidgets import QHeaderView, QAbstractItemView
 
-from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef, FORMULA_ROLE
+from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef, FORMULA_ROLE, EMPTY_ROLE
 
 
 # ── Icono desde tipo_id (Lucide SVG) ─────────────────────────────
 
 from frontend.ventana.iconos import icono
-from frontend.ventana.colores import ACCENT, SUCCESS, WARNING, ERROR
+from frontend.ventana.colores import ACCENT, SUCCESS, WARNING, ERROR, PURPURA
 from frontend.ventana.tipos_insumo import ICONO_SVG as _ICONOS_TIPO_SVG, COLOR as _COLOR_TIPO
 
 
@@ -30,8 +30,6 @@ TIPO_ROLE      = Qt.ItemDataRole.UserRole + 12  # 'capitulo' | 'concepto', setea
                                                  # al crear la fila (NO se infiere leyendo texto)
 INSUMO_ROLE    = Qt.ItemDataRole.UserRole + 13  # insumo_id ligado (solo conceptos), para
                                                  # localizar filas afectadas por InsumoActualizado
-ESTADO_ROLE    = Qt.ItemDataRole.UserRole + 14  # estado entero (0-3) para semáforo
-EMPTY_ROLE     = Qt.ItemDataRole.UserRole + 60  # fila visual vacía (no existe en DB)
 
 # ── Configuración de columnas ─────────────────────────────────────
 
@@ -124,7 +122,7 @@ def _editable_cols_arbol(item) -> set[int]:
 # ── Colores por nivel jerárquico ─────────────────────────────────
 
 COLORES_NIVEL = [
-    "#8B6FB5",  # 0: púrpura  — capítulo raíz
+    PURPURA,    # 0: púrpura  — capítulo raíz
     ACCENT,     # 1: azul
     "#5E9CA0",  # 2: teal
     WARNING,    # 3: beige cálido
@@ -132,7 +130,7 @@ COLORES_NIVEL = [
     ERROR,      # 5+: vino
 ]
 
-from backend.database.repos.presupuesto import ESTADO_NOMBRE
+from backend.database.repos.presupuesto import ESTADO_NOMBRE, ESTADO_COLOR
 from backend.database.event_bus import (
     ConceptoActualizado, InsumoActualizado, NodoEliminado, ProyectoRecalculado,
 )
@@ -154,22 +152,6 @@ def _num(v, decimals=2):
     return f"{v:,.{decimals}f}" if isinstance(v, (int, float)) else str(v)
 
 
-# ── Semáforo: icono de círculo coloreado ─────────────────────────-
-
-from backend.database.repos.presupuesto import ESTADO_COLOR
-
-def _crear_icono_estado(color_hex: str) -> QIcon:
-    pixmap = QPixmap(12, 12)
-    pixmap.fill(Qt.GlobalColor.transparent)
-    p = QPainter(pixmap)
-    p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    p.setBrush(QBrush(QColor(color_hex)))
-    p.setPen(Qt.PenStyle.NoPen)
-    p.drawEllipse(1, 1, 10, 10)
-    p.end()
-    return QIcon(pixmap)
-
-
 # ── Tabla jerárquica del presupuesto ──────────────────────────────
 
 class TablaArbol(TreeTableWidget):
@@ -183,7 +165,7 @@ class TablaArbol(TreeTableWidget):
     COLUMNAS_CATALOGO = COLUMNAS_CATALOGO
     rastrear_insumo = Signal(int)
     desglozar_nodo = Signal(int)
-    estado_cambiado = Signal(int, int)  # nodo_id, nuevo_estado
+    abrir_generador = Signal(int)  # concepto_id
     EVENTOS_SUSCRITOS = {
         ConceptoActualizado: '_on_concepto_actualizado',
         InsumoActualizado:   '_on_insumo_actualizado',
@@ -207,10 +189,10 @@ class TablaArbol(TreeTableWidget):
         "modificar_insumo":    "_on_modificar_insumo",
         "cambiar_insumo":      "_on_cambiar_insumo",
         "desglozar_nodo":      "_abrir_apu_por_id",
+        "abrir_generador":     "_on_abrir_generador",
         "agregar_agrupador":   "_on_agregar_agrupador",
         "agregar_concepto":    "_on_agregar_concepto",
         "eliminar_seleccion":  "_on_eliminar",
-        "estado_cambiado":     "_on_estado_cambiado",
     }
 
     def __init__(self, parent=None, header_key: str | None = None,
@@ -252,7 +234,6 @@ class TablaArbol(TreeTableWidget):
         self._search_cols = {4}  # búsqueda por Descripción
         self._api = None  # inyectado por conectar_eventos()
         self._event_bus = None  # inyectado por conectar_eventos()
-        self.itemClicked.connect(self._on_item_clicked)
 
     def columnas_para_reporte(self) -> list[dict]:
         """Columnas imprimibles en orden visual + ancho actual, traducidas a
@@ -268,35 +249,49 @@ class TablaArbol(TreeTableWidget):
             columnas.append({"campo": campo, "label": c["label"], "ancho_px": c["ancho_px"]})
         return columnas
 
+    def _al_click_fila_vacia(self):
+        """Click en la fila vacía final → crea un concepto nuevo."""
+        self.agregar_concepto.emit()
+
     def _on_item_clicked(self, item, column):
-        """Click en fila vacía → crear concepto. Click en col 9 → ciclar semáforo."""
+        """Click en col 9 (Estado) → cicla semáforo. Otros → fila vacía."""
         if item.data(0, EMPTY_ROLE):
-            self.agregar_concepto.emit()
+            self._al_click_fila_vacia()
             return
         if column == 9:
             self._ciclar_estado(item)
 
     def _ciclar_estado(self, item):
-        """Cicla el semáforo: 0→1→2→3→0 y persiste."""
+        """Cicla 0→1→2→3→0 en columna Estado."""
         nodo_id = item.data(0, ID_ROLE)
         if nodo_id is None:
             return
-        estado = item.data(0, ESTADO_ROLE)
-        if estado is None:
-            estado = 0
+        estado = 0
+        txt = item.text(9)
+        for k, v in ESTADO_NOMBRE.items():
+            if v == txt:
+                estado = k
+                break
         nuevo = (estado + 1) % 4
-        self.blockSignals(True)
-        item.setData(0, ESTADO_ROLE, nuevo)
-        item.setText(9, ESTADO_NOMBRE.get(nuevo, ""))
-        item.setIcon(9, _crear_icono_estado(ESTADO_COLOR.get(nuevo, "#808080")))
-        self.blockSignals(False)
-        self.estado_cambiado.emit(nodo_id, nuevo)
+        self._cambiar_estado(nodo_id, nuevo)
+
+    def mouseDoubleClickEvent(self, event):
+        item = self.itemAt(event.position().toPoint())
+        if item is None:
+            super().mouseDoubleClickEvent(event)
+            return
+        col = self.columnAt(int(event.position().toPoint().x()))
+        nodo_id = item.data(0, ID_ROLE)
+        if col == 6 and item.data(0, TIPO_ROLE) == "concepto" and nodo_id:
+            self.itemDoubleClicked.emit(item, col)
+            return
+        super().mouseDoubleClickEvent(event)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_F2:
             item = self.currentItem()
             col = self.currentColumn()
-            if item and col in {3, 4, 5}:  # Clave, Descripción, Unidad — insumo-sourced
+            if item and col in {3, 4, 5}:
                 insumo_id = item.data(0, INSUMO_ROLE)
                 if insumo_id:
                     self.modificar_insumo.emit(insumo_id)
@@ -335,11 +330,14 @@ class TablaArbol(TreeTableWidget):
         item = self.currentItem()
         if not item:
             return
+        nodo_id = item.data(0, ID_ROLE)
+        if nodo_id:
+            self._agregar_submenu_estado(menu, nodo_id, item.data(0, TIPO_ROLE))
+
         tipo = item.data(0, TIPO_ROLE)
         if tipo != "concepto":
             return
         insumo_id = item.data(0, INSUMO_ROLE)
-        nodo_id = item.data(0, ID_ROLE)
         if insumo_id:
             act = menu.addAction(_menu_icon("search"), "Rastrear uso")
             act.triggered.connect(lambda: self.rastrear_insumo.emit(insumo_id))
@@ -348,9 +346,50 @@ class TablaArbol(TreeTableWidget):
         if nodo_id:
             act = menu.addAction(_menu_icon("link"), "Desglozar")
             act.triggered.connect(lambda: self.desglozar_nodo.emit(nodo_id))
+        if nodo_id and tipo == "concepto":
+            act = menu.addAction(_menu_icon("calculator"), "Abrir generador")
+            act.triggered.connect(lambda: self.abrir_generador.emit(nodo_id))
 
+    def _agregar_submenu_estado(self, menu, nodo_id, tipo):
+        """Submenú 'Estado de revisión' — semáforo de seguimiento (ver
+        ESTADO_NOMBRE/ESTADO_COLOR en repos/presupuesto.py). Disponible
+        tanto para capítulos como para conceptos."""
+        etiqueta = "capítulo" if tipo == "capitulo" else "concepto"
+        sub = menu.addMenu(_menu_icon("flag"), "Estado de revisión")
+        for valor, nombre in ESTADO_NOMBRE.items():
+            act = sub.addAction(self._crear_icono_circulo(ESTADO_COLOR[valor], 14), nombre)
+            act.setToolTip(f"Marcar este {etiqueta} como \"{nombre}\"")
+            act.triggered.connect(lambda checked=False, v=valor: self._cambiar_estado(nodo_id, v))
+
+    def _cambiar_estado(self, nodo_id, nuevo_estado):
+        """Actualiza el campo 'estado' de un nodo (capítulo o concepto).
+        El refresco visual del semáforo llega vía ConceptoActualizado —
+        ver _on_concepto_actualizado()."""
+        if self._api:
+            self._api.concepto_actualizar(nodo_id, estado=nuevo_estado)
 
     # ── Construcción de celdas desde dict ─────────────────────────
+
+    @staticmethod
+    def _crear_icono_circulo(color_hex: str, size: int = 12):
+        from PySide6.QtGui import QPixmap, QPainter, QBrush, QColor, QIcon
+        from PySide6.QtCore import Qt
+        pixmap = QPixmap(size, size)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pixmap)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setBrush(QBrush(QColor(color_hex)))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawEllipse(1, 1, size - 2, size - 2)
+        p.end()
+        return QIcon(pixmap)
+
+    def _set_icono_estado(self, item, n):
+        """Ícono de semáforo en la columna Estado (9), según n['estado']:
+        0=Sin revisar (gris), 1=En revisión (naranja), 2=Verificado (verde),
+        3=Cuestionado (rojo). Ver ESTADO_COLOR en repos/presupuesto.py."""
+        estado = n.get("estado") or 0
+        item.setIcon(9, self._crear_icono_circulo(ESTADO_COLOR.get(estado, ESTADO_COLOR[0])))
 
     @staticmethod
     def _celdas(n, wbs):
@@ -394,9 +433,7 @@ class TablaArbol(TreeTableWidget):
         item.setData(0, ID_ROLE, n.get("id"))
         item.setData(0, TIPO_ROLE, "capitulo")
         item.setIcon(0, icono("folder-open", 20))
-        _estado = n.get("estado", 0) or 0
-        item.setData(0, ESTADO_ROLE, _estado)
-        item.setIcon(9, _crear_icono_estado(ESTADO_COLOR.get(_estado, "#808080")))
+        self._set_icono_estado(item, n)
         color = COLORES_NIVEL[min(nivel, len(COLORES_NIVEL) - 1)]
         brush = QBrush(QColor(color))
         f     = item.font(0)
@@ -420,11 +457,9 @@ class TablaArbol(TreeTableWidget):
         item.setData(0, TIPO_ROLE, "concepto")
         item.setData(0, INSUMO_ROLE, n.get("insumo_id"))
         item.setData(6, FORMULA_ROLE, n.get("formula") or "")
-        _estado = n.get("estado", 0) or 0
-        item.setData(0, ESTADO_ROLE, _estado)
-        item.setIcon(9, _crear_icono_estado(ESTADO_COLOR.get(_estado, "#808080")))
         tid = n.get("tipo_id")
         item.setIcon(0, icono(_ICONOS_TIPO_SVG.get(tid, "file-text"), 20, _COLOR_TIPO.get(tid)))
+        self._set_icono_estado(item, n)
         return item
 
     # ── Poblado del árbol ─────────────────────────────────────────
@@ -605,6 +640,9 @@ class TablaArbol(TreeTableWidget):
                     item.setData(6, FORMULA_ROLE, registro.get("formula") or "")
                 if "total" in registro:
                     item.setText(8, _fmt(registro.get("total")))
+                if "estado" in evento.cambios:
+                    item.setText(9, ESTADO_NOMBRE.get(registro.get("estado"), ""))
+                    self._set_icono_estado(item, registro)
             finally:
                 self.blockSignals(False)
         except Exception as e:

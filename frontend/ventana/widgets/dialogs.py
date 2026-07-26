@@ -29,7 +29,7 @@ class ProjectDialog(QDialog):
     # ── Constructor y layout ──────────────────────────────────────
 
     def __init__(self, proyectos: list[Path], titulo: str, accion: str,
-                 accion_color: str = "#7FAFD6", seleccionado: str | None = None,
+                 accion_color: str = ACCENT, seleccionado: str | None = None,
                  parent=None):
         super().__init__(parent)
         self.setWindowTitle(titulo)
@@ -76,7 +76,7 @@ class ProjectDialog(QDialog):
 
             from frontend.ventana.iconos import icono as _icono
             icon_lbl = QLabel()
-            icon_lbl.setPixmap(_icono("folder-open", 32, "#7FAFD6").pixmap(32, 32))
+            icon_lbl.setPixmap(_icono("folder-open", 32, ACCENT).pixmap(32, 32))
             icon_lbl.setObjectName("dlgIcon")
             wl.addWidget(icon_lbl)
 

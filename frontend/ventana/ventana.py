@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from frontend.temas    import Temas
+from frontend.ventana.colores import TEXT, TEXT_INVERSO
 from frontend.ventana.mixins.toolbar           import ToolbarMixin
 from frontend.ventana.mixins.paneles           import PanelesMixin
 from frontend.ventana.mixins.navegacion        import HandlersMixin
@@ -53,9 +54,11 @@ class VentanaPrincipal(
       - ExplosionMixin        — explosión de insumos/matrices y sobrecostos
     """
 
+    _TITULO_BASE = "Open APU Studio  v0.3"
+
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Open APU Studio  v0.3")
+        self.setWindowTitle(self._TITULO_BASE)
         self.resize(1400, 800)
 
         # ── Estado de instancia ───────────────────────────────────────────
@@ -65,7 +68,7 @@ class VentanaPrincipal(
         from frontend.ventana.iconos import set_iconos, set_default_tint
         from backend.database.db import Config
         set_iconos(Config.get("iconos", "lucide"))
-        set_default_tint("#E8EDF2" if self._tema_modo == 'oscuro' else "#1A1F24")
+        set_default_tint(TEXT if self._tema_modo == 'oscuro' else TEXT_INVERSO)
 
         self._tab_activa = "PROYECTO"                    # pestaña toolbar activa
         self._tab_temp   = None                          # pestaña temporal (click simple)
