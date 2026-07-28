@@ -24,8 +24,8 @@ from PySide6.QtWidgets import (
     QLabel, QGroupBox, QScrollArea, QWidget, QDialogButtonBox,
     QFrame, QPushButton,
 )
-from PySide6.QtCore import Qt, QByteArray, QPoint, QTimer
-from PySide6.QtGui import QBrush, QColor, QKeySequence, QPainter, QPen
+from PySide6.QtCore import Qt, QByteArray, QPoint, QTimer, QMimeData
+from PySide6.QtGui import QBrush, QColor, QKeySequence, QPainter, QPen, QDrag, QPixmap, QFont, QIcon, QShortcut
 
 import re
 from dataclasses import dataclass
@@ -200,7 +200,7 @@ class PersonalizarColumnasDialog(QDialog):
 # ── Expresiones regulares ──────────────────────────────────────────
 
 # Derivado de tipos_insumo.ICONO — no hardcodear emojis aquí.
-from frontend.ventana.colores import SEL_BG, LINE, WARNING, MUTED
+from frontend.ventana.colores import ACCENT, SEL_BG, LINE, WARNING, MUTED
 from frontend.ventana.tipos_insumo import ICONO as _TIPO_ICONO
 from frontend.ventana.iconos import icono as _icono
 
@@ -277,6 +277,7 @@ EMPTY_ROLE = Qt.ItemDataRole.UserRole + 60  # fila visual vacía (no existe en D
 # ── Roles de datos ──────────────────────────────────────────────────
 
 FORMULA_ROLE = Qt.ItemDataRole.UserRole + 20
+COPY_ROLE    = Qt.ItemDataRole.UserRole + 30  # valor alternativo para copiar (ej. hash en vez de clave)
 
 
 # ── Corte pendiente (portapapeles) ────────────────────────────────
@@ -650,13 +651,18 @@ class TreeTableWidget(QTreeWidget):
         se pasa, editable_cols aplica igual a todas las filas.
         column_editors: dict `{col: callable(parent) -> QWidget}` para dropdowns
         u otros editores custom en columnas específicas.
-        paste_col_fn: dict opcional `{col: callable(str) -> tuple[str, Any] | None}`
+        paste_col_fn: dict opcional `{col: callable(item, col, str) -> tuple[str, Any] | None}`
         para columnas cuyo valor guardado no es el texto tal cual (ej. columnas
         con combo respaldado por un id en UserRole, como Tipo/Familia en
-        Catálogo de Insumos). El callable recibe el texto pegado y devuelve
-        (texto_a_mostrar, dato_para_userrole), o None si el texto pegado no se
-        pudo interpretar — en ese caso la celda no se toca. Sin resolver para
-        una columna, pegar escribe el texto tal cual (comportamiento anterior).
+        Catálogo de Insumos, o columnas derivadas de una relación que el
+        resolver debe traducir, como Descripción/Unidad ligadas a un insumo
+        en el árbol de presupuesto). El callable recibe el item destino, la
+        columna y el texto pegado, y devuelve (texto_a_mostrar,
+        dato_para_userrole), o None si el texto pegado no se pudo interpretar
+        para ese item — en ese caso la celda no se toca. Registrar un resolver
+        para una columna la vuelve pegable aunque no esté en las columnas
+        editables normales (ver _paste_cols_for). Sin resolver para una
+        columna, pegar escribe el texto tal cual (comportamiento anterior).
         Ver _escribir_celda_pegada().
         """
         super().__init__(parent)
@@ -695,6 +701,79 @@ class TreeTableWidget(QTreeWidget):
         h.sectionMoved.connect(self._save_header_state)
         for c in range(len(columns)):
             h.setSectionResizeMode(c, QHeaderView.ResizeMode.Interactive)
+
+        if self._REORDER_ENABLED:
+            # Registrar QShortcut UNA SOLA VEZ para TODA la jerarquía
+            # (no por subclase): dos QShortcut distintos con la misma
+            # QKeySequence y el mismo ApplicationShortcut se vuelven
+            # AMBIGUOS para Qt — ninguno dispara activated(), solo
+            # activatedAmbiguously() (no conectado), y la tecla queda
+            # sin efecto. Como TablaApuDetalle y TablaGenerador tienen
+            # ambas _REORDER_ENABLED=True, registrar por-clase (cls, en
+            # vez de TreeTableWidget) causaba exactamente esa colisión
+            # en cuanto ambas clases tenían al menos una instancia viva.
+            # El guard vive en TreeTableWidget (la base), no en cls.
+            app = QApplication.instance()
+            if app and not TreeTableWidget._REORDER_SHORTCUTS_OK:
+                TreeTableWidget._REORDER_SHORTCUTS_OK = True
+                sc_up = QShortcut(QKeySequence(Qt.Modifier.ALT | Qt.Key.Key_Up), app)
+                sc_up.setContext(Qt.ShortcutContext.ApplicationShortcut)
+                sc_up.activated.connect(lambda d=-1: TreeTableWidget._dispatch_alt_arrow(d))
+                sc_down = QShortcut(QKeySequence(Qt.Modifier.ALT | Qt.Key.Key_Down), app)
+                sc_down.setContext(Qt.ShortcutContext.ApplicationShortcut)
+                sc_down.activated.connect(lambda d=1: TreeTableWidget._dispatch_alt_arrow(d))
+
+
+    @classmethod
+    def _dispatch_alt_arrow(cls, direction: int):
+        """Dispara _reorder_selected en la instancia enfocada (cualquier
+        TreeTableWidget con _REORDER_ENABLED, sin importar la subclase)
+        cuando el shortcut global se activa.
+
+        Si el widget enfocado es un TreeTableWidget sin _REORDER_ENABLED
+        (ej. TablaArbol), usa el handler del presupuesto (_on_subir/_on_bajar)
+        en la ventana. Esto evita que el QShortcut global deje ambiguo al
+        WindowShortcut de paneles.py."""
+        fw = QApplication.focusWidget()
+        if fw is None:
+            return
+        cur = fw
+        while cur is not None:
+            if isinstance(cur, TreeTableWidget):
+                if cur._REORDER_ENABLED:
+                    cur._reorder_selected(direction)
+                    return
+                win = cur.window()
+                if win and hasattr(win, '_on_subir') and hasattr(win, '_on_bajar'):
+                    (win._on_subir if direction == -1 else win._on_bajar)()
+                    return
+            cur = cur.parentWidget() if hasattr(cur, 'parentWidget') else None
+
+    # ── Repoblado ─────────────────────────────────────────────────
+
+    def clear(self):
+        """Como QTreeWidget.clear(), pero primero cancela un corte
+        pendiente de ESTA tabla si lo hay.
+
+        Todo repoblado (poblar() de cualquier subclase, disparado por un
+        evento como ProyectoRecalculado) pasa por aquí. Si en ese momento
+        había un Cortar pendiente sobre esta tabla, sus celdas en
+        _corte_pendiente apuntan a QTreeWidgetItem que este clear() va a
+        destruir; sin cancelarlo antes, _dibujar_borde_corte() (el
+        delegate de pintado) sigue recibiendo esas referencias muertas en
+        cada repintado posterior y truena en bucle con RuntimeError:
+        ...already deleted — no una sola vez, sino en cada frame, porque
+        Qt repinta constantemente.
+
+        Cancelar el corte aquí no pierde nada: el corte pendiente nunca
+        borra contenido por sí solo (eso lo hace _consumir_corte_pendiente
+        al completar un Pegar) — como mucho, el usuario tiene que volver
+        a Cortar si su corte quedó invalidado por un refresco de por
+        medio, en vez de que la app quede tronando en cada repintado.
+        """
+        if self._corte_pendiente:
+            _cancelar_corte_activo()
+        super().clear()
 
     # ── Modos de columna ──────────────────────────────────────────
 
@@ -1197,6 +1276,337 @@ class TreeTableWidget(QTreeWidget):
             return self._editable_cols_fn(item) or set()
         return self._editable_cols
 
+    def _paste_cols_for(self, item) -> set[int]:
+        """Columnas donde un pegado puede escribir para este item: las
+        editables normales (_editable_cols_for) más las que tengan un
+        resolver en paste_col_fn registrado.
+
+        Existen columnas que no se editan escribiendo directo (ej.
+        Descripción/Unidad del árbol de presupuesto, derivadas del insumo
+        ligado a un concepto) pero sí deben aceptar un pegado, porque el
+        resolver sabe traducir el valor pegado a la relación correcta (ver
+        arbol.py::_resolver_insumo_pegado). Antes, pegar sobre esas
+        columnas simplemente no hacía nada — quedaban fuera del conjunto
+        editable y _pegar_cuadricula las saltaba en silencio, aunque el
+        usuario copiara y pegara una fila entera con Descripción/Unidad
+        visibles (Clave, la única columna que sí resolvía el insumo, está
+        oculta por defecto).
+
+        Sigue siendo el resolver quien decide, valor por valor y fila por
+        fila, si el pegado es válido para esa columna en ese item — aquí
+        solo se decide qué columnas se intentan."""
+        return self._editable_cols_for(item) | set(self._paste_col_fn)
+
+    # ── Drag and drop framework ──────────────────────────
+    # Subclasses override the class variables below to configure
+    # the OPUS-style compact drag icon, position indicator and
+    # drop handler.  The actual database move/copy logic lives in
+    # the mixin (e.g. _on_drop_arbol), not in this widget.
+    #
+    # _DROP_HANDLER_ATTR  — name of the method on self.window()
+    #                       that will perform the real move/copy
+    #                       (e.g. '_on_drop_arbol', '_on_drop_apu',
+    #                        '_on_drop_generador').  If None, drops
+    #                       are ignored.
+    # _DROP_FLAT          — True = table is a flat list (no
+    #                       hierarchical nesting).  "dentro" is
+    #                       treated as "abajo".
+    # _DROP_CAN_INSIDE    — True = "dentro" (drop onto a row) is a
+    #                       valid position (hierarchical tables only).
+    # _DROP_ID_ROLE       — ItemDataRole used to read the record id
+    #                       from items (e.g. ID_ROLE or UserRole).
+    # _DRAG_ICON          — nombre del ícono (frontend.ventana.iconos)
+    #                       mostrado en el pixmap compacto de arrastre.
+    # _DRAG_MIME_LABEL    — texto descriptivo puesto en el QMimeData
+    #                       (solo informativo, no se usa para lógica).
+
+    _DROP_HANDLER_ATTR = None
+    _DROP_FLAT = False
+    _DROP_CAN_INSIDE = False
+    _DROP_ID_ROLE = Qt.ItemDataRole.UserRole
+    _DROP_ACCEPTS_FOREIGN_CLASS = False
+    _DRAG_ICON = "clipboard"
+    _DRAG_MIME_LABEL = "elemento(s)"
+
+    _REORDER_ENABLED = False  # Alt+Up/Down reorder; set True + override _get_reorder_info
+    _ALT_REORDERING = False   # guard clase: _reorder_selected se protege contra
+                              # re-entrada (QShortcut + eventFilter compiten)
+    _REORDER_SHORTCUTS_OK = False  # class-level: True after Alt+Arrow QShortcut registered
+
+    def _get_reorder_info(self):
+        """Subclasses override to return (handler_method, current_parent_id)
+        for Alt+Arrow reorder.  handler receives (ids, parent_id, before_id, copiar).
+        Returns (None, None) by default."""
+        return None, None
+
+    def _reorder_selected(self, direction: int):
+        """Mueve los items seleccionados una posición hacia arriba (-1) o abajo (1)
+        reutilizando el mismo handler del drag & drop (_on_drop_*)."""
+        if self.__class__._ALT_REORDERING:
+            return
+        self.__class__._ALT_REORDERING = True
+        try:
+            handler, parent_id = self._get_reorder_info()
+            if not handler or parent_id is None:
+                return
+            arrastrados = [it for it in self.selectedItems() if self._fila_destino_valida(it)]
+            if not arrastrados:
+                return
+            arrastrados.sort(key=lambda it: self.visualItemRect(it).top())
+            hermanos = [self.topLevelItem(i) for i in range(self.topLevelItemCount())
+                        if self._fila_destino_valida(self.topLevelItem(i))]
+            if direction < 0:
+                primer_idx = hermanos.index(arrastrados[0])
+                if primer_idx == 0:
+                    return
+                antes_de_id = self._item_id(hermanos[primer_idx - 1])
+            else:
+                ultimo_idx = hermanos.index(arrastrados[-1])
+                if ultimo_idx == len(hermanos) - 1:
+                    return
+                nxt = ultimo_idx + 2
+                antes_de_id = self._item_id(hermanos[nxt]) if nxt < len(hermanos) else None
+            ids = [self._item_id(it) for it in arrastrados]
+            ids = [nid for nid in ids if nid is not None]
+            if not ids:
+                return
+            self._drag_sel_ids = list(ids)
+            handler(ids, parent_id, antes_de_id, False)
+        finally:
+            self.__class__._ALT_REORDERING = False
+
+    def _fila_destino_valida(self, item) -> bool:
+        """True si item puede recibir un drop.  Subclases pueden
+        restringir (ej. TablaArbol rechaza la fila placeholder)."""
+        return item is not None
+
+    def _item_id(self, item) -> int | None:
+        """Lee el ID del registro desde el item.  Por defecto usa
+        columna 0 + _DROP_ID_ROLE.  Subclases donde el ID esté en
+        otra columna (ej. APU → columna 5) sobreescriben esto."""
+        return item.data(0, self._DROP_ID_ROLE) if item is not None else None
+
+    def startDrag(self, supportedActions):
+        """Renderiza un ícono compacto de portapapeles con contador
+        (si hay varios elementos) en vez del fantasma completo de Qt
+        que tapa la vista.  El destino real del drop se resuelve en
+        dropEvent() contra la base de datos, no contra los Items."""
+        arrastrados = [it for it in self.selectedItems()
+                       if self._fila_destino_valida(it)]
+        # Guardar IDs ANTES de drag.exec() — Qt podría borrar la
+        # selección internamente al finalizar el drag.
+        self._drag_sel_ids = [self._item_id(it) for it in arrastrados if self._item_id(it) is not None]
+        if not arrastrados:
+            return
+        arrastrados.sort(key=lambda it: self.visualItemRect(it).top())
+        mime = QMimeData()
+        mime.setText(f"{len(arrastrados)} {self._DRAG_MIME_LABEL}")
+        drag = QDrag(self)
+        drag.setMimeData(mime)
+        drag.setPixmap(self._pixmap_arrastre(len(arrastrados)))
+        drag.setHotSpot(QPoint(12, 12))
+        drag.exec(Qt.DropAction.MoveAction | Qt.DropAction.CopyAction,
+                  Qt.DropAction.MoveAction)
+
+        # Restaurar selección tras drag.exec() — Qt la borra al salir del
+        # bucle de eventos anidado, pisando cualquier restauración que
+        # poblar() hubiera hecho dentro del dropEvent.
+        if self._drag_sel_ids:
+            for i in range(self.topLevelItemCount()):
+                it = self.topLevelItem(i)
+                if self._item_id(it) in self._drag_sel_ids:
+                    it.setSelected(True)
+
+    def _pixmap_arrastre(self, cantidad: int) -> QPixmap:
+        """Ícono 40x40: portapapeles + contador en circulito si son
+        varios elementos.  El color del contador usa ACCENT."""
+        size = 40
+        pix = QPixmap(size, size)
+        pix.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pix)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        _icono(self._DRAG_ICON, size=28).paint(p, 3, 3, 28, 28)
+        if cantidad > 1:
+            radio = 11
+            centro = QPoint(size - radio - 1, size - radio - 1)
+            p.setBrush(QColor(ACCENT))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawEllipse(centro, radio, radio)
+            fuente = QFont()
+            fuente.setBold(True)
+            fuente.setPointSize(9)
+            p.setFont(fuente)
+            p.setPen(QColor("white"))
+            texto = str(cantidad) if cantidad < 100 else "99+"
+            p.drawText(centro.x() - radio, centro.y() - radio,
+                       radio * 2, radio * 2,
+                       Qt.AlignmentFlag.AlignCenter, texto)
+        p.end()
+        return pix
+
+    def dragEnterEvent(self, event):
+        """Acepta el arrastre si viene de esta misma tabla o de otra
+        instancia de la misma clase cuando _DROP_ACCEPTS_FOREIGN_CLASS es
+        True (ej. TablaApuDetalle permite arrastrar entre varias pestañas
+        de APU abiertas).  Sin este override Qt rechaza el QMimeData
+        custom del ícono compacto y el cursor queda en 'prohibido'."""
+        source = event.source()
+        if source is self or (
+                self._DROP_ACCEPTS_FOREIGN_CLASS
+                and isinstance(source, type(self))):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def _calcular_posicion_drop(self, item, y_evento: int) -> str:
+        """Convierte la coordenada Y del evento en 'arriba', 'dentro'
+        o 'abajo' (tercios del alto de la fila).  En tablas planas
+        (_DROP_FLAT=True) 'dentro' se traduce automáticamente en
+        'abajo'."""
+        rect = self.visualItemRect(item)
+        if rect.height() <= 0:
+            return "abajo"
+        tercio = rect.height() / 3
+        if y_evento < rect.top() + tercio:
+            return "arriba"
+        if y_evento > rect.bottom() - tercio:
+            return "abajo"
+        return "dentro"
+
+    def dragMoveEvent(self, event):
+        """Actualiza el objetivo del drop y repinta el indicador
+        visual.  El cálculo de posición reescribe 'dentro' como
+        'abajo' cuando la fila no acepta drops internos (tablas
+        planas o conceptos en el árbol)."""
+        item = self.itemAt(event.position().toPoint())
+        source = event.source()
+        if not (
+            source is self or
+            (self._DROP_ACCEPTS_FOREIGN_CLASS and isinstance(source, type(self)))
+        ) or not self._fila_destino_valida(item):
+            self._drop_objetivo = None
+            self.viewport().update()
+            event.ignore()
+            return
+        posicion = self._calcular_posicion_drop(item, event.position().toPoint().y())
+        if posicion == "dentro" and not self._DROP_CAN_INSIDE:
+            posicion = "abajo"
+        self._drop_objetivo = (item, posicion)
+        self.viewport().update()
+        event.acceptProposedAction()
+
+    def dragLeaveEvent(self, event):
+        self._drop_objetivo = None
+        self.viewport().update()
+        super().dragLeaveEvent(event)
+
+    def paintEvent(self, event):
+        """Dibuja encima de la tabla el indicador visual del drop:
+        una línea entre renglones (para 'arriba'/'abajo') o un marco
+        redondeado alrededor de la fila (para 'dentro'), usando el
+        color ACCENT."""
+        super().paintEvent(event)
+        objetivo = getattr(self, '_drop_objetivo', None)
+        if objetivo is None:
+            return
+        item, posicion = objetivo
+        rect = self.visualItemRect(item)
+        if not rect.isValid():
+            return
+        p = QPainter(self.viewport())
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        color = QColor(ACCENT)
+        if posicion == "dentro":
+            pen = QPen(color, 2)
+            p.setPen(pen)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 4, 4)
+        else:
+            y = rect.top() if posicion == "arriba" else rect.bottom()
+            pen = QPen(color, 2)
+            p.setPen(pen)
+            p.drawLine(rect.left(), y, self.viewport().width(), y)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(color)
+            p.drawEllipse(QPoint(rect.left(), y), 3, 3)
+        p.end()
+
+    def dropEvent(self, event):
+        """Resuelve (ids_arrastrados, nuevo_padre_id, antes_de_id, copiar)
+        a partir de la posición visual y llama al handler de la ventana.
+
+        selectedItems() de Qt devuelve los elementos en el orden en
+        que se seleccionaron, NO en el orden visual.  Si el usuario
+        seleccionó de abajo hacia arriba (Shift+clic empezando por el
+        último), el bloque se insertaría al revés — se reordena por
+        posición en pantalla antes de usarlo.  Este bug ya mordió una
+        vez y tiene que corregirse en la fuente, no en cada área."""
+        self._drop_objetivo = None
+        self.viewport().update()
+
+        source_table = event.source()
+        if source_table is not self and not (
+                self._DROP_ACCEPTS_FOREIGN_CLASS
+                and isinstance(source_table, type(self))):
+            event.ignore()
+            return
+
+        item_destino = self.itemAt(event.position().toPoint())
+        if not self._fila_destino_valida(item_destino):
+            event.ignore()
+            return
+
+        arrastrados = [it for it in source_table.selectedItems()
+                       if self._fila_destino_valida(it)]
+        if not arrastrados:
+            ids_arrastrados = list(getattr(source_table, '_drag_sel_ids', []))
+        else:
+            arrastrados.sort(key=lambda it: source_table.visualItemRect(it).top())
+            ids_arrastrados = [self._item_id(it) for it in arrastrados]
+        ids_arrastrados = [nid for nid in ids_arrastrados if nid is not None]
+        if not ids_arrastrados:
+            event.ignore()
+            return
+        if arrastrados and item_destino in arrastrados:
+            event.ignore()
+            return
+
+        posicion = self._calcular_posicion_drop(item_destino,
+                                                event.position().toPoint().y())
+        if posicion == "dentro":
+            nuevo_padre_id = self._item_id(item_destino)
+            antes_de_id = None
+        else:
+            padre_item = item_destino.parent()
+            if padre_item is not None and padre_item.parent() is not None:
+                padre_item = padre_item.parent()
+            nuevo_padre_id = self._item_id(padre_item)
+            hermanos_widget = (
+                [padre_item.child(i) for i in range(padre_item.childCount())]
+                if padre_item is not None
+                else [self.topLevelItem(i) for i in range(self.topLevelItemCount())]
+            )
+            idx = hermanos_widget.index(item_destino)
+            if posicion == "arriba":
+                antes_de_id = self._item_id(item_destino)
+            else:
+                siguiente = (hermanos_widget[idx + 1]
+                             if idx + 1 < len(hermanos_widget) else None)
+                antes_de_id = self._item_id(siguiente)
+
+        copiar = bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier)
+        ventana = self.window()
+        handler = (getattr(ventana, self._DROP_HANDLER_ATTR, None)
+                   if self._DROP_HANDLER_ATTR else None)
+        if handler is None:
+            event.ignore()
+            return
+        ok = handler(ids_arrastrados, nuevo_padre_id, antes_de_id, copiar)
+        if ok:
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
     def copy_selection(self) -> bool:
         """
         Copy selected rows as TSV (tab-separated values) to clipboard.
@@ -1215,7 +1625,11 @@ class TreeTableWidget(QTreeWidget):
         header = [_strip_icons(self.headerItem().text(c)) for c in cols]
         lines = ["\t".join(header)]
         for item in items:
-            lines.append("\t".join(_strip_icons(item.text(c)) for c in cols))
+            vals = []
+            for c in cols:
+                copy_val = item.data(c, COPY_ROLE)
+                vals.append(_strip_icons(copy_val if copy_val is not None else item.text(c)))
+            lines.append("\t".join(vals))
 
         QApplication.clipboard().setText("\n".join(lines))
         return True
@@ -1316,7 +1730,7 @@ class TreeTableWidget(QTreeWidget):
             return
 
         filas = _parsear_portapapeles(text)
-        filas = self._descartar_fila_encabezado(filas)
+        filas, columna_origen = self._descartar_fila_encabezado(filas)
         if not filas:
             return
         win = self.window()
@@ -1325,39 +1739,35 @@ class TreeTableWidget(QTreeWidget):
             api.iniciar_sesion_undo()
         try:
             if len(filas) == 1 and len(filas[0]) <= 1:
-                if col not in self._editable_cols_for(item):
+                if col not in self._paste_cols_for(item):
                     return
                 valor = filas[0][0] if filas[0] else ""
-                self._escribir_celda_pegada(item, col, valor)
+                ok = self._escribir_celda_pegada(item, col, valor)
+                if not ok and col in self._paste_col_fn:
+                    from PySide6.QtWidgets import QMessageBox
+                    QMessageBox.information(
+                        self, "Pegar",
+                        "El valor pegado no se pudo interpretar en esta "
+                        "columna (no coincide con ningún registro existente)."
+                    )
                 self._consumir_corte_pendiente((item, col))
                 return
 
-            self._pegar_cuadricula(item, col, filas)
+            self._pegar_cuadricula(item, col, filas, columna_origen=columna_origen)
         finally:
             if api is not None:
                 api.cerrar_sesion_undo()
 
-    def _descartar_fila_encabezado(self, filas: list[list[str]]) -> list[list[str]]:
-        """copy_selection() antepone una fila de encabezados al TSV copiado
-        (para que se vea bien si el destino es Excel) — pero si el pegado
-        vuelve a esta misma app, esa fila NO es un dato y no debe tratarse
-        como tal: pegarla escribe basura (ej. el texto "Estructura", el
-        encabezado de la primera columna, cayendo en una celda de Cantidad
-        que espera un número o fórmula, y revienta la validación).
-
-        Si la primera fila del bloque pegado coincide exactamente con los
-        encabezados visibles de esta tabla, se descarta antes de escribir.
-        Si el pegado viene de otra tabla con encabezados distintos, o de
-        Excel (que no antepone encabezados propios de esta app), la
-        primera fila no coincide y se deja intacta.
-        """
+    def _descartar_fila_encabezado(self, filas: list[list[str]]) -> tuple[list[list[str]], bool]:
+        """Idem, pero además devuelve True si se detectaron y descartaron
+        encabezados (pegado desde la misma app)."""
         if not filas:
-            return filas
+            return filas, False
         cols_visibles = [c for c in range(self.columnCount()) if not self.isColumnHidden(c)]
         encabezados = [_strip_icons(self.headerItem().text(c)) for c in cols_visibles]
         if filas[0] == encabezados:
-            return filas[1:]
-        return filas
+            return filas[1:], True
+        return filas, False
 
     def _escribir_celda_pegada(self, item, col: int, valor: str) -> bool:
         """Escribe un valor pegado en (item, col), usando el resolver de
@@ -1370,7 +1780,7 @@ class TreeTableWidget(QTreeWidget):
         if resolver is None:
             item.setText(col, valor)
             return True
-        resultado = resolver(valor)
+        resultado = resolver(item, col, valor)
         if resultado is None:
             return False
         texto, dato = resultado
@@ -1402,7 +1812,8 @@ class TreeTableWidget(QTreeWidget):
         """
         return None
 
-    def _pegar_cuadricula(self, item_inicial, col_inicial: int, filas: list[list[str]]):
+    def _pegar_cuadricula(self, item_inicial, col_inicial: int, filas: list[list[str]],
+                          columna_origen: bool = False):
         """Escribe una cuadrícula de valores empezando en (item_inicial,
         col_inicial). Cada fila del bloque pegado va a la siguiente fila
         visible de la tabla (itemBelow); dentro de cada fila, los valores se
@@ -1421,18 +1832,33 @@ class TreeTableWidget(QTreeWidget):
         tabla no soporta crear filas, o los datos pegados no alcanzan para
         crear una, esa fila (y las siguientes que tampoco tengan destino)
         se descarta con aviso.
+
+        Si columna_origen=True (pegado desde la misma app), mapea cada
+        valor a su columna original por índice visible en vez de distribuirlo
+        secuencialmente desde col_inicial — así copiar toda una fila y pegarla
+        en cualquier columna pone cada valor en su columna correcta.
         """
         fila_actual = item_inicial
         referencia = item_inicial
         ultima_celda = None
         filas_sin_destino = 0
         filas_creadas = 0
+        celdas_no_resueltas = 0
+        cols_visibles = [c for c in range(self.columnCount()) if not self.isColumnHidden(c)]
         for valores in filas:
             if fila_actual is None or self._es_fila_vacia(fila_actual):
-                cols_editables = [c for c in range(self.columnCount())
-                                   if c >= col_inicial and not self.isColumnHidden(c)
-                                   and c in self._editable_cols_for(referencia)]
-                datos_fila = {c: v for v, c in zip(valores, cols_editables) if v.strip()}
+                if columna_origen:
+                    editables = self._paste_cols_for(referencia)
+                    datos_fila = {}
+                    for i, v in enumerate(valores):
+                        if i < len(cols_visibles) and v.strip():
+                            c = cols_visibles[i]
+                            if c in editables:
+                                datos_fila[c] = v
+                else:
+                    cols_editables = [c for c in cols_visibles
+                                       if c >= col_inicial and c in self._paste_cols_for(referencia)]
+                    datos_fila = {c: v for v, c in zip(valores, cols_editables) if v.strip()}
                 nueva = self.crear_fila_pegado(referencia, datos_fila) if datos_fila else None
                 if nueva is None:
                     filas_sin_destino += 1
@@ -1441,26 +1867,52 @@ class TreeTableWidget(QTreeWidget):
                 referencia = nueva
                 fila_actual = self.itemBelow(nueva)
                 continue
-            cols_editables = [c for c in range(self.columnCount())
-                               if c >= col_inicial and not self.isColumnHidden(c)
-                               and c in self._editable_cols_for(fila_actual)]
-            for valor, c in zip(valores, cols_editables):
-                if self._escribir_celda_pegada(fila_actual, c, valor):
-                    ultima_celda = (fila_actual, c)
+
+            editables = self._paste_cols_for(fila_actual)
+            if columna_origen:
+                for i, valor in enumerate(valores):
+                    if i < len(cols_visibles):
+                        c = cols_visibles[i]
+                        if c not in editables:
+                            continue
+                        if c in self._paste_col_fn and not valor.strip():
+                            continue  # celda vacía en columna con resolver: no es una falla, se ignora
+                        if self._escribir_celda_pegada(fila_actual, c, valor):
+                            ultima_celda = (fila_actual, c)
+                        elif c in self._paste_col_fn:
+                            celdas_no_resueltas += 1
+            else:
+                cols_editables = [c for c in cols_visibles
+                                   if c >= col_inicial and c in editables]
+                for valor, c in zip(valores, cols_editables):
+                    if c in self._paste_col_fn and not valor.strip():
+                        continue
+                    if self._escribir_celda_pegada(fila_actual, c, valor):
+                        ultima_celda = (fila_actual, c)
+                    elif c in self._paste_col_fn:
+                        celdas_no_resueltas += 1
             referencia = fila_actual
             fila_actual = self.itemBelow(fila_actual)
 
-        if filas_sin_destino:
+        if filas_sin_destino or celdas_no_resueltas:
             from PySide6.QtWidgets import QMessageBox
             pegadas = len(filas) - filas_sin_destino
             detalle = f" ({filas_creadas} fila(s) nueva(s) creada(s))" if filas_creadas else ""
-            QMessageBox.information(
-                self, "Pegar",
-                f"Se completaron {pegadas} de {len(filas)} filas{detalle}. "
-                f"Las {filas_sin_destino} restantes no se pudieron escribir: "
-                "faltan datos requeridos en lo pegado, o esta tabla no crea "
-                "filas nuevas al pegar."
-            )
+            partes = []
+            if filas_sin_destino:
+                partes.append(
+                    f"Se completaron {pegadas} de {len(filas)} filas{detalle}. "
+                    f"Las {filas_sin_destino} restantes no se pudieron escribir: "
+                    "faltan datos requeridos en lo pegado, o esta tabla no crea "
+                    "filas nuevas al pegar."
+                )
+            if celdas_no_resueltas:
+                partes.append(
+                    f"{celdas_no_resueltas} celda(s) no se pudieron interpretar "
+                    "(no coinciden con ningún registro existente) y se dejaron "
+                    "sin tocar."
+                )
+            QMessageBox.information(self, "Pegar", "\n\n".join(partes))
 
         if ultima_celda:
             self._consumir_corte_pendiente(ultima_celda)

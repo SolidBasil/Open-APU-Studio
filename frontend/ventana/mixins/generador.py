@@ -12,13 +12,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QMessageBox, QHeaderView, QFileDialog, QFrame,
 )
 
 from frontend.ventana.widgets.generador import TablaGenerador
+from frontend.ventana.widgets.base import EMPTY_ROLE
 from frontend.ventana.cad.visor import VisorCadWidget, CadTool
 
 # Constante para el ítem "Extraordinarios" en el árbol
@@ -111,6 +112,7 @@ class GeneradorMixin:
             self._gen_stacked.setCurrentIndex(0)
             return
         self._gen_seleccionado = gen_id
+        self._gen_tabla.set_generador_id(gen_id)
         gen_info = self._api.generador_por_id(gen_id) or {}
         self._gen_unidad_activa = gen_info.get("unidad") or ""
         renglones = self._api.generador_renglones(gen_id)
@@ -138,6 +140,20 @@ class GeneradorMixin:
         btn_volver.clicked.connect(self._on_volver_arbol)
         layout.addWidget(btn_volver)
 
+        # Abrir este generador en su propia pestaña — para poder tener
+        # dos generadores visibles a la vez y arrastrar renglones entre
+        # ellos (ver TablaGenerador.dropEvent/_on_drop_generador).
+        btn_pestana = QPushButton("⧉ Abrir en pestaña nueva")
+        btn_pestana.setToolTip(
+            "Abre este generador en una pestaña aparte, para poder "
+            "arrastrar renglones entre dos generadores distintos."
+        )
+        btn_pestana.clicked.connect(
+            lambda: self._abrir_generador_tab(self._gen_seleccionado, self._gen_nombre_base)
+            if getattr(self, '_gen_seleccionado', None) else None
+        )
+        layout.addWidget(btn_pestana)
+
         # Concepto seleccionado
         self._gen_concepto_lbl = QLabel("Selecciona un concepto del presupuesto")
         self._gen_concepto_lbl.setWordWrap(True)
@@ -159,6 +175,8 @@ class GeneradorMixin:
 
         self._gen_tabla = TablaGenerador()
         self._gen_tabla.renglon_editado.connect(self._on_renglon_editado)
+        self._gen_tabla.renglon_eliminar.connect(
+            lambda ids: self._eliminar_renglones(ids, self._gen_seleccionado, self._gen_tabla))
         self._gen_tabla.total_actualizado.connect(self._on_gen_total_actualizado)
         self._gen_tabla.nuevo_renglon.connect(self._on_renglon_nuevo)
         layout.addWidget(self._gen_tabla, 1)
@@ -193,6 +211,7 @@ class GeneradorMixin:
         if not gen_id:
             return
         self._gen_seleccionado = gen_id
+        self._gen_tabla.set_generador_id(gen_id)
         gen_info = self._api.generador_por_id(gen_id) or {}
         self._gen_unidad_activa = gen_info.get("unidad") or ""
         renglones = self._api.generador_renglones(gen_id)
@@ -263,26 +282,48 @@ class GeneradorMixin:
         self._api.generador_renglon_guardar(
             self._gen_seleccionado, renglon_id=renglon_id, **campos
         )
-        renglones = self._api.generador_renglones(self._gen_seleccionado)
+        # Diferido a propósito (ver TablaArbol._on_proyecto_recalculado,
+        # mismo motivo): un pegado de varias columnas en una sola fila
+        # escribe celda por celda, y cada una dispara itemChanged →
+        # _on_renglon_editado. Si poblar() corriera aquí mismo, de forma
+        # síncrona, destruiría a medio pegado el QTreeWidgetItem que
+        # _pegar_cuadricula todavía está usando para las columnas
+        # siguientes — solo la primera columna pegada llegaba a guardarse.
+        gen_id = self._gen_seleccionado
+        QTimer.singleShot(0, lambda: self._refrescar_gen_tabla_segura(gen_id))
+
+    def _refrescar_gen_tabla_segura(self, generador_id: int):
+        if not self._api or self._gen_seleccionado != generador_id:
+            return
+        renglones = self._api.generador_renglones(generador_id)
         self._gen_tabla.poblar(renglones)
 
+    def _eliminar_renglones(self, ids: list[int], generador_id: int, tabla) -> None:
+        """Elimina un bloque de renglones y refresca `tabla`. Compartido
+        entre el panel singleton y cualquier pestaña de Generadores
+        abierta — antes cada quien borraba nada más items[0]/un id
+        suelto, ignorando el resto de una selección múltiple."""
+        if not ids or not self._api:
+            return
+        for rid in ids:
+            self._api.generador_renglon_eliminar(rid)
+        renglones = self._api.generador_renglones(generador_id)
+        tabla.poblar(renglones)
+
     def _on_renglon_eliminar(self):
-        items = self._gen_tabla.selectedItems()
+        items = [it for it in self._gen_tabla.selectedItems() if not it.data(0, EMPTY_ROLE)]
         if not items or not self._api:
             return
-        item = items[0]
-        renglon_id = item.data(0, Qt.ItemDataRole.UserRole)
-        if not renglon_id:
+        ids = [it.data(0, Qt.ItemDataRole.UserRole) for it in items]
+        ids = [i for i in ids if i]
+        if not ids:
             return
-        resp = QMessageBox.question(
-            self, "Eliminar renglón",
-            "¿Eliminar este renglón del generador?",
-        )
+        texto = ("¿Eliminar este renglón del generador?" if len(ids) == 1 else
+                 f"¿Eliminar estos {len(ids)} renglones del generador?")
+        resp = QMessageBox.question(self, "Eliminar renglón(es)", texto)
         if resp != QMessageBox.StandardButton.Yes:
             return
-        self._api.generador_renglon_eliminar(renglon_id)
-        renglones = self._api.generador_renglones(self._gen_seleccionado)
-        self._gen_tabla.poblar(renglones)
+        self._eliminar_renglones(ids, self._gen_seleccionado, self._gen_tabla)
 
     # ── Refresco externo (llamado desde handlers/__init__.py) ────
 
@@ -710,3 +751,101 @@ class GeneradorMixin:
             self._cad_btn_undo.setEnabled(can_undo(self._cad_undo_state))
         if self._cad_btn_redo is not None:
             self._cad_btn_redo.setEnabled(can_redo(self._cad_undo_state))
+
+    # ── Drag and drop entre pestañas de Generadores ──────────────
+
+    def _on_drop_generador(self, ids_arrastrados: list[int], generador_destino_id: int,
+                            antes_de_id: int | None, copiar: bool) -> bool:
+        """Handler del drag and drop de renglones (ver
+        TablaGenerador.dropEvent): mueve/copia (Ctrl) un bloque de
+        renglones a otro generador, o reordena si es el mismo. El
+        trabajo real (mover, recalcular ambos lados, historial) ya lo
+        hace generador_mover_renglones(); aquí solo se refrescan las
+        tablas visibles afectadas — GeneradorActualizado no tiene un
+        listener genérico que repueble tablas, a diferencia de
+        ProyectoRecalculado en el árbol de Presupuesto."""
+        api = getattr(self, '_api', None)
+        if not api or not ids_arrastrados:
+            return False
+        ok = api.generador_mover_renglones(ids_arrastrados, generador_destino_id,
+                                            antes_de_id, copiar)
+        if not ok:
+            return False
+        # Refrescar el panel singleton (si hay uno abierto) y cualquier
+        # pestaña de Generadores — más simple que rastrear cuál de los
+        # generadores involucrados es cada uno; repoblar de más no
+        # rompe nada, solo relee de la base de datos.
+        if getattr(self, '_gen_seleccionado', None) is not None:
+            renglones = api.generador_renglones(self._gen_seleccionado)
+            self._gen_tabla.poblar(renglones)
+        # Refrescar cualquier pestaña de Generadores abierta.
+        tabs = getattr(self, '_tabs', None)
+        if tabs is not None:
+            for i in range(tabs.count()):
+                tabla = getattr(tabs.widget(i), '_tabla_generador', None)
+                if tabla is not None and tabla._generador_id is not None:
+                    renglones = api.generador_renglones(tabla._generador_id)
+                    tabla.poblar(renglones)
+        return True
+
+    def _build_generador_tab(self, generador_id: int, nombre: str) -> QWidget:
+        """Pestaña independiente para UN generador, con su propia
+        TablaGenerador — para poder tener varios generadores abiertos a
+        la vez y arrastrar renglones entre ellos (ver
+        TablaGenerador.dropEvent/_on_drop_generador). A diferencia del
+        panel original (self._gen_tabla, con medición CAD ligada), esta
+        pestaña es de solo edición manual de renglones — el flujo con
+        CAD sigue siendo el panel de siempre."""
+        from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
+        from frontend.ventana.widgets.generador import TablaGenerador
+
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(4, 4, 4, 4)
+        lbl = QLabel(nombre)
+        f = lbl.font()
+        f.setBold(True)
+        lbl.setFont(f)
+        layout.addWidget(lbl)
+
+        tabla = TablaGenerador(generador_id=generador_id)
+        tabla.poblar(self._api.generador_renglones(generador_id))
+        tabla.renglon_editado.connect(
+            lambda rid, campos, gid=generador_id: self._on_renglon_editado_tab(gid, rid, campos, tabla))
+        tabla.renglon_eliminar.connect(
+            lambda ids, gid=generador_id, t=tabla: self._eliminar_renglones(ids, gid, t))
+        tabla.nuevo_renglon.connect(
+            lambda gid=generador_id: self._on_renglon_nuevo_tab(gid, tabla))
+        layout.addWidget(tabla, 1)
+        container._tabla_generador = tabla  # ver _on_drop_generador
+        return container
+
+    def _abrir_generador_tab(self, generador_id: int, nombre: str = ""):
+        """Abre (o enfoca, si ya está abierta) una pestaña propia para
+        este generador — punto de entrada para poder tener dos
+        generadores visibles a la vez y arrastrar renglones entre ellos."""
+        if not self._api:
+            return
+        gen = self._api.generador_por_id(generador_id)
+        if not gen:
+            return
+        titulo = f"Generador: {nombre or gen.get('nombre') or generador_id}"
+        for i in range(self._tabs.count()):
+            if self._tabs.tabText(i) == titulo:
+                self._tabs.setCurrentIndex(i)
+                return
+        idx = self._tabs.addTab(self._build_generador_tab(generador_id, titulo), titulo)
+        self._tabs.setCurrentIndex(idx)
+
+    def _on_renglon_editado_tab(self, generador_id: int, renglon_id: int,
+                                 campos: dict, tabla) -> None:
+        """Igual que _on_renglon_editado, pero para una pestaña
+        independiente: recarga solo esa tabla, no el panel singleton.
+        Diferido por la misma razón (ver _on_renglon_editado): un pegado
+        multi-columna no debe repoblar a medio camino."""
+        self._api.generador_renglon_guardar(generador_id, renglon_id=renglon_id, **campos)
+        QTimer.singleShot(0, lambda: tabla.poblar(self._api.generador_renglones(generador_id)))
+
+    def _on_renglon_nuevo_tab(self, generador_id: int, tabla) -> None:
+        nuevo_id = self._api.generador_renglon_guardar(generador_id)
+        tabla.poblar(self._api.generador_renglones(generador_id), seleccionar_id=nuevo_id)

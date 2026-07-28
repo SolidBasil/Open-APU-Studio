@@ -39,6 +39,15 @@ _EVENTO_POR_ENTIDAD: dict[str, type[Evento]] = {
     "variables_formula": VariableFormulaActualizada,
 }
 
+# Tablas con columna 'activo' (soft-delete). Usado por deshacer()/rehacer()
+# para las entradas CAMPO_CREADO (ver historial.py): en estas tablas,
+# deshacer una fila creada la soft-elimina y rehacer la revive. En tablas
+# SIN esta columna (ej. apu_matrices — sus componentes se identifican por
+# fila, no tienen estado activo/inactivo) no hay forma de "ocultarla" sin
+# borrarla de verdad, así que deshacer ahí es un DELETE físico — y por lo
+# tanto irreversible: no hay nada que rehacer.
+_TABLAS_CON_SOFT_DELETE = {"estructura_presupuesto", "generador_renglones"}
+
 
 class DataService:
     """Servicio único de escritura.
@@ -208,6 +217,46 @@ class DataService:
 
     # ── SRV-10: Deshacer / Rehacer ─────────────────────────────────
 
+    def _recalcular_generadores_tocados(self, cambios: list[dict]) -> None:
+        """Tras deshacer/rehacer, generador_renglones.generador_id/orden ya
+        quedaron restaurados como simples valores de campo — pero
+        generadores.cantidad_total y estructura_presupuesto.cantidad son
+        cachés derivados (SUM de renglones) que el motor genérico de
+        deshacer/rehacer no sabe que debe recalcular, porque no conoce el
+        significado de esas tablas. Sin esto, deshacer un movimiento entre
+        generadores deja ambos lados con una cantidad_total desactualizada
+        (ver GeneradorRepo.recalcular_cantidad_total/recalcular_concepto,
+        que sí se llaman al mover/copiar normalmente vía
+        mover_renglones_generador())."""
+        from backend.database.repos.generador import GeneradorRepo
+        gen_ids = set()
+        for c in cambios:
+            if c["tabla"] != "generador_renglones":
+                continue
+            if c["campo"] == "generador_id":
+                for v in (c.get("valor_anterior"), c.get("valor_nuevo")):
+                    if v is not None:
+                        try:
+                            gen_ids.add(int(float(v)))
+                        except (ValueError, TypeError):
+                            pass
+            else:
+                # CAMPO_CREADO u otro campo (ej. "orden"): el generador
+                # actual del renglón (tras aplicar el cambio) también
+                # puede necesitar recalcularse.
+                gen_repo_tmp = GeneradorRepo(self._db.conn)
+                fila = gen_repo_tmp.buscar_renglon(c["registro_id"])
+                if fila:
+                    gen_ids.add(fila["generador_id"])
+        if not gen_ids:
+            return
+        gen_repo = GeneradorRepo(self._db.conn)
+        for gid in gen_ids:
+            gen_repo.recalcular_cantidad_total(gid)
+            gen = gen_repo.buscar(gid)
+            if gen and gen.get("concepto_id"):
+                gen_repo.recalcular_concepto(gen["concepto_id"])
+
     def deshacer(self, usuario_id: int = 1,
                   proyecto_id: int | None = None) -> bool:
         """Deshace la última operación del usuario.
@@ -220,7 +269,7 @@ class DataService:
         proyecto_id: se infiere del primer cambio si no se provee.
         Devuelve True si había algo que deshacer.
         """
-        from backend.database.repos.historial import HistorialRepo
+        from backend.database.repos.historial import HistorialRepo, CAMPO_CREADO
         from backend.database.repos import RecalculoRepo
 
         h_repo = HistorialRepo(self._db.conn)
@@ -252,21 +301,38 @@ class DataService:
 
         with self._db.transaction():
             for c in cambios:
+                repo = self._registry.obtener(c["tabla"])
+                if c["campo"] == CAMPO_CREADO:
+                    # Esta fila se creó en esta sesión (ver
+                    # HistorialRepo.capturar_creado) — deshacer la borra,
+                    # no restaura un valor de campo. Soft-delete si la
+                    # tabla lo soporta; si no (ver _TABLAS_CON_SOFT_DELETE),
+                    # DELETE físico — sin redo posible para esta entrada.
+                    if c["tabla"] in _TABLAS_CON_SOFT_DELETE:
+                        repo.update(c["registro_id"], {"activo": 0})
+                    else:
+                        # repo.delete() asume una columna 'activo' (soft-delete
+                        # genérico de RepoBase) que esta tabla no tiene —
+                        # DELETE físico directo.
+                        self._db.conn.execute(
+                            f"DELETE FROM {c['tabla']} WHERE id = ?", [c["registro_id"]]
+                        )
+                    continue
                 valor = c["valor_anterior"]
                 if valor is None:
                     continue
-                if c["tabla"] in ("insumos", "estructura_presupuesto", "apu_matrices"):
+                if c["tabla"] in ("insumos", "estructura_presupuesto", "apu_matrices", "generador_renglones"):
                     try:
                         valor = float(valor)
                     except (ValueError, TypeError):
                         pass
-                repo = self._registry.obtener(c["tabla"])
                 repo.update(c["registro_id"], {c["campo"]: valor})
 
             # Marcar como deshecha (redo stack). NO limpiar aquí:
             # limpiar_deshachadas solo corre en actualizar() cuando
             # el usuario hace una escritura nueva (invalida redo).
             h_repo.marcar_deshachada(sesion)
+            self._recalcular_generadores_tocados(cambios)
             RecalculoRepo(self._db.conn).recalcular_proyecto(pid)
 
         self._event_bus.emit(ProyectoRecalculado(pid))
@@ -281,7 +347,7 @@ class DataService:
 
         Devuelve True si había algo que rehacer.
         """
-        from backend.database.repos.historial import HistorialRepo
+        from backend.database.repos.historial import HistorialRepo, CAMPO_CREADO
         from backend.database.repos import RecalculoRepo
 
         h_repo = HistorialRepo(self._db.conn)
@@ -306,18 +372,27 @@ class DataService:
 
         with self._db.transaction():
             for c in cambios:
+                repo = self._registry.obtener(c["tabla"])
+                if c["campo"] == CAMPO_CREADO:
+                    # Redo de una fila creada: revivirla, solo posible si
+                    # la tabla tiene soft-delete — si el deshacer fue un
+                    # DELETE físico (ver deshacer()), la fila ya no existe
+                    # y no hay nada que revivir.
+                    if c["tabla"] in _TABLAS_CON_SOFT_DELETE:
+                        repo.update(c["registro_id"], {"activo": 1})
+                    continue
                 valor = c["valor_nuevo"]
                 if valor is None:
                     continue
-                if c["tabla"] in ("insumos", "estructura_presupuesto", "apu_matrices"):
+                if c["tabla"] in ("insumos", "estructura_presupuesto", "apu_matrices", "generador_renglones"):
                     try:
                         valor = float(valor)
                     except (ValueError, TypeError):
                         pass
-                repo = self._registry.obtener(c["tabla"])
                 repo.update(c["registro_id"], {c["campo"]: valor})
 
             h_repo.desmarcar_sesion(sesion)
+            self._recalcular_generadores_tocados(cambios)
             RecalculoRepo(self._db.conn).recalcular_proyecto(pid)
 
         self._event_bus.emit(ProyectoRecalculado(pid))
@@ -472,6 +547,97 @@ class DataService:
                     ))
         if proyecto_id is not None:
             self._event_bus.emit(ProyectoRecalculado(proyecto_id))
+
+    def mover_renglones_generador(self, ids: list[int], nuevo_generador_id: int,
+                                   antes_de_id: int | None, copiar: bool,
+                                   usuario_id: int = 1) -> bool:
+        """Mueve o copia (Ctrl) un bloque de renglones a nuevo_generador_id,
+        insertados justo antes de antes_de_id (o al final si es None) —
+        usado por el drag and drop entre pestañas de Generadores (ver
+        TablaGenerador.dropEvent). Si nuevo_generador_id es el mismo
+        generador de origen, esto simplemente reordena.
+
+        Recalcula cantidad_total de AMBOS generadores involucrados (si
+        mover cambia de generador) y la cantidad de sus conceptos
+        vinculados, en caso de tenerlos — igual alcance que
+        eliminar_renglon_generador()/guardar_renglon_generador()."""
+        from backend.database.repos.generador import GeneradorRepo
+        from backend.database.repos.recalculo import RecalculoRepo
+        from backend.database.repos.historial import HistorialRepo
+        import uuid as _uuid
+
+        if not ids:
+            return False
+        gen_repo = GeneradorRepo(self._db.conn)
+        h_repo = HistorialRepo(self._db.conn)
+        h_repo.limpiar_deshachadas(usuario_id)
+        sesion = str(_uuid.uuid4())
+
+        generadores_afectados = set()
+        for rid in ids:
+            info = gen_repo.info_renglon(rid)
+            if info:
+                generadores_afectados.add(info["generador_id"])
+        generadores_afectados.add(nuevo_generador_id)
+
+        try:
+            with self._db.transaction():
+                if not copiar:
+                    viejos = {rid: gen_repo.info_renglon(rid) for rid in ids}
+                    gen_repo.mover_bloque(ids, nuevo_generador_id, antes_de_id)
+                    nuevos = {rid: gen_repo.info_renglon(rid) for rid in ids}
+                    for rid in ids:
+                        viejo, nuevo = viejos.get(rid), nuevos.get(rid)
+                        if not viejo or not nuevo:
+                            continue
+                        if viejo["generador_id"] != nuevo["generador_id"]:
+                            h_repo.capturar(tabla="generador_renglones", registro_id=rid,
+                                             campo="generador_id", valor_anterior=viejo["generador_id"],
+                                             valor_nuevo=nuevo["generador_id"], usuario_id=usuario_id,
+                                             sesion=sesion)
+                        if viejo["orden"] != nuevo["orden"]:
+                            h_repo.capturar(tabla="generador_renglones", registro_id=rid,
+                                             campo="orden", valor_anterior=viejo["orden"],
+                                             valor_nuevo=nuevo["orden"], usuario_id=usuario_id,
+                                             sesion=sesion)
+                else:
+                    nuevos_ids = gen_repo.duplicar_bloque(ids, nuevo_generador_id, antes_de_id)
+                    for nid in nuevos_ids:
+                        h_repo.capturar_creado("generador_renglones", nid,
+                                                usuario_id=usuario_id, sesion=sesion)
+
+                conceptos_ids = []
+                proyecto_id = None
+                for gid in generadores_afectados:
+                    gen_repo.recalcular_cantidad_total(gid)
+                    gen = gen_repo.buscar(gid)
+                    if gen and gen.get("concepto_id"):
+                        cid = gen["concepto_id"]
+                        gen_repo.recalcular_concepto(cid)
+                        conceptos_ids.append(cid)
+                        proyecto_id = gen["proyecto_id"]
+                if proyecto_id is not None:
+                    RecalculoRepo(self._db.conn).recalcular_proyecto(proyecto_id)
+        except Exception as e:
+            raise RepositoryError(str(e)) from e
+
+        for gid in generadores_afectados:
+            self._event_bus.emit(GeneradorActualizado(
+                generador_id=gid, conceptos_ids=conceptos_ids,
+            ))
+        if conceptos_ids:
+            from backend.database.repos import NodoRepo
+            nodo_repo = NodoRepo(self._db.conn)
+            for cid in conceptos_ids:
+                registro = nodo_repo.buscar(cid)
+                if registro:
+                    from backend.database.event_bus import ConceptoActualizado
+                    self._event_bus.emit(ConceptoActualizado(
+                        concepto_id=cid, cambios={"cantidad", "total"}, registro=registro,
+                    ))
+        if proyecto_id is not None:
+            self._event_bus.emit(ProyectoRecalculado(proyecto_id))
+        return True
 
     def reasignar_generador(self, generador_id: int,
                             nuevo_concepto_id: int | None,

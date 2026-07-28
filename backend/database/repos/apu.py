@@ -19,6 +19,70 @@ class ApuMatricesRepo(RepoBase):
         )
         return row["prox"] if row else 1
 
+    def hermanos_de(self, matriz_id: int) -> list[int]:
+        """ids de todos los componentes de una matriz, en su orden actual."""
+        filas = self._lista(
+            "SELECT id FROM apu_matrices WHERE matriz_id = ? ORDER BY orden, id",
+            [matriz_id]
+        )
+        return [f["id"] for f in filas]
+
+    def info_componente(self, comp_id: int) -> dict | None:
+        """Devuelve {matriz_id, orden} de un componente, o None si no existe."""
+        return self._uno(
+            "SELECT matriz_id, orden FROM apu_matrices WHERE id = ?", [comp_id]
+        )
+
+    def mover_bloque(self, ids: list[int], nueva_matriz_id: int,
+                      antes_de_id: int | None) -> None:
+        """Reposiciona un bloque de componentes (ids, en el orden en que
+        el usuario los arrastró) para que queden en nueva_matriz_id,
+        insertados justo antes de antes_de_id (o al final si es None o ya
+        no es uno de los componentes de esa matriz).
+
+        A diferencia de NodoRepo.mover_bloque (Presupuesto), aquí no hace
+        falta la técnica de "hueco"/orden_tras: una matriz normalmente
+        tiene pocos componentes, así que simplemente se renumera todo el
+        grupo destino de 1 en 1 tras insertar el bloque en su lugar.
+
+        Usado por el drag and drop del desglose de APU: soltar dentro de
+        la misma matriz reordena; soltar en OTRA matriz (otra pestaña de
+        APU abierta) mueve el componente ahí."""
+        ids_mover = set(ids)
+        hermanos = [cid for cid in self.hermanos_de(nueva_matriz_id) if cid not in ids_mover]
+        if antes_de_id is not None and antes_de_id in hermanos:
+            idx = hermanos.index(antes_de_id)
+        else:
+            idx = len(hermanos)
+        nuevo_orden = hermanos[:idx] + list(ids) + hermanos[idx:]
+        self._cursor.executemany(
+            "UPDATE apu_matrices SET matriz_id = ?, orden = ? WHERE id = ?",
+            [(nueva_matriz_id, pos + 1, cid) for pos, cid in enumerate(nuevo_orden)]
+        )
+
+    def duplicar_bloque(self, ids: list[int], nueva_matriz_id: int,
+                         antes_de_id: int | None) -> list[int]:
+        """Duplica un bloque de componentes como filas nuevas en
+        nueva_matriz_id, en la posición indicada (ver mover_bloque).
+        Devuelve los ids nuevos, en el mismo orden que `ids`.
+
+        Usado por el drag and drop del desglose de APU con Ctrl
+        presionado: a diferencia de mover_bloque, el/los componente(s)
+        original(es) quedan intactos donde estaban."""
+        nuevos = []
+        for cid in ids:
+            fila = self.buscar(cid)
+            if not fila:
+                continue
+            datos = {k: v for k, v in fila.items()
+                     if k not in ("id", "matriz_id", "orden", "importe",
+                                  "creado_en", "modificado_en", "modificado_por")}
+            datos["matriz_id"] = nueva_matriz_id
+            datos["orden"] = self.proximo_orden(nueva_matriz_id)
+            nuevos.append(self.insert(datos))
+        self.mover_bloque(nuevos, nueva_matriz_id, antes_de_id)
+        return nuevos
+
     def por_matriz(self, matriz_id):
         """Devuelve los componentes del APU de una matriz (concepto o compuesto)."""
         return self._lista("""

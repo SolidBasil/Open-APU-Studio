@@ -222,6 +222,14 @@ class ApuMixin:
             if tipo == "Capítulo":
                 self._api.agrupador_actualizar_descripcion(nodo_id, item.text(column))
             else:
+                # Pegado sobre Descripción de un concepto (ver
+                # TablaArbol._resolver_insumo_pegado): UserRole trae el
+                # insumo_id resuelto — relíe el concepto a ese insumo, en
+                # vez de renombrar la descripción del insumo actual.
+                insumo_id = item.data(column, Qt.ItemDataRole.UserRole)
+                if insumo_id:
+                    self._api.concepto_reasignar_insumo(nodo_id, insumo_id)
+                    return
                 from PySide6.QtWidgets import QMessageBox
                 try:
                     self._api.concepto_actualizar_descripcion(nodo_id, item.text(column))
@@ -231,6 +239,37 @@ class ApuMixin:
                     tree.blockSignals(True)
                     item.setText(column, self._api.nodo_descripcion_actual(nodo_id))
                     tree.blockSignals(False)
+
+        elif column == 3:
+            if tipo != "Concepto":
+                return
+            from PySide6.QtWidgets import QMessageBox
+            # Paste setea UserRole con insumo_id (ver _resolver_insumo_pegado)
+            insumo_id = item.data(column, Qt.ItemDataRole.UserRole)
+            if insumo_id is None:
+                hash_val = item.text(column).strip()
+                if not hash_val:
+                    return
+                ins = self._api.insumo_por_hash(hash_val)
+                if ins is None:
+                    QMessageBox.warning(self, "Hash inválido",
+                                        f"No existe insumo con hash '{hash_val}'")
+                    tree = item.treeWidget()
+                    if tree:
+                        tree.blockSignals(True)
+                        nodo = self._api.campo_valor("estructura_presupuesto", "id", nodo_id)
+                        orig_id = (nodo or {}).get("insumo_id")
+                        if orig_id:
+                            orig = self._api.campo_valor("insumos", "id", orig_id)
+                            item.setText(3, (orig or {}).get("clave_opus", ""))
+                        else:
+                            item.setText(3, "")
+                        tree.blockSignals(False)
+                    return
+                insumo_id = ins.get("id")
+            if insumo_id:
+                self._api.concepto_reasignar_insumo(nodo_id, insumo_id)
+            return
 
         elif column == 5:
             if tipo == "Concepto":
@@ -312,3 +351,62 @@ class ApuMixin:
         if insumo_id is None:
             return
         api.apu_agregar_componente(matriz_id, insumo_id)
+
+    def _on_drop_apu(self, ids_arrastrados: list[int], matriz_destino_id: int,
+                      antes_de_id: int | None, copiar: bool) -> bool:
+        """Handler del drag and drop del desglose de APU (ver
+        TablaApuDetalle.dropEvent): reordena componentes dentro de la
+        misma matriz, o los mueve/copia (Ctrl) a OTRA matriz distinta —
+        por ejemplo, arrastrar un componente de la matriz de un concepto
+        hacia la pestaña de APU de otro concepto abierta al mismo tiempo.
+
+        A diferencia de Presupuesto, aquí no hay riesgo de ciclo (un
+        componente no puede terminar siendo "ancestro" de la matriz que
+        lo contiene), así que no hace falta validar nada antes de mover.
+
+        Nota: apu_matrices no tiene columna de soft-delete ("activo") —
+        deshacer una COPIA aquí borra la fila de verdad (ver
+        _TABLAS_CON_SOFT_DELETE en data_service.py), así que no se puede
+        rehacer esa copia en particular (mover sí es reversible en ambos
+        sentidos, porque solo cambia matriz_id/orden de una fila que
+        sigue existiendo)."""
+        from backend.database.repos import ApuMatricesRepo, RecalculoRepo
+        from backend.database.event_bus import ProyectoRecalculado
+        from backend.database.repos.historial import HistorialRepo
+        conn = getattr(self, '_conn', None)
+        ds = getattr(self, '_data_service', None)
+        api = getattr(self, '_api', None)
+        if not conn or not ds or not api or not ids_arrastrados:
+            return False
+        proyecto_id = api.proyecto_actual_id()
+        repo = ApuMatricesRepo(conn)
+        h_repo = HistorialRepo(conn)
+        h_repo.limpiar_deshachadas(1)
+        import uuid as _uuid
+        sesion = str(_uuid.uuid4())
+
+        if not copiar:
+            viejos = {cid: repo.info_componente(cid) for cid in ids_arrastrados}
+            repo.mover_bloque(ids_arrastrados, matriz_destino_id, antes_de_id)
+            nuevos = {cid: repo.info_componente(cid) for cid in ids_arrastrados}
+            for cid in ids_arrastrados:
+                viejo, nuevo = viejos.get(cid), nuevos.get(cid)
+                if not viejo or not nuevo:
+                    continue
+                if viejo["matriz_id"] != nuevo["matriz_id"]:
+                    h_repo.capturar(tabla="apu_matrices", registro_id=cid,
+                                     campo="matriz_id", valor_anterior=viejo["matriz_id"],
+                                     valor_nuevo=nuevo["matriz_id"], usuario_id=1, sesion=sesion)
+                if viejo["orden"] != nuevo["orden"]:
+                    h_repo.capturar(tabla="apu_matrices", registro_id=cid,
+                                     campo="orden", valor_anterior=viejo["orden"],
+                                     valor_nuevo=nuevo["orden"], usuario_id=1, sesion=sesion)
+        else:
+            nuevos_ids = repo.duplicar_bloque(ids_arrastrados, matriz_destino_id, antes_de_id)
+            for nid in nuevos_ids:
+                h_repo.capturar_creado("apu_matrices", nid, usuario_id=1, sesion=sesion)
+
+        RecalculoRepo(conn).recalcular_proyecto(proyecto_id)
+        conn.commit()
+        ds.emitir(ProyectoRecalculado(proyecto_id))
+        return True

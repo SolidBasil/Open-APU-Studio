@@ -36,7 +36,7 @@ try:
     _BASE = Path(platformdirs.user_data_dir("Open APU Studio", "OpenAPU"))
 except ImportError:
     # Fallback si platformdirs no está instalado — carpeta junto al ejecutable
-    _BASE = Path(__file__).parent.parent / "datos_usuario"
+    _BASE = Path(__file__).resolve().parent.parent.parent / "datos_usuario"
 
 
 # =============================================================================

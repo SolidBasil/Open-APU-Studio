@@ -633,6 +633,10 @@ class Api:
         ids = self.insumo_ids_con_apu()
         return [i for i in self.insumos(tipo_clave) if i.get("id") in ids]
 
+    def insumo_por_hash(self, hash_val: str) -> dict | None:
+        """Busca un insumo por su hash dentro del proyecto activo."""
+        return self._backend.insumo_por_hash(hash_val)
+
     def recalcular_proyecto(self) -> dict:
         """Recalcula en cascada todo el presupuesto del proyecto abierto:
         costo de insumos compuestos → totales de conceptos → totales de
@@ -1253,6 +1257,13 @@ class Api:
 
     def generador_renglon_eliminar(self, renglon_id: int) -> None:
         self._ds.eliminar_renglon_generador(renglon_id)
+
+    def generador_mover_renglones(self, ids: list[int], nuevo_generador_id: int,
+                                   antes_de_id: int | None, copiar: bool) -> bool:
+        """Mueve o copia (Ctrl) un bloque de renglones a otro generador,
+        o reordena si nuevo_generador_id es el mismo — ver drag and drop
+        de TablaGenerador (widgets/generador.py)."""
+        return self._ds.mover_renglones_generador(ids, nuevo_generador_id, antes_de_id, copiar)
 
     def concepto_cantidad(self, concepto_id: int) -> float:
         from backend.database.repos.presupuesto import NodoRepo

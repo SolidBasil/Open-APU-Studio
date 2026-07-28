@@ -734,6 +734,87 @@ class HandlersMixin:
         conn.commit()
         ds.emitir(ProyectoRecalculado(proyecto_id))
 
+    def _on_drop_arbol(self, ids_arrastrados: list[int], nuevo_padre_id: int | None,
+                        antes_de_id: int | None, copiar: bool) -> bool:
+        """Handler del drag and drop del árbol de Presupuesto (ver
+        TablaArbol.dropEvent): mueve o copia (Ctrl) el bloque de nodos
+        arrastrados para que queden hijos de nuevo_padre_id, insertados
+        justo antes de antes_de_id (o al final de sus hijos si es None).
+
+        Devuelve True si se aplicó el cambio, False si se rechazó (ej.
+        soltar un capítulo dentro de su propio subárbol al mover) — el
+        caller decide qué hacer visualmente con ese resultado (TablaArbol
+        simplemente ignora el evento de drop).
+
+        Tanto mover como copiar quedan en el historial de deshacer: mover
+        invierte padre_id/orden; copiar borra (soft-delete) todas las
+        filas nuevas creadas — ver HistorialRepo.capturar_creado."""
+        from backend.database.repos import NodoRepo, RecalculoRepo
+        from backend.database.event_bus import ProyectoRecalculado
+        conn = getattr(self, '_conn', None)
+        ds = getattr(self, '_data_service', None)
+        api = getattr(self, '_api', None)
+        if not conn or not ds or not api or not ids_arrastrados:
+            return False
+        proyecto_id = api.proyecto_actual_id()
+        repo = NodoRepo(conn)
+
+        if not copiar:
+            # Mover: rechazar si el destino cae dentro del propio bloque
+            # arrastrado (crearía un padre_id cíclico — ver es_ancestro_o_mismo).
+            for nid in ids_arrastrados:
+                if nuevo_padre_id is not None and repo.es_ancestro_o_mismo(nid, nuevo_padre_id):
+                    return False
+                if antes_de_id in ids_arrastrados:
+                    return False
+
+            from backend.database.repos.historial import HistorialRepo
+            h_repo = HistorialRepo(conn)
+            h_repo.limpiar_deshachadas(1)
+            import uuid as _uuid
+            sesion = str(_uuid.uuid4())
+            viejos = {nid: repo.info_nodo(nid) for nid in ids_arrastrados}
+            repo.mover_bloque(ids_arrastrados, proyecto_id, nuevo_padre_id, antes_de_id)
+            nuevos = {nid: repo.info_nodo(nid) for nid in ids_arrastrados}
+            for nid in ids_arrastrados:
+                viejo, nuevo = viejos[nid], nuevos[nid]
+                if not viejo or not nuevo:
+                    continue
+                if viejo["padre_id"] != nuevo["padre_id"]:
+                    h_repo.capturar(
+                        tabla="estructura_presupuesto", registro_id=nid,
+                        campo="padre_id", valor_anterior=viejo["padre_id"],
+                        valor_nuevo=nuevo["padre_id"], usuario_id=1, sesion=sesion,
+                    )
+                if viejo["orden"] != nuevo["orden"]:
+                    h_repo.capturar(
+                        tabla="estructura_presupuesto", registro_id=nid,
+                        campo="orden", valor_anterior=viejo["orden"],
+                        valor_nuevo=nuevo["orden"], usuario_id=1, sesion=sesion,
+                    )
+        else:
+            from backend.database.repos.historial import HistorialRepo
+            h_repo = HistorialRepo(conn)
+            h_repo.limpiar_deshachadas(1)
+            import uuid as _uuid
+            sesion = str(_uuid.uuid4())
+            nuevas_raices = repo.duplicar_bloque(ids_arrastrados, proyecto_id,
+                                                  nuevo_padre_id, antes_de_id)
+            # Capturar TODAS las filas nuevas (cada raíz duplicada más sus
+            # descendientes, si era un capítulo con contenido) — de otro
+            # modo Ctrl+Z solo borraría las raíces y dejaría huérfanos
+            # duplicados sueltos en el árbol.
+            for raiz_id in nuevas_raices:
+                for fila in repo.descendientes(raiz_id):
+                    h_repo.capturar_creado("estructura_presupuesto", fila["id"],
+                                            usuario_id=1, sesion=sesion)
+
+        repo.reindexar(proyecto_id)
+        RecalculoRepo(conn).recalcular_proyecto(proyecto_id)
+        conn.commit()
+        ds.emitir(ProyectoRecalculado(proyecto_id))
+        return True
+
     def _on_eliminar(self):
         """Elimina los elementos seleccionados (nodos del árbol o filas de insumos).
 

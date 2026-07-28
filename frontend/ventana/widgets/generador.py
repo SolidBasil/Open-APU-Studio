@@ -7,7 +7,7 @@ Hereda TreeTableWidget — mismo patrón que TablaApuDetalle.
 """
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QHeaderView
+from PySide6.QtWidgets import QHeaderView, QAbstractItemView
 
 from frontend.ventana.widgets.base import TreeTableWidget, EMPTY_ROLE
 
@@ -23,19 +23,21 @@ class TablaGenerador(TreeTableWidget):
     # Señales
     renglon_editado = Signal(int, dict)   # (renglon_id, campos)
     renglon_nuevo = Signal(dict)          # (campos_iniciales)
-    renglon_eliminar = Signal(int)        # (renglon_id)
+    renglon_eliminar = Signal(list)       # (renglon_ids)
     total_actualizado = Signal(float)     # SUM(subtotal) de renglones activos
     nuevo_renglon = Signal()              # clic en fila vacía
 
     _HEADER_KEY = "generador_renglones_header_state"
+    _REORDER_ENABLED = True
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, generador_id: int | None = None):
         super().__init__(
             COLUMNAS,
             editable_cols=EDITABLE,
             flat=True,
             parent=parent,
         )
+        self._generador_id = generador_id  # ver dropEvent/_on_drop_generador
         self.set_column_modes({
             0: (QHeaderView.ResizeMode.Interactive, 100),
             1: (QHeaderView.ResizeMode.Interactive, 100),
@@ -50,10 +52,22 @@ class TablaGenerador(TreeTableWidget):
         self._renglon_ids: dict[int, int] = {}  # item_id → renglon_id
         self.itemChanged.connect(self._on_item_changed)
 
+        # ── Drag and drop entre pestañas de Generadores (misma lógica
+        # que APU/Presupuesto — ver TablaApuDetalle) ─────────────────
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDropIndicatorShown(True)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self._drop_objetivo = None  # (item, 'arriba'|'abajo') — ver paintEvent
+
     def poblar(self, renglones: list[dict], seleccionar_id: int | None = None):
         """Llena la tabla con renglones del generador.
         Si seleccionar_id se omite, preserva la selección actual si existe.
         """
+        sel_ids = [it.data(0, Qt.ItemDataRole.UserRole) for it in self.selectedItems()
+                   if not it.data(0, EMPTY_ROLE) and it.data(0, Qt.ItemDataRole.UserRole) is not None]
+        if not sel_ids:
+            sel_ids = list(getattr(self, '_drag_sel_ids', []))
         cur_item = self.currentItem()
         sel_renglon_id = seleccionar_id
         if sel_renglon_id is None and cur_item is not None:
@@ -93,6 +107,12 @@ class TablaGenerador(TreeTableWidget):
                     self.setCurrentItem(it, col if col >= 0 else 0)
                     break
 
+        if sel_ids:
+            for i in range(self.topLevelItemCount()):
+                it = self.topLevelItem(i)
+                if it.data(0, Qt.ItemDataRole.UserRole) in sel_ids:
+                    it.setSelected(True)
+
     def _add_empty_row(self):
         item = self.add_row(
             ["", "Nuevo renglón...", "", "", "", "", "", ""],
@@ -106,16 +126,103 @@ class TablaGenerador(TreeTableWidget):
             self.nuevo_renglon.emit()
             return
         if event.key() == Qt.Key.Key_Delete:
-            item = self.currentItem()
-            if item and not item.data(0, EMPTY_ROLE):
-                rid = item.data(0, Qt.ItemDataRole.UserRole)
-                if rid:
-                    self.renglon_eliminar.emit(rid)
+            ids = [it.data(0, Qt.ItemDataRole.UserRole) for it in self.selectedItems()
+                   if not it.data(0, EMPTY_ROLE)]
+            ids = [rid for rid in ids if rid]
+            if ids:
+                self.renglon_eliminar.emit(ids)
             return
         super().keyPressEvent(event)
 
     def _al_click_fila_vacia(self):
         self.nuevo_renglon.emit()
+
+    def set_generador_id(self, generador_id: int | None):
+        """Actualiza a qué generador está ligada esta tabla para el drag
+        and drop (ver dropEvent) — necesario porque, en el panel
+        original, la MISMA instancia de TablaGenerador se repuebla para
+        distintos generadores según cuál se seleccione en el árbol."""
+        self._generador_id = generador_id
+
+    def _get_reorder_info(self):
+        win = self.window()
+        handler = getattr(win, '_on_drop_generador', None) if win else None
+        return handler, self._generador_id
+
+    # ── Drag and drop entre pestañas de Generadores ──────────────
+    # Arrastrar renglones (selección múltiple incluida) y soltarlos en
+    # otro renglón de esta MISMA tabla los reordena; soltarlos en OTRA
+    # pestaña de Generadores abierta los mueve ahí (Ctrl los copia) —
+    # ver GeneradorMixin._on_drop_generador. Misma filosofía que
+    # TablaApuDetalle: tabla plana, solo "arriba"/"abajo", nunca "dentro".
+
+    def _fila_destino_valida(self, item) -> bool:
+        return item is not None and not item.data(0, EMPTY_ROLE)
+
+    def _calcular_posicion_drop(self, item, y_evento: int) -> str:
+        rect = self.visualItemRect(item)
+        if rect.height() <= 0:
+            return "abajo"
+        return "arriba" if y_evento < rect.center().y() else "abajo"
+
+    _DRAG_ICON = "layers"
+    _DRAG_MIME_LABEL = "renglón(es) de Generador"
+    _DROP_ACCEPTS_FOREIGN_CLASS = True
+
+    def dropEvent(self, event):
+        """Calcula (generador_destino=self._generador_id, antes_de_id) y
+        delega en self.window()._on_drop_generador(). Los renglones
+        arrastrados se leen de event.source() (no de self): si el drag
+        viene de OTRA pestaña de Generadores, self.selectedItems() sería
+        la selección de ESTA tabla, no la que se está arrastrando."""
+        self._drop_objetivo = None
+        self.viewport().update()
+
+        origen = event.source()
+        if not isinstance(origen, TablaGenerador):
+            event.ignore()
+            return
+        item_destino = self.itemAt(event.position().toPoint())
+        if not self._fila_destino_valida(item_destino):
+            event.ignore()
+            return
+
+        arrastrados = [it for it in origen.selectedItems() if self._fila_destino_valida(it)]
+        if not arrastrados:
+            ids_arrastrados = list(getattr(origen, '_drag_sel_ids', []))
+        else:
+            # selectedItems() sigue el orden de selección, no el visual
+            arrastrados.sort(key=lambda it: origen.visualItemRect(it).top())
+            ids_arrastrados = [it.data(0, Qt.ItemDataRole.UserRole) for it in arrastrados]
+        ids_arrastrados = [rid for rid in ids_arrastrados if rid is not None]
+        if not ids_arrastrados:
+            event.ignore()
+            return
+        if arrastrados and item_destino in arrastrados:
+            event.ignore()
+            return
+
+        posicion = self._calcular_posicion_drop(item_destino, event.position().toPoint().y())
+        hermanos_widget = [self.topLevelItem(i) for i in range(self.topLevelItemCount())
+                            if self._fila_destino_valida(self.topLevelItem(i))]
+        idx = hermanos_widget.index(item_destino)
+        if posicion == "arriba":
+            antes_de_id = item_destino.data(0, Qt.ItemDataRole.UserRole)
+        else:
+            siguiente = hermanos_widget[idx + 1] if idx + 1 < len(hermanos_widget) else None
+            antes_de_id = siguiente.data(0, Qt.ItemDataRole.UserRole) if siguiente is not None else None
+
+        copiar = bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier)
+        ventana = self.window()
+        handler = getattr(ventana, '_on_drop_generador', None)
+        if handler is None or self._generador_id is None:
+            event.ignore()
+            return
+        ok = handler(ids_arrastrados, self._generador_id, antes_de_id, copiar)
+        if ok:
+            event.acceptProposedAction()
+        else:
+            event.ignore()
 
     def _on_item_changed(self, item, column):
         """Persiste edición inline de renglones."""

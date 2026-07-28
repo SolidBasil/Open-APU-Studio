@@ -16,6 +16,17 @@ from datetime import datetime
 
 from backend.database.repos.base import RepoBase
 
+# Convención especial de campo para historial: en vez de "este campo cambió
+# de X a Y", esta entrada significa "esta fila se creó en esta sesión" —
+# deshacer() la borra (soft-delete, activo=0) en vez de intentar restaurar
+# un valor de campo; rehacer() la revive (activo=1). Necesario porque
+# insertar()/insert() no capturan historial hoy (ninguna fila creada en la
+# app es deshacible), y duplicar_bloque() (drag and drop con Ctrl — copiar)
+# sí necesita poder deshacerse. valor_nuevo no se usa para nada al aplicar
+# el cambio, solo debe ser no-None para no confundirse con una entrada de
+# campo real sin valor previo.
+CAMPO_CREADO = "__creado__"
+
 
 class HistorialRepo(RepoBase):
     TABLA = "historial"
@@ -43,6 +54,14 @@ class HistorialRepo(RepoBase):
             "usuario_id":     usuario_id,
             "cambiado_en":    datetime.now().isoformat(),
         })
+
+    def capturar_creado(self, tabla: str, registro_id: int,
+                         usuario_id: int = 1, sesion: str | None = None) -> None:
+        """Registra que una fila se creó en esta sesión (ver CAMPO_CREADO)
+        — deshacer() la soft-elimina en vez de restaurar un campo."""
+        self.capturar(tabla=tabla, registro_id=registro_id, campo=CAMPO_CREADO,
+                      valor_anterior=None, valor_nuevo="1",
+                      usuario_id=usuario_id, sesion=sesion)
 
     # ── SRV-10: Deshacer / Rehacer ────────────────────────────────
 

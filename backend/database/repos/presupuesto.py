@@ -405,6 +405,95 @@ class NodoRepo(RepoBase):
             (nodo_id,)
         )
 
+    def es_ancestro_o_mismo(self, posible_ancestro_id: int, nodo_id: int) -> bool:
+        """True si posible_ancestro_id es el propio nodo_id o alguno de sus
+        ancestros. Usado para rechazar un "mover" (drag and drop) que
+        convertiría a un nodo en hijo de sí mismo o de su propio
+        descendiente — soltarlo ahí lo dejaría inalcanzable (padre_id
+        apuntando dentro de su propio subárbol).
+
+        No aplica a "copiar": duplicar un bloque dentro de sí mismo no
+        crea ningún ciclo, porque genera ids nuevos."""
+        actual = nodo_id
+        visto = set()
+        while actual is not None and actual not in visto:
+            if actual == posible_ancestro_id:
+                return True
+            visto.add(actual)
+            fila = self.info_nodo(actual)
+            actual = fila["padre_id"] if fila else None
+        return False
+
+    def mover_bloque(self, ids: list[int], proyecto_id: int,
+                      nuevo_padre_id: int | None, antes_de_id: int | None) -> None:
+        """Mueve un bloque de nodos (ids, en el orden visual en que el
+        usuario los arrastró) para que sean hijos de nuevo_padre_id,
+        insertados justo antes del hermano antes_de_id (o al final de
+        sus hijos si antes_de_id es None o ya no es uno de ellos).
+
+        Solo toca padre_id/orden de los nodos movidos — el llamador debe
+        invocar reindexar(proyecto_id) después para recalcular wbs/nivel
+        de todo el árbol (ver reindexar(), que es la única función que
+        escribe esas columnas).
+
+        Usado por el drag and drop del árbol de Presupuesto: soltar sobre
+        un capítulo mete el bloque al final de ese capítulo; soltar entre
+        dos renglones lo inserta exactamente ahí, en el mismo padre que
+        esos dos renglones."""
+        ids_mover = set(ids)
+        hermanos = [nid for nid in self.hermanos_de(nuevo_padre_id, proyecto_id)
+                    if nid not in ids_mover]
+        if antes_de_id is not None and antes_de_id in hermanos:
+            idx = hermanos.index(antes_de_id)
+        else:
+            idx = len(hermanos)
+        anterior_id = hermanos[idx - 1] if idx > 0 else None
+        anterior_orden = self.info_nodo(anterior_id)["orden"] if anterior_id is not None else 0
+        base = self.orden_tras(proyecto_id, nuevo_padre_id, anterior_orden, hueco=len(ids))
+        self._cursor.executemany(
+            "UPDATE estructura_presupuesto SET padre_id = ?, orden = ? WHERE id = ?",
+            [(nuevo_padre_id, base + offset, nid) for offset, nid in enumerate(ids)]
+        )
+
+    def duplicar_bloque(self, ids: list[int], proyecto_id: int,
+                         nuevo_padre_id: int | None, antes_de_id: int | None) -> list[int]:
+        """Duplica un bloque de nodos (capítulos completos con todo su
+        subárbol, o conceptos sueltos) como hijos nuevos de nuevo_padre_id,
+        en la posición indicada (ver mover_bloque). Devuelve los ids de
+        las nuevas raíces duplicadas, en el mismo orden que `ids`.
+
+        Usado por el drag and drop del árbol de Presupuesto con Ctrl
+        presionado: a diferencia de mover_bloque, esto genera filas
+        nuevas — los originales quedan intactos donde estaban."""
+        nuevas_raices = [self._duplicar_nodo(nid, proyecto_id, nuevo_padre_id) for nid in ids]
+        self.mover_bloque(nuevas_raices, proyecto_id, nuevo_padre_id, antes_de_id)
+        return nuevas_raices
+
+    def _duplicar_nodo(self, nodo_id: int, proyecto_id: int,
+                        nuevo_padre_id: int | None) -> int:
+        """Duplica un solo nodo (y recursivamente sus hijos activos) como
+        hijo nuevo de nuevo_padre_id, al final de sus hijos actuales.
+        wbs/orden definitivos los recalcula mover_bloque()+reindexar()
+        después — aquí basta con un 'orden' provisional que no choque."""
+        fila = self.buscar(nodo_id)
+        if not fila:
+            raise ValueError(f"nodo {nodo_id} no existe")
+        datos = {k: v for k, v in fila.items()
+                 if k not in ("id", "wbs", "padre_id", "orden",
+                              "creado_en", "modificado_en", "modificado_por")}
+        datos["padre_id"] = nuevo_padre_id
+        datos["orden"] = self.proximo_orden(proyecto_id, nuevo_padre_id)
+        datos["wbs"] = ""  # placeholder — reindexar() lo recalcula justo después
+        nuevo_id = self.insert(datos)
+        hijos = self._lista(
+            "SELECT id FROM estructura_presupuesto "
+            "WHERE padre_id = ? AND activo = 1 ORDER BY orden, id",
+            [nodo_id]
+        )
+        for hijo in hijos:
+            self._duplicar_nodo(hijo["id"], proyecto_id, nuevo_id)
+        return nuevo_id
+
 
 # =============================================================================
 # INSUMOS

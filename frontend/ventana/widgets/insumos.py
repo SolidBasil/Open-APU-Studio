@@ -180,7 +180,7 @@ class TablaInsumos(TreeTableWidget):
 
     # ── Cortar / pegar: resolvers y creación de filas ─────────────────
 
-    def _resolver_tipo_pegado(self, valor: str):
+    def _resolver_tipo_pegado(self, item, col, valor: str):
         """paste_col_fn de la columna Tipo (4): el texto pegado debe
         coincidir (sin importar mayúsculas) con el nombre de un tipo de
         insumo conocido (Material, Mano de obra, Herramienta...). Si no
@@ -194,7 +194,7 @@ class TablaInsumos(TreeTableWidget):
                 return (nombre, tid)
         return None
 
-    def _resolver_familia_pegado(self, valor: str):
+    def _resolver_familia_pegado(self, item, col, valor: str):
         """paste_col_fn de la columna Familia (5): busca por nombre entre
         las familias existentes del proyecto. Una celda pegada vacía sí
         limpia la familia (equivale a elegir "(Sin familia)" en el combo);
@@ -229,7 +229,7 @@ class TablaInsumos(TreeTableWidget):
         if not descripcion:
             return None
 
-        tipo_resuelto = self._resolver_tipo_pegado(datos_fila.get(4, ""))
+        tipo_resuelto = self._resolver_tipo_pegado(None, 4, datos_fila.get(4, ""))
         if tipo_resuelto is None:
             return None
         _, tipo_id = tipo_resuelto
@@ -246,7 +246,7 @@ class TablaInsumos(TreeTableWidget):
 
         familia_id = None
         if datos_fila.get(5):
-            familia_resuelta = self._resolver_familia_pegado(datos_fila[5])
+            familia_resuelta = self._resolver_familia_pegado(None, 5, datos_fila[5])
             if familia_resuelta is not None:
                 _, familia_id = familia_resuelta
 
@@ -452,7 +452,28 @@ class TablaInsumos(TreeTableWidget):
 
     def _on_proyecto_recalculado(self, evento):
         """ProyectoRecalculado: repuebla desde la fuente de verdad,
-        preservando scroll y selección."""
+        preservando scroll y selección.
+
+        El repoblado real (self.clear()) se difiere con
+        QTimer.singleShot(0, ...) al siguiente ciclo del event loop —
+        mismo patrón que TablaApuDetalle._on_evento. Si corriera inline,
+        un pegado multi-celda (_pegar_cuadricula en widgets/base.py) que
+        toca la columna Precio dispara este evento de forma síncrona a
+        mitad de su propio bucle (todavía dentro del itemChanged que lo
+        originó); repoblar ahí destruiría el QTreeWidgetItem que ese
+        bucle sigue recorriendo (self.itemBelow(...) sobre un item ya
+        borrado) y abortaba el resto del pegado con RuntimeError:
+        ...already deleted, dejando el resto del bloque pegado sin
+        aplicarse.
+        """
+        if self._api is None:
+            return
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, self._refrescar_proyecto_recalculado)
+
+    def _refrescar_proyecto_recalculado(self):
+        """Cuerpo real del refresco de ProyectoRecalculado — ver
+        _on_proyecto_recalculado para por qué se llama diferido."""
         try:
             if self._api is None:
                 return

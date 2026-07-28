@@ -159,8 +159,6 @@ class PanelesMixin:
         # handlers/__init__.py). Shortcuts a nivel de ventana: operan
         # sobre la tabla activa (self._get_active_table()) sin importar
         # qué widget tenga el foco puntual dentro de la pestaña.
-        QShortcut(QKeySequence("Alt+Up"),    self).activated.connect(self._on_subir)
-        QShortcut(QKeySequence("Alt+Down"),  self).activated.connect(self._on_bajar)
         QShortcut(QKeySequence("Alt+Left"),  self).activated.connect(self._on_izquierda)
         QShortcut(QKeySequence("Alt+Right"), self).activated.connect(self._on_derecha)
         QShortcut(QKeySequence("Ctrl+Insert"),   self).activated.connect(self._on_agregar_agrupador)

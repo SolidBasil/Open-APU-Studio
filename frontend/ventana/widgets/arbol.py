@@ -7,12 +7,12 @@ Uso:
     from frontend.widgets.arbol import TablaArbol
 """
 
-from PySide6.QtCore import Qt, Signal, QPoint
-from PySide6.QtGui import QColor, QBrush, QMouseEvent
+from PySide6.QtCore import Qt, Signal, QPoint, QMimeData
+from PySide6.QtGui import QColor, QBrush, QMouseEvent, QDrag, QPainter, QFont, QPixmap, QPen
 
 from PySide6.QtWidgets import QHeaderView, QAbstractItemView
 
-from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef, FORMULA_ROLE, EMPTY_ROLE
+from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef, FORMULA_ROLE, EMPTY_ROLE, COPY_ROLE
 
 
 # ── Icono desde tipo_id (Lucide SVG) ─────────────────────────────
@@ -110,7 +110,7 @@ CAMPO_REPORTE = {
 # TreeTableWidget significa otra cosa (ver base.py::_Delegate).
 _EDITABLE_POR_TIPO = {
     "capitulo": {4, 10},      # Descripción, Notas
-    "concepto": {6, 10},      # Cant, Notas
+    "concepto": {3, 6, 10},   # Clave, Cant, Notas
 }
 
 
@@ -204,7 +204,9 @@ class TablaArbol(TreeTableWidget):
         if header_key:
             self._HEADER_KEY = header_key
         super().__init__(COLUMNAS, EDITABLE, parent=parent,
-                          editable_cols_fn=_editable_cols_arbol)
+                          editable_cols_fn=_editable_cols_arbol,
+                          paste_col_fn={3: self._resolver_insumo_pegado,
+                                        4: self._resolver_insumo_pegado})
         anchos = [160, 160, 140, 180, 500, 110, 130, 180, 180, 140, 200, 260, 260]
         anchos += [140, 320]  # Orden, Fórmula
         self.set_column_modes({
@@ -234,6 +236,21 @@ class TablaArbol(TreeTableWidget):
         self._search_cols = {4}  # búsqueda por Descripción
         self._api = None  # inyectado por conectar_eventos()
         self._event_bus = None  # inyectado por conectar_eventos()
+
+        # ── Drag and drop al estilo OPUS ──────────────────────────
+        # Arrastrar la selección (uno o varios renglones, capítulos o
+        # conceptos) y soltarla sobre otro capítulo o entre dos renglones
+        # los mueve ahí. Con Ctrl presionado, los copia en vez de
+        # moverlos (ver dropEvent()). Todo el manejo es propio — no se
+        # delega en el modelo interno de Qt (setDragDropMode solo se usa
+        # para obtener el indicador visual de dónde va a caer) porque la
+        # operación real vive en la base de datos (padre_id/orden), no en
+        # los QTreeWidgetItem.
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDropIndicatorShown(True)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self._drop_objetivo = None  # (item, 'arriba'|'dentro'|'abajo') — ver paintEvent
 
     def columnas_para_reporte(self) -> list[dict]:
         """Columnas imprimibles en orden visual + ancho actual, traducidas a
@@ -275,6 +292,230 @@ class TablaArbol(TreeTableWidget):
         nuevo = (estado + 1) % 4
         self._cambiar_estado(nodo_id, nuevo)
 
+    # ── Drag and drop al estilo OPUS ─────────────────────────────
+    # Arrastrar renglones (capítulos y/o conceptos, selección múltiple
+    # incluida) y soltarlos sobre otro capítulo, o entre dos renglones
+    # para controlar la posición exacta. Mueve por default; con Ctrl
+    # presionado, copia (duplica) en vez de mover — ver
+    # ApuMixin._on_drop_arbol (mixins/navegacion.py), que hace el trabajo
+    # real contra la base de datos.
+
+    def _fila_destino_valida(self, item) -> bool:
+        """True si item puede recibir un drop: cualquier renglón real
+        (capítulo o concepto), pero no la fila vacía placeholder ni None."""
+        return item is not None and item is not getattr(self, '_empty_row_item', None)
+
+    def startDrag(self, supportedActions):
+        """Reemplaza el "fantasma" de arrastre por defecto de Qt — que
+        renderiza los renglones seleccionados tal cual y tapa buena parte
+        de la vista debajo del mouse — por un ícono compacto (portapapeles
+        con un contador si son varios), igual que arrastrar archivos en un
+        explorador de archivos. El destino del drop (dropEvent) no
+        depende de este ícono para nada, solo de la selección real."""
+        arrastrados = [it for it in self.selectedItems() if self._fila_destino_valida(it)]
+        if not arrastrados:
+            return
+        mime = QMimeData()
+        mime.setText(f"{len(arrastrados)} elemento(s) de Presupuesto")
+        drag = QDrag(self)
+        drag.setMimeData(mime)
+        drag.setPixmap(self._pixmap_arrastre(len(arrastrados)))
+        drag.setHotSpot(QPoint(12, 12))
+        drag.exec(Qt.DropAction.MoveAction | Qt.DropAction.CopyAction,
+                  Qt.DropAction.MoveAction)
+
+    def _pixmap_arrastre(self, cantidad: int) -> QPixmap:
+        """Ícono de 40x40 para el arrastre: portapapeles, más un contador
+        en circulito si son varios renglones. Se ve igual muevas o
+        copies — el sistema ya distingue con el cursor (+) al copiar."""
+        size = 40
+        pix = QPixmap(size, size)
+        pix.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pix)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        icono("clipboard", size=28).paint(painter, 3, 3, 28, 28)
+        if cantidad > 1:
+            radio = 11
+            centro = QPoint(size - radio - 1, size - radio - 1)
+            painter.setBrush(QColor(ACCENT))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawEllipse(centro, radio, radio)
+            fuente = QFont()
+            fuente.setBold(True)
+            fuente.setPointSize(9)
+            painter.setFont(fuente)
+            painter.setPen(QColor("white"))
+            texto = str(cantidad) if cantidad < 100 else "99+"
+            painter.drawText(centro.x() - radio, centro.y() - radio,
+                              radio * 2, radio * 2,
+                              Qt.AlignmentFlag.AlignCenter, texto)
+        painter.end()
+        return pix
+
+    def dragEnterEvent(self, event):
+        """Acepta el arrastre si viene de este mismo árbol. Sin este
+        override, el dragEnterEvent por defecto de Qt rechaza el
+        QMimeData personalizado que usamos para el ícono compacto del
+        arrastre (ver startDrag) — no coincide con el formato interno que
+        Qt espera para mover filas — y eso deja el cursor en "prohibido"
+        durante todo el arrastre, sin importar dónde sueltes."""
+        if event.source() is self:
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def _calcular_posicion_drop(self, item, y_evento: int) -> str:
+        """Traduce la posición vertical del cursor dentro del renglón
+        'item' a 'arriba' / 'dentro' / 'abajo' (tercios de su alto) — el
+        mismo criterio para el indicador visual (dragMoveEvent/paintEvent)
+        y para la acción real (dropEvent), así lo que se ve siempre
+        coincide con lo que pasa al soltar."""
+        rect = self.visualItemRect(item)
+        if rect.height() <= 0:
+            return "abajo"
+        tercio = rect.height() / 3
+        if y_evento < rect.top() + tercio:
+            return "arriba"
+        if y_evento > rect.bottom() - tercio:
+            return "abajo"
+        return "dentro"
+
+    def dragMoveEvent(self, event):
+        """Actualiza el objetivo del drop para el indicador visual propio
+        (ver paintEvent) y decide si se puede soltar ahí. No se delega en
+        el mecanismo de indicador de Qt (dropIndicatorShown/
+        dropIndicatorPosition): como dragEnterEvent no llama a super() —
+        Qt nunca entra en su estado interno "arrastrando" — su indicador
+        nunca se dibuja aunque se acepte el evento. Pintamos el nuestro en
+        su lugar, siempre visible independientemente de ese estado."""
+        item = self.itemAt(event.position().toPoint())
+        if event.source() is not self or not self._fila_destino_valida(item):
+            self._drop_objetivo = None
+            self.viewport().update()
+            event.ignore()
+            return
+        posicion = self._calcular_posicion_drop(item, event.position().toPoint().y())
+        if posicion == "dentro" and item.data(0, TIPO_ROLE) != "capitulo":
+            # Un concepto no puede recibir hijos — si el cursor cae en el
+            # tercio central de un concepto, tratarlo como "abajo" (entre
+            # renglones) en vez de rechazar de plano.
+            posicion = "abajo"
+        self._drop_objetivo = (item, posicion)
+        self.viewport().update()
+        event.acceptProposedAction()
+
+    def dragLeaveEvent(self, event):
+        self._drop_objetivo = None
+        self.viewport().update()
+        super().dragLeaveEvent(event)
+
+    def paintEvent(self, event):
+        """Dibuja, encima del árbol normal, el indicador de a dónde va a
+        caer el drag en curso: una línea entre dos renglones (con un
+        circulito al inicio, igual que Word/Excel), o un marco redondeado
+        alrededor de un capítulo cuando el drop cae "dentro" de él."""
+        super().paintEvent(event)
+        objetivo = getattr(self, '_drop_objetivo', None)
+        if objetivo is None:
+            return
+        item, posicion = objetivo
+        rect = self.visualItemRect(item)
+        if not rect.isValid():
+            return
+        painter = QPainter(self.viewport())
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        color = QColor(ACCENT)
+        if posicion == "dentro":
+            pen = QPen(color, 2)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 4, 4)
+        else:
+            y = rect.top() if posicion == "arriba" else rect.bottom()
+            pen = QPen(color, 3)
+            painter.setPen(pen)
+            painter.drawLine(rect.left(), y, self.viewport().width(), y)
+            painter.setBrush(color)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawEllipse(QPoint(rect.left(), y), 3, 3)
+        painter.end()
+
+    def dropEvent(self, event):
+        """Calcula (nuevo_padre_id, antes_de_id) a partir de la misma
+        posición ('arriba'/'dentro'/'abajo', ver _calcular_posicion_drop)
+        que muestra el indicador visual, y delega el cambio real en la
+        ventana (self.window()._on_drop_arbol) — este widget no toca la
+        base de datos directamente, igual que el resto de operaciones de
+        mover.
+
+        No se llama a super().dropEvent(): el modelo interno de Qt no
+        sabe nada de padre_id/orden en la base de datos, así que dejar
+        que reordene los QTreeWidgetItem por su cuenta dejaría la vista
+        desincronizada hasta el próximo refresco. En vez de eso, todo el
+        refresco visual llega solo, vía el evento ProyectoRecalculado que
+        emite _on_drop_arbol al terminar (mismo mecanismo que Subir/Bajar/
+        Izquierda/Derecha)."""
+        self._drop_objetivo = None
+        self.viewport().update()
+
+        item_destino = self.itemAt(event.position().toPoint())
+        if event.source() is not self or not self._fila_destino_valida(item_destino):
+            event.ignore()
+            return
+
+        arrastrados = [it for it in self.selectedItems() if self._fila_destino_valida(it)]
+        if not arrastrados:
+            ids_arrastrados = list(getattr(self, '_drag_sel_ids', []))
+        else:
+            # selectedItems() de Qt trae los renglones en el orden en que se
+            # seleccionaron, no en el orden visual — si el usuario seleccionó
+            # de abajo hacia arriba (ej. Shift+clic empezando por el último),
+            # el bloque quedaba insertado al revés. Se reordena por posición
+            # en pantalla antes de usarlo.
+            arrastrados.sort(key=lambda it: self.visualItemRect(it).top())
+            ids_arrastrados = [it.data(0, ID_ROLE) for it in arrastrados]
+        ids_arrastrados = [nid for nid in ids_arrastrados if nid is not None]
+        if not ids_arrastrados:
+            event.ignore()
+            return
+        if arrastrados and item_destino in arrastrados:
+            event.ignore()
+            return
+
+        posicion = self._calcular_posicion_drop(item_destino, event.position().toPoint().y())
+        if posicion == "dentro" and item_destino.data(0, TIPO_ROLE) != "capitulo":
+            posicion = "abajo"
+
+        if posicion == "dentro":
+            nuevo_padre_id = item_destino.data(0, ID_ROLE)
+            antes_de_id = None  # al final de los hijos de ese capítulo
+        else:
+            padre_item = item_destino.parent()
+            nuevo_padre_id = padre_item.data(0, ID_ROLE) if padre_item is not None else None
+            hermanos_widget = (
+                [padre_item.child(i) for i in range(padre_item.childCount())]
+                if padre_item is not None else
+                [self.topLevelItem(i) for i in range(self.topLevelItemCount())]
+            )
+            idx = hermanos_widget.index(item_destino)
+            if posicion == "arriba":
+                antes_de_id = item_destino.data(0, ID_ROLE)
+            else:  # abajo
+                siguiente = hermanos_widget[idx + 1] if idx + 1 < len(hermanos_widget) else None
+                antes_de_id = siguiente.data(0, ID_ROLE) if siguiente is not None else None
+
+        copiar = bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier)
+        ventana = self.window()
+        handler = getattr(ventana, '_on_drop_arbol', None)
+        if handler is None:
+            event.ignore()
+            return
+        ok = handler(ids_arrastrados, nuevo_padre_id, antes_de_id, copiar)
+        if ok:
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
     def mouseDoubleClickEvent(self, event):
         item = self.itemAt(event.position().toPoint())
         if item is None:
@@ -286,6 +527,66 @@ class TablaArbol(TreeTableWidget):
             self.itemDoubleClicked.emit(item, col)
             return
         super().mouseDoubleClickEvent(event)
+
+    def _resolver_insumo_pegado(self, item, col: int, valor: str):
+        """paste_col_fn compartido de Clave (3) y Descripción (4) para
+        conceptos: ambas ligan al mismo insumo, así que cualquiera de las
+        dos acepta el valor pegado y resuelve al insumo correcto — no solo
+        Clave, que está oculta por defecto. Esto es lo que hace falta para
+        que copiar una fila normal del Presupuesto (o del Catálogo de
+        Insumos, con Descripción visible) y pegarla relíe el concepto al
+        insumo correcto, en vez de no hacer nada porque la columna que sí
+        resolvía estaba oculta.
+
+        Unidad (5) NO participa: a diferencia de Clave/Descripción, el
+        texto de una unidad ("m3", "pza") no identifica un insumo — lo
+        comparten decenas de insumos distintos. Una vez que el concepto
+        se re-liga vía Clave o Descripción, Unidad se refresca sola desde
+        el insumo correcto (ProyectoRecalculado repuebla el árbol).
+
+        Capítulos: Descripción (4) sigue siendo texto libre normal, sin
+        pasar por ningún insumo — Clave nunca es editable ahí, así que ni
+        siquiera se intenta (ver _paste_cols_for).
+
+        Reconoce el valor pegado, en orden:
+          1. Un id de insumo puro (dígitos) — pegado interno vía COPY_ROLE
+             de la columna Clave (ver copy_selection/add_registro).
+          2. El hash de deduplicación de un insumo tal cual (pegado desde
+             la columna Hash del Catálogo de Insumos).
+          3. El propio texto hasheado con el mismo algoritmo que usa el
+             catálogo para deduplicar — resuelve el caso más común: pegar
+             la Descripción de una fila copiada, sin exponer ninguna
+             columna oculta.
+
+        Si nada resuelve, no se toca la celda: nunca se inventa un insumo
+        nuevo ni se deja el concepto con datos huérfanos."""
+        tipo = item.data(0, TIPO_ROLE)
+        if tipo != "concepto":
+            if tipo == "capitulo" and col == 4:
+                return (valor, None)  # Descripción de capítulo: texto libre
+            return None
+        if col not in (3, 4):
+            return None
+        v = (valor or "").strip()
+        if not v:
+            return None
+        api = getattr(self, '_api', None)
+        if api is None:
+            return None
+        ins = None
+        if v.isdigit():
+            ins = api.campo_valor("insumos", "id", int(v))
+        if ins is None:
+            ins = api.insumo_por_hash(v)
+        if ins is None:
+            from backend.database.core import generar_hash
+            ins = api.insumo_por_hash(generar_hash(v))
+        if ins is None:
+            return None
+        insumo_id = ins.get("id")
+        if col == 3:
+            return (ins.get("clave_opus") or v, insumo_id)
+        return (ins.get("descripcion") or "", insumo_id)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_F2:
@@ -456,6 +757,7 @@ class TablaArbol(TreeTableWidget):
         item.setData(0, ID_ROLE, n.get("id"))
         item.setData(0, TIPO_ROLE, "concepto")
         item.setData(0, INSUMO_ROLE, n.get("insumo_id"))
+        item.setData(3, COPY_ROLE, str(n.get("insumo_id") or ""))
         item.setData(6, FORMULA_ROLE, n.get("formula") or "")
         tid = n.get("tipo_id")
         item.setIcon(0, icono(_ICONOS_TIPO_SVG.get(tid, "file-text"), 20, _COLOR_TIPO.get(tid)))
@@ -481,6 +783,8 @@ class TablaArbol(TreeTableWidget):
         item.setData(0, EMPTY_ROLE, True)
         item.setData(0, ID_ROLE, None)
         item.setData(0, TIPO_ROLE, "")
+        item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsDragEnabled
+                                    & ~Qt.ItemFlag.ItemIsDropEnabled)
         self._estilizar_fila_vacia(item)
         item.setToolTip(4, "Haz clic para agregar un capítulo nuevo")
         self._empty_row_item = item

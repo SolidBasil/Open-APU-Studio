@@ -49,6 +49,10 @@ class _BackendLocal:
         repo = InsumoRepo(self._api._conn)
         return repo.por_tipo(self._api._pid, tipo_clave) if tipo_clave else repo.todos(self._api._pid)
 
+    def insumo_por_hash(self, hash_val: str) -> dict | None:
+        from backend.database.repos import InsumoRepo
+        return InsumoRepo(self._api._conn).buscar_por_hash(hash_val, self._api._pid)
+
     def recalcular_proyecto(self) -> dict:
         from backend.database.repos import RecalculoRepo
         from backend.database.event_bus import ProyectoRecalculado
@@ -85,6 +89,9 @@ class _BackendHTTP:
 
     def insumos(self, tipo_clave: str | None = None) -> list[dict]:
         return self._api._http().insumos(tipo=tipo_clave)
+
+    def insumo_por_hash(self, hash_val: str) -> dict | None:
+        return self._api._http().insumo_por_hash(hash_val)
 
     def recalcular_proyecto(self) -> dict:
         self._api._http().recalcular()

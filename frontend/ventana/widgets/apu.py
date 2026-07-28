@@ -30,8 +30,9 @@ construye (a diferencia de explosión, que tiene dos builders distintos
 compartiendo el mismo widget).
 """
 
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import QComboBox, QDialog, QHeaderView, QMessageBox
+from PySide6.QtCore import Qt, QTimer, Signal, QPoint
+from PySide6.QtWidgets import QComboBox, QDialog, QHeaderView, QMessageBox, QAbstractItemView
+from PySide6.QtGui import QColor
 
 from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef, UNIDADES, FORMULA_ROLE, EMPTY_ROLE
 from backend.database.event_bus import (
@@ -39,6 +40,7 @@ from backend.database.event_bus import (
 )
 from frontend.ventana.iconos import icono
 from frontend.ventana.tipos_insumo import COLOR as _COLOR_TIPO
+from frontend.ventana.colores import ACCENT
 
 _TIPO_ID_ROLE = Qt.ItemDataRole.UserRole + 2
 
@@ -129,6 +131,7 @@ class TablaApuDetalle(TreeTableWidget):
             editable_cols=frozenset({5, 6}),
             editable_cols_fn=_editable_cols_detalle,
             column_editors={3: _combo_unidad, 5: _combo_operador},
+            paste_col_fn={1: self._resolver_insumo_pegado, 2: self._resolver_insumo_pegado},
             parent=parent,
         )
         self._matriz_id = matriz_id
@@ -136,6 +139,18 @@ class TablaApuDetalle(TreeTableWidget):
         self._on_apu_click = on_apu_click
         self._api = None        # inyectado por conectar_eventos()
         self._event_bus = None  # inyectado por conectar_eventos()
+
+        # ── Drag and drop entre matrices (misma lógica que Presupuesto,
+        # ver TablaArbol) ─────────────────────────────────────────────
+        # A diferencia de Presupuesto, esta tabla es plana (sin
+        # capítulos) y puede recibir un drop desde OTRA instancia — otra
+        # pestaña de APU abierta al mismo tiempo, ver dragEnterEvent —
+        # para mover/copiar un componente de una matriz a otra.
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDropIndicatorShown(True)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self._drop_objetivo = None  # (item, 'arriba'|'abajo') — ver paintEvent
 
         self.set_column_modes({
             c: (QHeaderView.ResizeMode.Interactive, w)
@@ -154,12 +169,9 @@ class TablaApuDetalle(TreeTableWidget):
     # ── Ciclo de vida (ver GUIA_INTERFAZ.md §7.6) ────────────────────────
 
     def poblar(self, resultado: dict | None):
-        """Repuebla filas + total desde un resultado ya consultado
-        (api.apu()), preservando selección/scroll.
-
-        Se llama al construir, con el resultado inicial ya obtenido por
-        quien arma la pestaña (ApuMixin._build_apu_tab), y de nuevo desde
-        _refrescar() ante cada evento suscrito.
+        """Repuebla filas + total desde un resultado ya consultado.
+        Puro: solo clear + add_rows + empty_row.
+        El restore de selección/scroll vive en _refrescar_seguro.
         """
         total = 0.0
         if resultado:
@@ -170,11 +182,6 @@ class TablaApuDetalle(TreeTableWidget):
                 total = sum(r.get("importe", 0) or 0 for r in resultado.get("detalle", []))
         titulo = self._descripcion or f"Matriz #{self._matriz_id}"
         self.resumen_actualizado.emit(f"<b>{titulo}</b> — Total: ${total:,.2f}")
-
-        scroll_y = self.verticalScrollBar().value()
-        comp_actual = self.currentItem().data(5, Qt.ItemDataRole.UserRole) \
-            if self.currentItem() else None
-        col_actual = self.currentColumn() if self.currentItem() else 0
 
         self.blockSignals(True)
         try:
@@ -206,14 +213,6 @@ class TablaApuDetalle(TreeTableWidget):
                     row_item.setData(6, FORMULA_ROLE, r.get("formula") or "")
         finally:
             self.blockSignals(False)
-
-        self.verticalScrollBar().setValue(scroll_y)
-        if comp_actual is not None:
-            for i in range(self.topLevelItemCount()):
-                it = self.topLevelItem(i)
-                if it.data(5, Qt.ItemDataRole.UserRole) == comp_actual:
-                    self.setCurrentItem(it, col_actual)
-                    break
 
         # Emit tipos detected for filter bar
         tipos_ids: set[int] = set()
@@ -249,6 +248,90 @@ class TablaApuDetalle(TreeTableWidget):
     def _al_click_fila_vacia(self):
         self.agregar_componente.emit(self._matriz_id)
 
+    # ── Drag and drop framework ──────────────────────────
+    # Uses base class TreeTableWidget drag/drop framework.
+    # Subclass overrides _fila_destino_valida and
+    # _calcular_posicion_drop for APu-specific behavior;
+    # dropEvent stays here because APu reads foreign source
+    # tables and maps column 5 as the ID column.
+
+    _DROP_FLAT = True
+    _DROP_CAN_INSIDE = False
+    _DROP_ACCEPTS_FOREIGN_CLASS = True
+    _REORDER_ENABLED = True
+
+    def _get_reorder_info(self):
+        win = self.window()
+        handler = getattr(win, '_on_drop_apu', None) if win else None
+        return handler, self._matriz_id
+
+    def _fila_destino_valida(self, item) -> bool:
+        return item is not None and not item.data(0, EMPTY_ROLE)
+
+    def _calcular_posicion_drop(self, item, y_evento: int) -> str:
+        rect = self.visualItemRect(item)
+        if rect.height() <= 0:
+            return "abajo"
+        return "arriba" if y_evento < rect.center().y() else "abajo"
+
+    def _item_id(self, item) -> int | None:
+        return item.data(5, Qt.ItemDataRole.UserRole) if item is not None else None
+
+    def dropEvent(self, event):
+        """Calcula (matriz_destino=self._matriz_id, antes_de_id) y
+        delega en self.window()._on_drop_apu(). Los renglones arrastrados
+        se leen de event.source() (no de self): si el drag viene de OTRA
+        pestaña de APU, self.selectedItems() sería la selección de ESTA
+        tabla, no la que de verdad se está arrastrando."""
+        self._drop_objetivo = None
+        self.viewport().update()
+
+        origen = event.source()
+        if not isinstance(origen, TablaApuDetalle):
+            event.ignore()
+            return
+        item_destino = self.itemAt(event.position().toPoint())
+        if not self._fila_destino_valida(item_destino):
+            event.ignore()
+            return
+
+        arrastrados = [it for it in origen.selectedItems() if self._fila_destino_valida(it)]
+        if not arrastrados:
+            ids_arrastrados = list(getattr(origen, '_drag_sel_ids', []))
+        else:
+            # selectedItems() sigue el orden de selección, no el visual
+            arrastrados.sort(key=lambda it: origen.visualItemRect(it).top())
+            ids_arrastrados = [it.data(5, Qt.ItemDataRole.UserRole) for it in arrastrados]
+        ids_arrastrados = [cid for cid in ids_arrastrados if cid is not None]
+        if not ids_arrastrados:
+            event.ignore()
+            return
+        if arrastrados and item_destino in arrastrados:
+            event.ignore()
+            return
+
+        posicion = self._calcular_posicion_drop(item_destino, event.position().toPoint().y())
+        hermanos_widget = [self.topLevelItem(i) for i in range(self.topLevelItemCount())
+                            if self._fila_destino_valida(self.topLevelItem(i))]
+        idx = hermanos_widget.index(item_destino)
+        if posicion == "arriba":
+            antes_de_id = item_destino.data(5, Qt.ItemDataRole.UserRole)
+        else:
+            siguiente = hermanos_widget[idx + 1] if idx + 1 < len(hermanos_widget) else None
+            antes_de_id = siguiente.data(5, Qt.ItemDataRole.UserRole) if siguiente is not None else None
+
+        copiar = bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier)
+        ventana = self.window()
+        handler = getattr(ventana, '_on_drop_apu', None)
+        if handler is None:
+            event.ignore()
+            return
+        ok = handler(ids_arrastrados, self._matriz_id, antes_de_id, copiar)
+        if ok:
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
     def _refrescar(self):
         """Vuelve a consultar la fuente de verdad y repuebla. Solo tiene
         efecto una vez conectado — antes de conectar_eventos() self._api
@@ -259,30 +342,45 @@ class TablaApuDetalle(TreeTableWidget):
         """Refresco compartido para ApuComponenteActualizado, InsumoActualizado
         y ProyectoRecalculado (ver EVENTOS_SUSCRITOS).
 
-        Un cambio de precio hecho desde OTRA pestaña (Insumos, u otro APU
-        que comparte el mismo insumo compuesto) debe reflejarse aquí
-        también, y el recálculo en cascada (ProyectoRecalculado) es la
-        única fuente confiable para el total del encabezado.
+        Captura la selección ANTES de programar el timer (no dentro de
+        poblar) porque Qt puede haberla reducido al último item clickeado
+        durante un drag. Usa selectedItems() como fuente primaria (captura
+        toda la multi-selección actual), con _drag_sel_ids como fallback
+        cuando Qt ha limpiado la selección (tras drag&drop).
 
-        Cuando la edición ocurre EN ESTA MISMA tabla, api.apu_actualizar_*()
-        emite el evento de forma síncrona, todavía dentro del itemChanged
-        que la originó. Repoblar (self.clear()) en ese momento borraría
-        el item que Qt sigue procesando en esa misma señal — por eso el
-        refresco se difiere con QTimer.singleShot(0, ...) al siguiente
-        ciclo del event loop, nunca inline.
+        El refresco se difiere con QTimer.singleShot(0) para no destruir
+        el item que Qt sigue procesando dentro de una cadena itemChanged.
         """
         try:
-            cur = self.currentItem()
-            row = self.indexOfTopLevelItem(cur) if cur else -1
-            col = self.currentColumn()
+            if self._api is None:
+                return
+            scroll_y = self.verticalScrollBar().value()
+            current = self.currentItem()
+            id_actual = current.data(5, Qt.ItemDataRole.UserRole) if current else None
+            col_actual = self.currentColumn() if current else 0
+            ids_seleccionados = {
+                it.data(5, Qt.ItemDataRole.UserRole) for it in self.selectedItems()
+                if it.data(5, Qt.ItemDataRole.UserRole) is not None
+            }
+            if not ids_seleccionados:
+                ids_seleccionados = set(getattr(self, '_drag_sel_ids', []))
 
             def _refrescar_seguro():
                 try:
-                    self._refrescar()
-                    if row >= 0 and col >= 0:
-                        it = self.topLevelItem(row)
-                        if it:
-                            self.setCurrentItem(it, col)
+                    resultado = self._consultar()
+                    self.poblar(resultado)
+                    self.verticalScrollBar().setValue(scroll_y)
+                    if id_actual is not None:
+                        for i in range(self.topLevelItemCount()):
+                            it = self.topLevelItem(i)
+                            if it.data(5, Qt.ItemDataRole.UserRole) == id_actual:
+                                self.setCurrentItem(it, col_actual)
+                                break
+                    if ids_seleccionados:
+                        for i in range(self.topLevelItemCount()):
+                            it = self.topLevelItem(i)
+                            if it.data(5, Qt.ItemDataRole.UserRole) in ids_seleccionados:
+                                it.setSelected(True)
                 except Exception as e:
                     print(f"[eventbus] _refrescar_seguro: {type(e).__name__}: {e}")
             QTimer.singleShot(0, _refrescar_seguro)
@@ -337,9 +435,18 @@ class TablaApuDetalle(TreeTableWidget):
         y recreó (self.clear()), y seguir usándolo revienta con
         RuntimeError: libshiboken...already deleted.
         """
-        if column not in (4, 5, 6) or not self._api:
+        if column not in (1, 2, 4, 5, 6) or not self._api:
             return
         comp_id = item.data(5, Qt.ItemDataRole.UserRole)
+
+        if column in (1, 2):
+            # Pegado sobre Clave/Descripción (ver _resolver_insumo_pegado):
+            # UserRole trae el insumo_id resuelto — re-liga el componente,
+            # igual que el diálogo de doble clic (_on_item_dblclick).
+            insumo_id = item.data(column, Qt.ItemDataRole.UserRole)
+            if insumo_id and comp_id:
+                self._api.apu_reasignar_componente(comp_id, insumo_id)
+            return
 
         if column == 5:
             op = item.text(column).strip()
@@ -385,6 +492,44 @@ class TablaApuDetalle(TreeTableWidget):
             except ValueError as e:
                 QMessageBox.warning(self.window(), "Precio inválido", str(e))
                 self._revertir_item(item, column, "insumos", insumo_id, "costo_mn", "$:,.2f")
+
+    def _resolver_insumo_pegado(self, item, col: int, valor: str):
+        """paste_col_fn compartido de Clave (1) y Descripción (2): pegar
+        cualquiera de las dos re-liga el componente a otro insumo — misma
+        lógica que TablaArbol._resolver_insumo_pegado (ver arbol.py),
+        necesaria porque Clave está oculta por defecto y Descripción no es
+        editable a mano (se relíe vía el diálogo de doble clic o, ahora,
+        vía pegado).
+
+        Reconoce el valor pegado, en orden: id de insumo puro (dígitos,
+        vía COPY_ROLE de Clave), hash de deduplicación tal cual (columna
+        Hash del Catálogo de Insumos), o el propio texto pegado hasheado
+        con el mismo algoritmo que usa el catálogo para deduplicar —esto
+        resuelve pegar la Descripción de una fila copiada de Presupuesto,
+        de otro APU, o del Catálogo de Insumos. Si nada coincide, no se
+        toca la celda."""
+        if item.data(0, EMPTY_ROLE):
+            return None
+        v = (valor or "").strip()
+        if not v:
+            return None
+        api = getattr(self, '_api', None)
+        if api is None:
+            return None
+        ins = None
+        if v.isdigit():
+            ins = api.campo_valor("insumos", "id", int(v))
+        if ins is None:
+            ins = api.insumo_por_hash(v)
+        if ins is None:
+            from backend.database.core import generar_hash
+            ins = api.insumo_por_hash(generar_hash(v))
+        if ins is None:
+            return None
+        insumo_id = ins.get("id")
+        if col == 1:
+            return (ins.get("clave_opus") or v, insumo_id)
+        return (ins.get("descripcion") or "", insumo_id)
 
     def _revertir_item(self, item, column: int, tabla: str, reg_id: int, campo: str, fmt: str):
         """Revierte el texto de un item al valor real de la DB tras error de validación."""
