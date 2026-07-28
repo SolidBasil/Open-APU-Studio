@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QLabel, QGroupBox, QScrollArea, QWidget, QDialogButtonBox,
     QFrame, QPushButton,
 )
-from PySide6.QtCore import Qt, QByteArray, QPoint, QTimer, QMimeData
+from PySide6.QtCore import Qt, QByteArray, QPoint, QTimer, QMimeData, QItemSelectionModel
 from PySide6.QtGui import QBrush, QColor, QKeySequence, QPainter, QPen, QDrag, QPixmap, QFont, QIcon, QShortcut
 
 import re
@@ -1926,12 +1926,13 @@ class TreeTableWidget(QTreeWidget):
         item = self.itemFromIndex(index)
         col  = index.column()
         if item not in self.selectedItems():
-            self.setCurrentItem(item, col)
+            self.setCurrentItem(item, col,
+                QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
         menu = QMenu(self)
         copy_act = menu.addAction(_menu_icon("clipboard"), "Copiar")
         copy_act.setShortcut(QKeySequence.StandardKey.Copy)
         copy_act.triggered.connect(self._copy)
-        if col in self._editable_cols_for(item):
+        if self._editable_cols_for(item):
             cut_act = menu.addAction(_menu_icon("scissors"), "Cortar")
             cut_act.setShortcut(QKeySequence.StandardKey.Cut)
             cut_act.triggered.connect(self._cut)

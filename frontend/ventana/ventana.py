@@ -13,7 +13,7 @@ Uso:
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QMainWindow, QStatusBar, QWidget, QVBoxLayout, QSplitter,
+    QMainWindow, QStatusBar, QWidget, QVBoxLayout, QSplitter, QStackedWidget,
 )
 
 from frontend.temas    import Temas
@@ -108,7 +108,11 @@ class VentanaPrincipal(
         self._switch_tab("PRINCIPAL")  # ponytail: ribbon por defecto = pestaña inicial (Presupuesto)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(self._build_left_panel())
+
+        self._left_stack = QStackedWidget()
+        self._left_stack.addWidget(self._build_left_panel())  # index 0 = sidebar
+        splitter.addWidget(self._left_stack)
+        self._main_splitter = splitter
 
         right        = QWidget()
         right_layout = QVBoxLayout(right)

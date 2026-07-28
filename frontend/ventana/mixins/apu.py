@@ -161,7 +161,7 @@ class ApuMixin:
                     wbs = item.text(1)
                     desc = item.text(4)
                     self._abrir_generadores_para_concepto(nodo_id, wbs, desc)
-                return
+                    return
 
         if self._es_pu(item, column):
             if nodo_id:

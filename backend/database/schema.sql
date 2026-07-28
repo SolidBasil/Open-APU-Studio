@@ -503,7 +503,8 @@ INSERT OR IGNORE INTO schema_version (version, descripcion) VALUES
     (5, 'v5: limpia proyectos (24 cols muertas), fusiona configuracion_proyecto, elimina apu_resumen_totales, crea indirectos'),
     (6, 'v6: elimina catfsr y fsr_minimo de insumos (FSR solo manual via factor_fsr)'),
     (7, 'v7: elimina tabla notas, salario_nominal, salario_real e indice_inegi de insumos'),
-    (8, 'v8: generadores de obra — tablas generadores y generador_renglones');
+    (8, 'v8: generadores de obra — tablas generadores y generador_renglones'),
+    (9, 'v9: generadores.cad_archivo_path — cada generador liga su propio DXF');
 
 
 -- =============================================================================
@@ -520,6 +521,7 @@ CREATE TABLE IF NOT EXISTS generadores (
     nombre          TEXT    NOT NULL DEFAULT '',
     unidad          TEXT,
     cantidad_total  REAL    NOT NULL DEFAULT 0.0,   -- SUM(renglones activos)
+    cad_archivo_path TEXT,  -- ruta del DXF ligado a este generador (cada uno tiene el suyo)
     notas           TEXT,
     activo          INTEGER NOT NULL DEFAULT 1,
     creado_por      INTEGER NOT NULL DEFAULT 1 REFERENCES usuarios(id),

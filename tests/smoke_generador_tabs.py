@@ -40,8 +40,6 @@ class _FakeWindow(GeneradorMixin):
         self._conn = conn
         self._api = api
         self._tabs = QTabWidget()
-        self._gen_seleccionado = None
-        self._gen_nombre_base = ""
 
 
 def main():

@@ -17,7 +17,7 @@ Uso:
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QHeaderView
-from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef, EMPTY_ROLE
+from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef, EMPTY_ROLE, _menu_icon
 from backend.database.event_bus import (
     InsumoActualizado, NodoInsertado, NodoEliminado, ProyectoRecalculado,
 )
@@ -262,7 +262,6 @@ class TablaInsumos(TreeTableWidget):
         return self._item_por_insumo(nuevo_id)
 
     def _context_menu_actions(self, menu):
-        from frontend.ventana.widgets.base import _menu_icon
         items = self.selectedItems()
         act_nuevo = menu.addAction(_menu_icon("plus"), "Nuevo insumo")
         act_nuevo.triggered.connect(self._emit_nuevo)

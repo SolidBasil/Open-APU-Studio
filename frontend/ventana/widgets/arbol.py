@@ -8,11 +8,11 @@ Uso:
 """
 
 from PySide6.QtCore import Qt, Signal, QPoint, QMimeData
-from PySide6.QtGui import QColor, QBrush, QMouseEvent, QDrag, QPainter, QFont, QPixmap, QPen
+from PySide6.QtGui import QColor, QBrush, QMouseEvent, QDrag, QPainter, QFont, QPixmap, QPen, QKeySequence
 
 from PySide6.QtWidgets import QHeaderView, QAbstractItemView
 
-from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef, FORMULA_ROLE, EMPTY_ROLE, COPY_ROLE
+from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef, FORMULA_ROLE, EMPTY_ROLE, COPY_ROLE, _menu_icon
 
 
 # ── Icono desde tipo_id (Lucide SVG) ─────────────────────────────
@@ -524,8 +524,10 @@ class TablaArbol(TreeTableWidget):
         col = self.columnAt(int(event.position().toPoint().x()))
         nodo_id = item.data(0, ID_ROLE)
         if col == 6 and item.data(0, TIPO_ROLE) == "concepto" and nodo_id:
-            self.itemDoubleClicked.emit(item, col)
-            return
+            gens = self._api.generadores_por_concepto(nodo_id) if self._api else []
+            if gens:
+                self.itemDoubleClicked.emit(item, col)
+                return
         super().mouseDoubleClickEvent(event)
 
     def _resolver_insumo_pegado(self, item, col: int, valor: str):
@@ -613,17 +615,19 @@ class TablaArbol(TreeTableWidget):
         super().keyPressEvent(event)
 
     def _context_menu_actions(self, menu):
-        from frontend.ventana.widgets.base import _menu_icon
         menu.addSeparator()
 
         act = menu.addAction(_menu_icon("square-plus"), "Agregar agrupador")
+        act.setShortcut(QKeySequence("Ctrl+Insert"))
         act.triggered.connect(self.agregar_agrupador)
 
         act = menu.addAction(_menu_icon("plus"), "Agregar concepto")
+        act.setShortcut(QKeySequence("Insert"))
         act.triggered.connect(self.agregar_concepto)
 
         if self.selectedItems():
             act = menu.addAction(_menu_icon("x"), "Eliminar")
+            act.setShortcut(QKeySequence("Delete"))
             act.triggered.connect(self.eliminar_seleccion)
 
         if len(self.selectedItems()) != 1:
@@ -643,8 +647,12 @@ class TablaArbol(TreeTableWidget):
             act = menu.addAction(_menu_icon("search"), "Rastrear uso")
             act.triggered.connect(lambda: self.rastrear_insumo.emit(insumo_id))
             act = menu.addAction(_menu_icon("edit"), "Modificar insumo")
+            act.setShortcut(QKeySequence("F2"))
             act.triggered.connect(lambda: self.modificar_insumo.emit(insumo_id))
         if nodo_id:
+            act = menu.addAction(_menu_icon("refresh-cw"), "Cambiar insumo")
+            act.setShortcut(QKeySequence("F5"))
+            act.triggered.connect(lambda: self.cambiar_insumo.emit(nodo_id))
             act = menu.addAction(_menu_icon("link"), "Desglozar")
             act.triggered.connect(lambda: self.desglozar_nodo.emit(nodo_id))
         if nodo_id and tipo == "concepto":

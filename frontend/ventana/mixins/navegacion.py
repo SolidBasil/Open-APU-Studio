@@ -211,8 +211,12 @@ class HandlersMixin:
         self._open_sidebar_tab(title, temporary=temporary)
 
     def _on_abrir_generadores(self):
-        """Handler del botón 'Generadores' en la toolbar (pestaña INICIO)."""
-        self._focus_or_open_tab("Generadores de obra", temporary=False)
+        """Handler del botón 'Generadores' en la toolbar (pestaña INICIO):
+        crea un generador suelto ('Extraordinario', sin concepto) y lo
+        abre en su propia pestaña — ver GeneradorMixin._on_nuevo_generador_extra.
+        Los generadores ligados a un concepto se abren desde el menú
+        contextual "Abrir generador" del árbol de Presupuesto."""
+        self._on_nuevo_generador_extra()
 
     def _on_abrir_extra(self):
         """Handler del botón 'Fuera de presupuesto' en la toolbar."""
@@ -242,9 +246,6 @@ class HandlersMixin:
             content = self._build_insumos(title)
         elif title == "Fuera de presupuesto":
             content = self._build_extra_panel()
-        elif title == "Generadores de obra":
-            content = self._build_generadores()
-            self.poblar_generadores()
         else:
             content = self._build_placeholder(title)
 
@@ -278,40 +279,29 @@ class HandlersMixin:
             t.filter_rows(text)
 
     def _on_tab_changed(self, idx):
-        """Re-aplica el filtro de búsqueda al cambiar de pestaña."""
+        """Re-aplica el filtro de búsqueda al cambiar de pestaña.
+        También intercambia el panel izquierdo: cuando se enfoca un
+        generador muestra los renglones en lugar del sidebar."""
         self._on_search(self._search_input.text())
 
         title = self._tabs.tabText(idx) if idx >= 0 else ""
-        es_generadores = title == "Generadores de obra"
+        widget = self._tabs.widget(idx) if idx >= 0 else None
+        es_generador_tab = bool(getattr(widget, "_es_generador_tab", False))
 
-        # Panel izquierdo contextual
-        if hasattr(self, "_left_stack"):
-            splitter = self._left_stack.parent()
-            prev = self._left_stack.currentIndex()
-            if es_generadores:
-                if prev == 0 and splitter is not None:
-                    self._sidebar_splitter_size = splitter.sizes()
-                self._left_stack.setCurrentIndex(1)
-                if splitter is not None and hasattr(self, '_gen_splitter_size'):
-                    splitter.setSizes(self._gen_splitter_size)
-                elif splitter is not None:
-                    s = splitter.sizes()
-                    gen_left = int(s[0] * 1.2)  # 20% más que sidebar actual
-                    splitter.setSizes([gen_left, s[1] - (gen_left - s[0])])
-                self.poblar_generadores()
-                if self._gen_seleccionado and self._api and hasattr(self, "_gen_tabla"):
-                    renglones = self._api.generador_renglones(self._gen_seleccionado)
-                    self._gen_tabla.poblar(renglones)
-            else:
-                if prev == 1 and splitter is not None:
-                    self._gen_splitter_size = splitter.sizes()
-                self._left_stack.setCurrentIndex(0)
-                if splitter is not None and hasattr(self, '_sidebar_splitter_size'):
-                    splitter.setSizes(self._sidebar_splitter_size)
+        # Intercambiar panel izquierdo solo al entrar/salir de un
+        # generador, o al cambiar entre dos generadores distintos.
+        prev_gen = getattr(self, "_prev_tab_era_generador", False)
+
+        if es_generador_tab and hasattr(self, "_show_renglones_in_left_panel"):
+            self._show_renglones_in_left_panel(widget)
+        elif prev_gen and hasattr(self, "_restore_sidebar"):
+            self._restore_sidebar()
+
+        self._prev_tab_era_generador = es_generador_tab
 
         # ponytail: auto-switch ribbon según pestaña de contenido activa
         ribbon_objetivo = None
-        if es_generadores:
+        if es_generador_tab:
             ribbon_objetivo = "GENERADORES"
         elif title == "Fuera de presupuesto":
             ribbon_objetivo = "PRINCIPAL"
@@ -320,6 +310,11 @@ class HandlersMixin:
         if ribbon_objetivo and getattr(self, "_tab_activa", None) != ribbon_objetivo:
             from PySide6.QtCore import QTimer
             QTimer.singleShot(0, lambda r=ribbon_objetivo: self._switch_tab(r))
+
+        # Los botones Deshacer/Rehacer CAD siguen al generador de la
+        # pestaña activa (cada uno tiene su propio undo stack).
+        if hasattr(self, "_update_undo_buttons"):
+            self._update_undo_buttons()
 
     # ── Adjuntar / Ver adjuntos ───────────────────────────────────────────
 

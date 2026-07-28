@@ -79,7 +79,7 @@ _HANDLERS = {
     "Cálculo de indirectos": "_on_indirectos",
     "Personal en indirectos": "_on_personal_indirectos",
     "Cálculo de sobrecostos": "_on_sobrecostos",
-    "Generadores":        "_on_abrir_generadores",
+    "Nuevo generador":    "_on_abrir_generadores",
     "Fuera de presupuesto": "_on_abrir_extra",
     "Abrir DXF":          "_on_cad_abrir",
     "Seleccionar":        "_on_cad_tool_select",
@@ -111,7 +111,7 @@ _TOOLBAR_CFG = {
     "INICIO": [
         ("Proyecto", [("settings", "Parámetros proyecto"), ("info", "Información proyecto")]),
         ("Sobrecostos", [("banknote", "Cálculo de indirectos"), ("hard-hat", "Personal en indirectos"), ("bar-chart", "Cálculo de sobrecostos")]),
-        ("CAD", [("ruler", "Generadores")]),
+        ("CAD", [("ruler", "Nuevo generador")]),
         ("Extra", [("zap", "Fuera de presupuesto")]),
         ("Sistema",  [("settings", "Configuración general"), ("users", "Usuarios")]),
     ],
@@ -471,9 +471,6 @@ class ToolbarMixin:
             btn.setChecked(btn.text() == name)
         self._build_page(name)
         self._tb.setCurrentIndex(self._tb_pages[name])
-        # Al cambiar al ribbon GENERADORES, abrir la pestaña de contenido si no está abierta
-        if name == "GENERADORES" and hasattr(self, "_focus_or_open_tab"):
-            self._focus_or_open_tab("Generadores de obra", temporary=False)
 
     def _update_label_colors(self):
         color = TEXT if getattr(self, '_tema_modo', 'oscuro') == 'oscuro' else TEXT_INVERSO

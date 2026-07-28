@@ -1244,6 +1244,12 @@ class Api:
             campos["unidad"] = unidad
         return self._ds.insertar("generadores", **campos)
 
+    def generador_actualizar_cad(self, generador_id: int, path: str | None) -> None:
+        """Liga (o desliga, con None) un archivo DXF a este generador —
+        persiste la ruta para que se recargue sola la próxima vez que se
+        abra la pestaña de este generador."""
+        self._ds.actualizar("generadores", generador_id, cad_archivo_path=path)
+
     def generador_renglones(self, generador_id: int) -> list[dict]:
         from backend.database.repos.generador import GeneradorRepo
         return GeneradorRepo(self._conn).listar_renglones(generador_id)

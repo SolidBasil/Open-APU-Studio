@@ -83,15 +83,15 @@ class PanelesMixin:
     # ── Panel izquierdo (contextual) ──────────────────────────────────────
 
     def _build_left_panel(self):
-        """Envuelve el sidebar normal y paneles contextuales (p.ej. el de
-        generadores) en un QStackedWidget, para poder cambiar qué se
-        muestra en la columna izquierda según la pestaña activa.
+        """Columna izquierda: el explorador (sidebar) normal.
+
+        Los generadores ya no tienen un panel lateral propio (ni árbol
+        de presupuesto ni renglones ahí) — cada generador vive por
+        completo en su propia pestaña de contenido, con el visor CAD y
+        sus renglones en un splitter (ver GeneradorMixin en
+        mixins/generador.py).
         """
-        from PySide6.QtWidgets import QStackedWidget
-        self._left_stack = QStackedWidget()
-        self._left_stack.addWidget(self._build_sidebar())          # índice 0: normal
-        self._left_stack.addWidget(self._build_generadores_lateral())  # índice 1
-        return self._left_stack
+        return self._build_sidebar()
 
     def _build_sidebar(self):
         """Construye el explorador lateral."""
