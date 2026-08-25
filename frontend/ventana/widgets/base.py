@@ -39,7 +39,7 @@ UNIDADES = [
 
 from PySide6.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QAbstractItemView,
-    QHeaderView, QApplication, QStyledItemDelegate, QMenu,
+    QHeaderView, QApplication, QStyledItemDelegate, QMenu, QStyle,
     QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QCheckBox,
     QLabel, QGroupBox, QScrollArea, QWidget, QDialogButtonBox,
     QFrame, QPushButton, QTabWidget, QTabBar, QToolButton, QRubberBand,
@@ -540,6 +540,15 @@ class _Delegate(QStyledItemDelegate):
         itemBelow) también está en el corte, e izquierda/derecha solo se
         dibujan en la primera/última columna visible.
         """
+        # Celda en edición: el editor (transparente, a celda completa) va
+        # encima del fondo que la vista ya pintó — si dibujáramos el texto
+        # aquí, se vería duplicado detrás del editor. (QStyle.State_Editing
+        # está deprecado en Qt 6.11; el estado de la vista no.)
+        tw = self.parent()
+        if (isinstance(tw, QAbstractItemView)
+                and tw.state() == QAbstractItemView.State.EditingState
+                and tw.currentIndex() == index):
+            return
         super().paint(painter, option, index)
         self._dibujar_borde_corte(painter, option, index)
 
@@ -1488,6 +1497,17 @@ class TreeTableWidget(QTreeWidget):
         elif key == Qt.Key.Key_Escape:
             self._cancelar_corte_pendiente_si_hay()
             super().keyPressEvent(event)
+        elif key == Qt.Key.Key_Backspace:
+            # Retroceso (NO Supr/Delete, que elimina la fila): abre la
+            # edición de la celda actual con valor vacío — igual que
+            # teclear un dígito la abre reemplazando el contenido.
+            idx = self.currentIndex()
+            if idx.isValid() and self.edit(
+                    idx, QAbstractItemView.EditTrigger.AnyKeyPressed, event):
+                from PySide6.QtWidgets import QLineEdit
+                ed = self.viewport().findChild(QLineEdit)
+                if isinstance(ed, QLineEdit):
+                    ed.clear()
         else:
             super().keyPressEvent(event)
 

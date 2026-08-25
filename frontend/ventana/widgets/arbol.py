@@ -325,12 +325,12 @@ class TablaArbol(TreeTableWidget):
         pass
 
     def _on_item_clicked(self, item, column):
-        """Click en col 9 (Estado) → cicla semáforo. Otros → fila vacía."""
+        """Fila placeholder → _al_click_fila_vacia. El estado (col 9) ya NO
+        cicla con un click: misclicks provocaban cambios de revisión falsos.
+        El ciclo va en DOBLE click (ver mouseDoubleClickEvent) y el estado
+        exacto se elige desde el menú contextual (_agregar_submenu_estado)."""
         if item.data(0, EMPTY_ROLE):
             self._al_click_fila_vacia()
-            return
-        if column == 9:
-            self._ciclar_estado(item)
 
     def _ciclar_estado(self, item):
         """Cicla 0→1→2→3→0 en columna Estado."""
@@ -579,6 +579,11 @@ class TablaArbol(TreeTableWidget):
             return
         col = self.columnAt(int(event.position().toPoint().x()))
         nodo_id = item.data(0, ID_ROLE)
+        if col == 9 and nodo_id:
+            # Doble click en Estado → cicla semáforo (deliberado; el click
+            # simple provocaba cambios falsos por misclick).
+            self._ciclar_estado(item)
+            return
         if col == 6 and item.data(0, TIPO_ROLE) == "concepto" and nodo_id:
             gens = self._api.generadores_por_concepto(nodo_id) if self._api else []
             if gens:

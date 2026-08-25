@@ -366,13 +366,25 @@ class DiagDialogsMixin:
 
     def _on_calculadora(self):
         import subprocess
+        import shutil
         import sys
         if sys.platform == "win32":
             subprocess.Popen(["calc.exe"])
         elif sys.platform == "darwin":
             subprocess.Popen(["open", "-a", "Calculator"])
         else:
-            subprocess.Popen(["gnome-calculator"])
+            # Linux: probar calculadoras comunes del escritorio; fallar
+            # con mensaje si ninguna está instalada (antes: FileNotFoundError
+            # crudo si no existía gnome-calculator).
+            for cmd in ("gnome-calculator", "kcalc", "mate-calc",
+                        "qalculate-gtk", "xcalc"):
+                if shutil.which(cmd):
+                    subprocess.Popen([cmd])
+                    return
+            self._sb.showMessage(
+                "No se encontró una calculadora instalada "
+                "(gnome-calculator, kcalc, mate-calc, qalculate-gtk o xcalc)",
+                6000)
 
     def _on_info_proyecto(self, nuevo=False):
         from PySide6.QtWidgets import (
