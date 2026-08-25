@@ -5,28 +5,35 @@ Punto de entrada de Open APU Studio.
 """
 
 import sys
+import logging
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QIcon
 from PySide6.QtWidgets import QApplication
 
-from backend.db import Config, Rutas
+# Windows: required for the taskbar icon to show our .ico instead of python.exe's icon
+if sys.platform == "win32":
+    import ctypes
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("openapu.studio.1")
+
 from frontend.temas import Temas
 from frontend.ventana import VentanaPrincipal
 
 
 def main():
     """Punto de entrada: inicializa QApplication, aplica tema, crea y muestra la ventana principal."""
+    logging.basicConfig(level=logging.WARNING, format="%(name)s %(levelname)s: %(message)s")
     app = QApplication(sys.argv)
     app.setApplicationName("Open APU Studio")
     app.setOrganizationName("OpenAPU")
+    app.setWindowIcon(QIcon("assets/favicon.ico"))
     app.setFont(QFont("Segoe UI", 10))
 
-    # Aplicar tema guardado (default: dark)
-    tema = Config.get("tema", "dark")
-    Temas.aplicar(app, tema)
+    # Aplicar tema guardado (default: oscuro + azul)
+    modo, acento = Temas.cargar_preferencia()
+    Temas.aplicar(app, modo, acento)
 
     win = VentanaPrincipal()
-    win.show()
+    win.showMaximized()
     app.processEvents()
     app.setOverrideCursor(Qt.CursorShape.ArrowCursor)
     app.restoreOverrideCursor()

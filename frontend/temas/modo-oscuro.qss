@@ -1,0 +1,576 @@
+/* Open APU Studio — Dark Mode */
+/* Palette: docs/Guia diseño.md */
+
+* {
+    font-family: "Inter", "Segoe UI", "Segoe UI Variable Text", sans-serif;
+    color: #E8EDF2;
+}
+
+QMainWindow, QDialog, QWidget {
+    background-color: #1e1e1e;
+    color: #E8EDF2;
+}
+
+/* ── Barra superior ── */
+
+QMenuBar {
+    background-color: #2d2d2d;
+    color: #E8EDF2;
+    border-bottom: 1px solid #3a3a3a;
+    padding: 2px 8px;
+    font-size: 13px;
+}
+
+QMenuBar::item:selected {
+    background-color: #3a3a3a;
+    border-radius: 4px;
+}
+
+QMenu {
+    background-color: #2d2d2d;
+    color: #E8EDF2;
+    border: 1px solid #3a3a3a;
+    padding: 4px;
+}
+
+QMenu::item:selected {
+    background-color: #3a3a3a;
+    border-radius: 4px;
+}
+
+/* ── Toolbar ── */
+
+#tbCustom {
+    background-color: #2d2d2d;
+    border-bottom: 1px solid #3a3a3a;
+}
+
+#tbCustom > QWidget {
+    background-color: transparent;
+}
+
+#tbGroup, #tbGroup * {
+    background-color: transparent;
+    border: none;
+}
+
+#tbGroup QToolButton:focus {
+    /* #tbGroup * de arriba fuerza background/border transparent en TODO
+       lo que viva dentro de un grupo de la barra de herramientas —como
+       selector con ID, le gana en especificidad a QToolButton:focus
+       (type+pseudo) y lo apagaba en silencio. Sin este override más
+       específico, ningún botón de "herramientas" mostraba foco nunca,
+       aunque el QToolButton:focus de más arriba estuviera bien escrito. */
+    background-color: #3a3a3a;
+    border: 2px solid #9BB4C9;
+}
+
+#tbSep {
+    background-color: #3a3a3a;
+    margin: 4px 6px;
+}
+
+/* ── Pestañas superiores (PROYECTO, INICIO, …) ── */
+
+#tabBar {
+    background-color: #2d2d2d;
+    border-bottom: 1px solid #3a3a3a;
+}
+
+#tabBar QPushButton {
+    background-color: transparent;
+    color: #C0C0C0;
+    border: none;
+    padding: 3px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    min-height: 18px;
+}
+
+#tabBar QPushButton:hover {
+    color: #E8EDF2;
+    background-color: #3a3a3a;
+}
+
+#tabBar QPushButton:checked {
+    color: #E8EDF2;
+    background-color: #1e1e1e;
+}
+
+#tabBar QPushButton:focus {
+    /* Mismo motivo que QToolButton:focus más arriba: sin esto, un
+       botón de la cinta con foco de teclado (pero no activo/checked)
+       no se distinguía en nada de uno sin foco. */
+    color: #E8EDF2;
+    background-color: #3a3a3a;
+    border-bottom: 2px solid #9BB4C9;
+}
+
+/* ── Search bar ── */
+
+#searchBar {
+    background-color: #2d2d2d;
+    border-bottom: 1px solid #3a3a3a;
+}
+
+#searchInput {
+    background-color: #1e1e1e;
+    color: #E8EDF2;
+    border: 1px solid #454545;
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 13px;
+    min-height: 20px;
+}
+
+#searchInput:focus {
+    border: 1px solid #707070;
+}
+
+QToolButton {
+    background-color: transparent;
+    color: #E8EDF2;
+    border: none;
+    outline: none;
+    border-radius: 4px;
+    padding: 4px 6px;
+    font-size: 10px;
+    min-height: 40px;
+    min-width: 48px;
+}
+
+QToolButton:hover {
+    background-color: #3a3a3a;
+}
+
+QToolButton:focus {
+    /* Antes QToolButton tenía outline: none sin ningún :focus que lo
+       reemplazara — con las 4 zonas de navegación por teclado (Tab
+       cicla, flechas navegan dentro de cada una) esto significaba que
+       la persona podía estar parada sobre cualquier botón de la
+       herramientas sin ver dónde. border sí se pinta con outline:none
+       (son propiedades distintas), así que este borde queda visible
+       aunque el foco nativo siga apagado. */
+    background-color: #3a3a3a;
+    border: 2px solid #9BB4C9;
+}
+
+#tbStackedBtn {
+    padding: 0 6px;
+    text-align: left;
+    min-height: 0px;
+}
+
+/* ── Splitter ── */
+
+QSplitter::handle {
+    background-color: #3a3a3a;
+    width: 2px;
+}
+
+/* ── Tablas y árbol ── */
+
+QTreeView, QTableView {
+    background-color: #1e1e1e;
+    alternate-background-color: #282828;
+    color: #E8EDF2;
+    gridline-color: #3a3a3a;
+    selection-background-color: #505050;
+    selection-color: #E8EDF2;
+    border: none;
+    outline: none;
+    font-size: 13px;
+}
+
+QTreeView::item {
+    padding: 4px 8px;
+    min-height: 28px;
+    border: none;
+}
+
+QTreeView::item:hover {
+    background: #333333;
+}
+
+QTableWidget::item:hover {
+    background: #333333;
+}
+
+QTreeView::item:selected {
+    background: #454545;
+}
+
+QTreeView::item:selected:focus {
+    background: #606060;
+}
+
+QTreeView::branch {
+    background: transparent;
+}
+
+QTreeView::branch:hover {
+    background: #333333;
+}
+
+QTreeView::branch:selected {
+    background: #454545;
+}
+
+QTableWidget::item:selected {
+    background: #454545;
+}
+
+QTableWidget::item:selected:focus {
+    background: #606060;
+}
+
+QHeaderView::section {
+    background-color: #3a3a3a;
+    color: #E8EDF2;
+    padding: 6px 10px;
+    border: none;
+    border-bottom: 1px solid #454545;
+    border-right: 1px solid #454545;
+    font-weight: bold;
+    font-size: 12px;
+}
+
+/* ── Pestañas ── */
+
+QTabWidget::pane {
+    background-color: #1e1e1e;
+    border: none;
+    border-top: 1px solid #3a3a3a;
+}
+
+QTabBar::tab {
+    background-color: #2d2d2d;
+    color: #C0C0C0;
+    padding: 8px 18px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-right: 2px;
+    font-size: 13px;
+}
+
+QTabBar::tab:selected {
+    color: #E8EDF2;
+    border-bottom: 2px solid #707070;
+    background-color: #1e1e1e;
+}
+
+QTabBar::tab:hover {
+    color: #E8EDF2;
+}
+
+/* ── Botones ── */
+
+QPushButton {
+    background-color: transparent;
+    color: #E8EDF2;
+    border: 1px solid #454545;
+    border-radius: 4px;
+    padding: 4px 16px;
+    font-size: 13px;
+    min-height: 28px;
+}
+
+QPushButton:hover {
+    background-color: #3a3a3a;
+    border-color: #707070;
+}
+
+QPushButton:pressed {
+    background-color: #454545;
+}
+
+QPushButton#btnPrimario {
+    background-color: #505050;
+    color: #E8EDF2;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 16px;
+}
+
+QPushButton#btnPrimario:hover {
+    background-color: #606060;
+}
+
+/* ── Inputs ── */
+
+QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
+    background-color: #1e1e1e;
+    color: #E8EDF2;
+    border: 1px solid #3a3a3a;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 13px;
+}
+
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
+    border: 1px solid #707070;
+}
+
+QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: center right;
+    border: none;
+    width: 20px;
+}
+
+/* ── GroupBox ── */
+
+QGroupBox {
+    border: none;
+    font-weight: bold;
+    font-size: 13px;
+    margin-top: 16px;
+    padding-top: 10px;
+}
+
+/* ── Checkboxes & RadioButtons ── */
+
+QRadioButton, QCheckBox {
+    spacing: 8px;
+    font-size: 13px;
+    min-height: 26px;
+    color: #E8EDF2;
+}
+
+QRadioButton::indicator, QCheckBox::indicator {
+    width: 18px;
+    height: 18px;
+    border: 2px solid #454545;
+    background-color: #1e1e1e;
+}
+
+QCheckBox::indicator {
+    border-radius: 4px;
+}
+
+QRadioButton::indicator {
+    border-radius: 10px;
+}
+
+QRadioButton::indicator:checked, QCheckBox::indicator:checked {
+    background-color: #505050;
+    border-color: #707070;
+}
+
+QRadioButton::indicator:hover, QCheckBox::indicator:hover {
+    border-color: #707070;
+}
+
+/* ── DialogoExplosion ── */
+
+#dlgInfo {
+    color: #C0C0C0;
+    font-size: 12px;
+    padding: 10px 16px;
+    background-color: #2d2d2d;
+    border-radius: 6px;
+}
+
+#dlgCalc, #dlgTipos {
+    background-color: #2d2d2d;
+    border-radius: 6px;
+    padding: 12px;
+    margin-top: 4px;
+}
+
+/* ── StatusBar ── */
+
+QStatusBar {
+    background-color: #2d2d2d;
+    color: #808080;
+    border-top: 1px solid #3a3a3a;
+    font-size: 12px;
+}
+
+/* ── Labels ── */
+
+QLabel {
+    color: #E8EDF2;
+}
+
+/* ── Scrollbars ── */
+
+QScrollBar:vertical {
+    background-color: #1e1e1e;
+    width: 10px;
+    border: none;
+}
+
+QScrollBar::handle:vertical {
+    background-color: #454545;
+    border-radius: 5px;
+    min-height: 20px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background-color: #606060;
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0;
+}
+
+QScrollBar:horizontal {
+    background-color: #1e1e1e;
+    height: 10px;
+    border: none;
+}
+
+QScrollBar::handle:horizontal {
+    background-color: #454545;
+    border-radius: 5px;
+    min-width: 20px;
+}
+
+QScrollBar::handle:horizontal:hover {
+    background-color: #606060;
+}
+
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+    width: 0;
+}
+
+/* ── ProjectDialog ── */
+
+#dlgHeader {
+    background-color: #2d2d2d;
+    font-size: 15px;
+    font-weight: bold;
+    border-bottom: 1px solid #3a3a3a;
+}
+
+#dlgSearch {
+    background-color: #2d2d2d;
+    border: 1px solid #3a3a3a;
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 13px;
+}
+
+#dlgSearch:focus {
+    border-color: #707070;
+}
+
+#dlgList {
+    border: none;
+    background-color: #1e1e1e;
+    alternate-background-color: #282828;
+    outline: none;
+    font-size: 13px;
+}
+
+#dlgList::item {
+    padding: 0;
+    border: none;
+}
+
+#dlgList::item:selected {
+    background-color: #3a3a3a;
+}
+
+#dlgList::item:hover:!selected {
+    background-color: #2d2d2d;
+}
+
+#dlgName {
+    font-size: 13px;
+    font-weight: bold;
+    color: #E8EDF2;
+}
+
+#dlgDetail {
+    font-size: 11px;
+    color: #C0C0C0;
+}
+
+#dlgIcon {
+    font-size: 22px;
+}
+
+#dlgSep {
+    background-color: #3a3a3a;
+    margin: 0 16px;
+}
+
+#dlgCancel {
+    background-color: #454545;
+    color: #E8EDF2;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 20px;
+    font-size: 13px;
+}
+
+#dlgCancel:hover {
+    background-color: #606060;
+}
+
+/* ── DialogoAjustes ── */
+
+#dlgAjustes {
+    background-color: #1e1e1e;
+}
+
+#dlgAjustesHeader {
+    background-color: #2d2d2d;
+    border-bottom: 1px solid #3a3a3a;
+}
+
+#dlgAjustesHeader QLabel#dlgHeader {
+    font-size: 15px;
+    font-weight: bold;
+    color: #E8EDF2;
+}
+
+#dlgAjustesBody {
+    background-color: #1e1e1e;
+}
+
+#dlgCard {
+    background-color: #2d2d2d;
+    border: 1px solid #3a3a3a;
+    border-radius: 6px;
+}
+
+#dlgCardTitle {
+    font-size: 13px;
+    font-weight: bold;
+    color: #E8EDF2;
+}
+
+#dlgAjustesFooter {
+    background-color: #2d2d2d;
+}
+
+#dlgAjustesNav {
+    background-color: #2d2d2d;
+    border: none;
+    border-right: 1px solid #3a3a3a;
+    outline: none;
+    font-size: 13px;
+    padding: 4px 0;
+}
+
+#dlgAjustesNav::item {
+    padding: 8px 12px;
+    border: none;
+}
+
+#dlgAjustesNav::item:selected {
+    background-color: #3a3a3a;
+    color: #E8EDF2;
+}
+
+#dlgAjustesNav::item:hover:!selected {
+    background-color: #282828;
+}
+
+#dlgVSep {
+    background-color: #3a3a3a;
+    max-width: 1px;
+}

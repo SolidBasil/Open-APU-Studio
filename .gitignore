@@ -1,21 +1,20 @@
+# Python
 __pycache__/
 *.pyc
 *.pyo
-*.db
-*.presup
-*.sqlite3
-*.sqlite
-venv/
 .venv/
-env/
-*.egg-info/
-dist/
+venv/
+
+# Build
 build/
+dist/
 *.spec
+
+# SO / editor
 .DS_Store
 Thumbs.db
-*.lnk
-TEMP_*
-Ejemplos/
-Conversor de opus/D60JALISCOT.sqlite
-Conversor de opus/presupuesto.html
+.idea/
+.vscode/
+
+# Logs
+*.log

@@ -1,0 +1,154 @@
+/* Acento Cafe — overrides completos para modo-oscuro y modo-claro */
+
+/* ── Toolbar ── */
+#tbCustom {
+    background-color: #2A241D;
+    border-bottom: 1px solid #2A241D;
+}
+
+/* ── Tab bar ── */
+#tabBar {
+    background-color: #2A241D;
+    border-bottom: 1px solid #2A241D;
+}
+#tabBar QPushButton {
+    color: #C0B4A4;
+}
+#tabBar QPushButton:hover {
+    color: #EDE4D8;
+    background-color: #352E24;
+}
+#tabBar QPushButton:checked {
+    color: #C49A6C;
+}
+#tabBar QPushButton:focus {
+    /* Foco de teclado en un tab de la cinta que no es el activo
+       -- mismo color que :checked, mismo fondo que :hover, para
+       que se sienta parte de este acento y no un borde generico
+       ajeno al tema. */
+    color: #C49A6C;
+    background-color: #352E24;
+}
+
+/* ── Menus ── */
+QMenuBar {
+    background-color: #2A241D;
+}
+QMenuBar::item:selected {
+    background-color: #352E24;
+}
+QMenu::item:selected {
+    background-color: #352E24;
+}
+
+/* ── Table headers ── */
+QHeaderView::section {
+    background-color: #2A241D;
+    border-bottom: 1px solid #352E24;
+    border-right: 1px solid #352E24;
+}
+
+/* ── Selection ── */
+QTreeView, QTableView {
+    selection-background-color: #7A5C3A;
+}
+QTreeView::item:selected {
+    background: #352E24;
+}
+QTreeView::item:selected:focus {
+    background: #A87C4E;
+}
+QTreeView::branch:selected {
+    background: #352E24;
+}
+QTableWidget::item:selected {
+    background: #352E24;
+}
+QTableWidget::item:selected:focus {
+    background: #A87C4E;
+}
+#dlgList::item:selected {
+    background-color: #2A241D;
+}
+#dlgAjustesNav::item:selected {
+    background-color: #2A241D;
+}
+
+/* ── Hover rows ── */
+QTreeView::item:hover {
+    background: #25201A;
+}
+QTableWidget::item:hover {
+    background: #25201A;
+}
+QTreeView::branch:hover {
+    background: #25201A;
+}
+
+/* ── Buttons ── */
+QPushButton:hover {
+    border-color: #A87C4E;
+}
+QPushButton#btnPrimario {
+    background-color: #7A5C3A;
+}
+QPushButton#btnPrimario:hover {
+    background-color: #A87C4E;
+}
+#dlgCancel {
+    background-color: #352E24;
+}
+#dlgCancel:hover {
+    background-color: #7A5C3A;
+}
+
+/* ── Inputs focus ── */
+#searchInput:focus {
+    border: 1px solid #A87C4E;
+}
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
+    border: 1px solid #A87C4E;
+}
+
+/* ── Tabs ── */
+QTabBar::tab:selected {
+    color: #C49A6C;
+    border-bottom: 2px solid #A87C4E;
+}
+
+/* ── Checkboxes & radios ── */
+QRadioButton::indicator:checked, QCheckBox::indicator:checked {
+    background-color: #7A5C3A;
+    border-color: #A87C4E;
+}
+QRadioButton::indicator:hover, QCheckBox::indicator:hover {
+    border-color: #A87C4E;
+}
+
+/* ── Scrollbars ── */
+QScrollBar::handle:vertical:hover,
+QScrollBar::handle:horizontal:hover {
+    background-color: #7A5C3A;
+}
+
+/* ── Search bar ── */
+#searchBar {
+    background-color: #201D18;
+    border-bottom: 1px solid #2A241D;
+}
+
+/* ── Content pane border ── */
+QTabWidget::pane {
+    border-top: 1px solid #2A241D;
+}
+
+/* ── Status bar ── */
+QStatusBar {
+    background-color: #201D18;
+    color: #887A6A;
+}
+
+/* ── Dialogs ── */
+#dlgSearch:focus {
+    border-color: #C49A6C;
+}

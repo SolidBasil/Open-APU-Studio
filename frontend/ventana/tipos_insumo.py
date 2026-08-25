@@ -1,0 +1,68 @@
+"""
+tipos_insumo.py
+==============
+Datos maestros de tipos de insumo — una sola fuente de verdad.
+
+Antes: 6 copias inconsistentes dispersas en api.py, arbol.py,
+dialogs.py, explosion.py, insumos.py, exportar_plantillas.py.
+Ahora: este módulo define los datos canónicos, el resto importa.
+Los iconos por tipo viven en ICONO_SVG (SVG via frontend.ventana.iconos),
+no se usan emojis — la UI no debe depender de fuentes del sistema.
+
+Actualizado: 2026-08-24 12:00 (hora local)
+"""
+
+from frontend.ventana.colores import ACCENT, WARNING, SUCCESS, PURPURA, TEXT, LINE
+
+# ── Datos canónicos ──────────────────────────────────────────────
+# (nombre_singular, nombre_plural, clave_opus, descripcion)
+
+TIPOS = {
+    1:   ("Material",    "Materiales",     "material",    "Materiales y artículos fundamentales del proyecto."),
+    2:   ("Mano de obra", "Mano de obra",   "mano_obra",   "Mano de obra directa e indirecta."),
+    4:   ("Herramienta", "Herramienta",    "herramienta", "Herramienta menor y especializada."),
+    8:   ("Equipo",      "Equipo",         "equipo",      "Maquinaria y equipo de construcción."),
+    16:  ("Auxiliar",   "Auxiliares",     "auxiliar",    "Insumos auxiliares de apoyo."),
+    32:  ("Concepto",   "Conceptos",      "concepto",    "Conceptos generales y administrativos."),
+    64:  ("Flete",      "Fletes",         "flete",       "Transporte y fletes de materiales."),
+    128: ("Trabajo",   "Trabajos",       "trabajo",     "Trabajos y subcontratos."),
+}
+
+# ── Vistas derivadas (generadas, no editadas a mano) ─────────────
+
+NOMBRE = {tid: v[0] for tid, v in TIPOS.items()}
+NOMBRES = {tid: v[1] for tid, v in TIPOS.items()}
+CLAVE = {tid: v[2] for tid, v in TIPOS.items()}
+DESC = {tid: v[3] for tid, v in TIPOS.items()}
+
+# Formato tuple-list para OPUS export: [(id, nombre_plural)]
+OPUS_ROWS = [{"PREFIJO": tid, "STRTIPO": v[1]} for tid, v in TIPOS.items()]
+
+# Formato tuple-list para tabs/filtros: [(id, nombre_plural, clave)]
+TIPOS_INSUMO = [(tid, v[1], v[2]) for tid, v in TIPOS.items()]
+
+# ── Iconos Lucide SVG — representación visual de cada tipo ───────
+# Fuente única de verdad para quien necesite el nombre de icono por tipo.
+ICONO_SVG = {
+    1:   "building-2",   # Material
+    2:   "hard-hat",     # Mano de obra
+    4:   "wrench",       # Herramienta
+    8:   "tractor",      # Equipo
+    16:  "cog",          # Auxiliar
+    32:  "file-text",    # Concepto
+    64:  "truck",        # Flete
+    128: "construction", # Trabajo
+}
+
+# ── Colores por tipo de insumo (fuente única) ──────────────────────
+# Usado en sidebar, árboles, tablas, explosión, rastreo, diálogos.
+COLOR = {
+    1:   ACCENT,     # Material    — azul
+    2:   WARNING,    # Mano de obra — café
+    4:   SUCCESS,    # Herramienta — verde
+    8:   PURPURA,    # Equipo      — púrpura
+    16:  "#4E9298",  # Auxiliar    — teal
+    32:  TEXT,       # Concepto    — blanco
+    64:  LINE,       # Flete       — azul claro
+    128: "#5A9A7A",  # Trabajo     — verde oscuro
+}

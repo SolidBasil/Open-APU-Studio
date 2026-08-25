@@ -1,0 +1,10 @@
+PySide6>=6.7
+simpleeval>=1.0
+dbfread>=2.0
+ezdxf>=1.4
+openpyxl>=3.1
+reportlab>=4.2
+httpx>=0.27
+websockets>=12.0
+Pillow>=10.0
+platformdirs>=4.0
