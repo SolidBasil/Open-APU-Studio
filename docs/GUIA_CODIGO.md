@@ -280,7 +280,6 @@ de tabla viven en `keyPressEvent` de `TreeTableWidget` / `TablaArbol`.
 | Ctrl+P | Paleta de comandos (filtrar y ejecutar acciones) |
 | Ctrl+Shift+L | Enfocar explorador lateral (Enter abre la pestaña) |
 | Alt+1..7 | Cambiar pestaña de la cinta (PROYECTO…GENERADORES) |
-| F3 / F6 / F7 / F8 | Primer nivel / Resumen agrupadores / Todo / Nivel |
 | Ctrl+Shift+F / Ctrl+Shift+D | Filtrar / Limpiar filtros |
 | Ctrl+R | Recalcular |
 | Ctrl+= | Ajustar columnas |

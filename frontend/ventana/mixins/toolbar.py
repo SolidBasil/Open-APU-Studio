@@ -113,10 +113,6 @@ _HANDLERS = {
 # (Deshacer/Rehacer, Copiar/Cortar/Pegar, Alt+flechas, Insert/Delete/F2/F5)
 # no van aquí para no crear QShortcut duplicados/ambiguos.
 _ATAJOS = {
-    "Primer nivel":        "F3",
-    "Resumen agrupadores": "F6",
-    "Todo":                "F7",
-    "Nivel":               "F8",
     "Filtrar":             "Ctrl+Shift+F",
     "Limpiar filtros":     "Ctrl+Shift+D",
     "Recalcular":          "Ctrl+R",
@@ -186,9 +182,9 @@ _TOOLBAR_CFG = {
         ("Estructura",   [[("chevron-left", "Izquierda"), ("chevron-right", "Derecha")],[("chevron-up", "Subir"), ("chevron-down", "Bajar")]]),
         ("Filtros", [
             ("filter", "Filtrar"),
-            ("x", "Limpiar filtros"),
+            ("filter-x", "Limpiar filtros"),
         ]),
-        ("Desplegar",    [("align-left", "Desplegar", [("hash", "Primer nivel"), ("sigma", "Resumen agrupadores"), ("square-plus", "Todo"), ("align-left", "Nivel")])]),
+        ("Desplegar",    [("hash", "Primer nivel"), ("sigma", "Resumen agrupadores"), ("square-plus", "Todo"), ("align-left", "Nivel")]),
         ("Cálculo",      [("refresh-cw", "Recalcular")]),
     ],
     "HERRAMIENTAS": [
