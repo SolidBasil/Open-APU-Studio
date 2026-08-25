@@ -728,22 +728,30 @@ class ToolbarMixin:
         if zona == "panel":
             tree = getattr(self, "_sidebar_tree", None)
             if tree:
+                # OJO: setFocus() hace que Qt auto-asigne currentItem al
+                # primer ítem (el header de sección) — por eso el chequeo
+                # es sobre selectedItems() y no sobre currentItem().
                 tree.setFocus()
-                # Sin esto, aterrizar en "panel" con Tab dejaba el árbol
-                # con foco de teclado pero SIN currentItem() — Qt no
-                # pinta ningún resaltado de selección hasta que una
-                # flecha lo establece por primera vez, así que se veía
-                # como si Tab no hubiera hecho nada hasta mover con
-                # flechas. Si ya había un item actual (navegación previa),
-                # se respeta tal cual.
-                if tree.currentItem() is None and tree.topLevelItemCount() > 0:
-                    tree.setCurrentItem(tree.topLevelItem(0))
+                if not tree.selectedItems() and tree.topLevelItemCount() > 0:
+                    raiz = tree.topLevelItem(0)
+                    # Primer elemento útil (hijo de la sección), no el header
+                    primero = raiz.child(0) if raiz.childCount() > 0 else raiz
+                    tree.setCurrentItem(primero)
+                    # setCurrentItem marca CURRENT pero no SELECTED: sin
+                    # setSelected no hay resaltado visible.
+                    primero.setSelected(True)
                 return True
             return False
         if zona == "area":
             t = self._get_active_table()
             if t:
                 t.setFocus()
+                # Mismo criterio que "panel": primera fila con selección
+                # visible si no había nada.
+                if not t.selectedItems() and t.topLevelItemCount() > 0:
+                    primero = t.topLevelItem(0)
+                    t.setCurrentItem(primero)
+                    primero.setSelected(True)
                 return True
             if hasattr(self, "_tabs"):
                 self._tabs.setFocus()
