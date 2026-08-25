@@ -144,7 +144,6 @@ class PanelesMixin:
                 item.setIcon(0, icono(svg, 16, c))
 
         self._sidebar_tree = tree
-        tree.installEventFilter(self)  # ciclo de zonas con Tab (ver toolbar.py)
         tree.itemClicked.connect(self._on_sidebar_click)
         tree.itemDoubleClicked.connect(self._on_sidebar_double_click)
         return tree
@@ -154,7 +153,6 @@ class PanelesMixin:
     def _build_content(self):
         """Crea el QTabWidget central."""
         self._tabs = TabWidgetCerrable()
-        self._tabs.installEventFilter(self)  # ciclo de zonas con Tab (ver toolbar.py)
         self._tabs.tabCloseRequested.connect(self._on_tab_close)
         self._tabs.currentChanged.connect(self._on_tab_changed)
         self._tabs.addTab(self._build_presupuesto(), "Presupuesto programable")
@@ -380,12 +378,12 @@ class PanelesMixin:
         layout.addStretch()
 
         w.setCursor(Qt.CursorShape.PointingHandCursor)
-        w.installEventFilter(self)
         self._placeholder_sin_proyecto = w
 
         for child in w.findChildren(QWidget):
             child.setCursor(Qt.CursorShape.PointingHandCursor)
-            child.installEventFilter(self)
+        # Clicks y ciclo de zonas del placeholder los captura el filtro a
+        # nivel aplicación (ver toolbar.py::_build_toolbar).
         return w
 
     # ── Insumos ──────────────────────────────────────────────────────────

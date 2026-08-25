@@ -231,7 +231,6 @@ class ToolbarMixin:
             btn.setCheckable(True)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(lambda checked=False, n=name: self._switch_tab(n))
-            btn.installEventFilter(self)  # ciclo de zonas con Tab/flechas (ver eventFilter)
             self._tab_btns.append(btn)
             self._tab_btns_by_name[name] = btn
             layout.addWidget(btn)
@@ -337,6 +336,17 @@ class ToolbarMixin:
 
         parent_layout.addWidget(self._tb)
         self._build_page("PRINCIPAL")
+
+        # Ciclo de zonas (Tab/Shift+Tab) a nivel APLICACIÓN: un filtro por
+        # widget dejaba fugas — la barra de búsqueda, las tablas y el bar de
+        # pestañas no lo tenían y el Shift+Tab pasaba por ellos con el
+        # traversal nativo. El guard `obj.window() is not self` de
+        # _navegar_cinta excluye diálogos y popups; los filtros de los
+        # editores de celda (delegado) corren antes que este y consumen
+        # sus propias teclas.
+        if not getattr(self, "_filtro_zonas_instalado", False):
+            QApplication.instance().installEventFilter(self)
+            self._filtro_zonas_instalado = True
 
     def _build_page(self, tab_name):
         """Construye (una sola vez) la página de toolbar para tab_name."""
@@ -489,7 +499,6 @@ class ToolbarMixin:
         btn.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._conectar_btn(btn, tip)
         self._style_toolbar_btn(btn)
-        btn.installEventFilter(self)  # ciclo de zonas con Tab/flechas (ver eventFilter)
         return btn
 
     def _make_menu_btn(self, icon_char, label, submenu):
@@ -534,7 +543,6 @@ class ToolbarMixin:
             else:
                 act.setEnabled(False)
         btn.setMenu(menu)
-        btn.installEventFilter(self)  # ciclo de zonas con Tab/flechas (ver eventFilter)
         return btn
 
     def _tip_con_atajo(self, tip):
@@ -556,7 +564,6 @@ class ToolbarMixin:
         btn.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._conectar_btn(btn, tip)
         self._style_toolbar_btn(btn)
-        btn.installEventFilter(self)  # ciclo de zonas con Tab/flechas (ver eventFilter)
         return btn
 
     def _conectar_btn(self, btn, tip):

@@ -84,8 +84,7 @@ class VentanaPrincipal(
         self._build_statusbar()
         # Teclado-first: Tab/Shift+Tab ciclan entre las 4 zonas (cinta,
         # herramientas, panel, área) sin importar dónde esté el foco —
-        # ver _navegar_cinta en mixins/toolbar.py.
-        self.installEventFilter(self)
+        # el filtro vive a nivel aplicación (ver toolbar.py::_build_toolbar).
 
     def closeEvent(self, event):
         from frontend.ventana.widgets.base import TreeTableWidget
