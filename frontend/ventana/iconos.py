@@ -95,6 +95,8 @@ _ICONS8_MAP: dict[str, str] = {
     "redo-2":       "redo",
     "check":        "ok",
     "check-square": "approval",
+    "filter":       "filled_filter",
+    "filter-x":     "clear_filters",
     "printer":      "print",
     "refresh-cw":   "synchronize",
     "lock":         "lock",
