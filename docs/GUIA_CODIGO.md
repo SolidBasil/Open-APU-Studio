@@ -348,4 +348,4 @@ sesión tocó `estructura_presupuesto` — restaurar padre_id/orden exige
 regenerar wbs/nivel; sin reindexar quedan wbs viejos mezclados (1.1, 1.2,
 1.8, 1.5...).
 
-Actualizado: 2026-08-24 13:30 (hora local)
+Actualizado: 2026-08-31 05:00 (hora local)

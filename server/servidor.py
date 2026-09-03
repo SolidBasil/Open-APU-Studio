@@ -259,6 +259,13 @@ def actualizar(nombre: str, req: ActualizarRequest, bt: BackgroundTasks):
         raise HTTPException(status_code=422 if isinstance(e, ValidationError) else 500,
                             detail=str(e))
     bt.add_task(ws_manager.broadcast, nombre, {"evento": "ProyectoRecalculado", "data": {"proyecto_id": 1, "usuario_id": 1}})
+    if req.entidad == "insumos":
+        try:
+            from backend.database.repos import InsumoRepo
+            reg = InsumoRepo(svc["db"].conn).buscar(req.registro_id) or {}
+            bt.add_task(ws_manager.broadcast, nombre, {"evento": "InsumoActualizado", "data": {"insumo_id": req.registro_id, "cambios": req.campos, "registro": reg}})
+        except Exception:
+            pass
     return {"ok": True}
 
 
@@ -273,6 +280,13 @@ def insertar(nombre: str, req: InsertarRequest, bt: BackgroundTasks):
         raise HTTPException(status_code=422 if isinstance(e, ValidationError) else 500,
                             detail=str(e))
     bt.add_task(ws_manager.broadcast, nombre, {"evento": "ProyectoRecalculado", "data": {"proyecto_id": 1, "usuario_id": 1}})
+    if req.entidad == "insumos":
+        try:
+            from backend.database.repos import InsumoRepo
+            reg = InsumoRepo(svc["db"].conn).buscar(nuevo_id) or {}
+            bt.add_task(ws_manager.broadcast, nombre, {"evento": "InsumoActualizado", "data": {"insumo_id": nuevo_id, "cambios": req.campos, "registro": reg}})
+        except Exception:
+            pass
     return {"ok": True, "id": nuevo_id}
 
 
@@ -285,6 +299,11 @@ def eliminar(nombre: str, req: EliminarRequest, bt: BackgroundTasks):
     except RepositoryError as e:
         raise HTTPException(status_code=500, detail=str(e))
     bt.add_task(ws_manager.broadcast, nombre, {"evento": "ProyectoRecalculado", "data": {"proyecto_id": 1, "usuario_id": 1}})
+    if req.entidad == "insumos":
+        try:
+            bt.add_task(ws_manager.broadcast, nombre, {"evento": "InsumoActualizado", "data": {"insumo_id": req.registro_id, "cambios": {}, "registro": {}}})
+        except Exception:
+            pass
     return {"ok": True}
 
 
@@ -325,6 +344,12 @@ def factores_sobrecosto(nombre: str, req: FactoresSobrecostoRequest, bt: Backgro
             factor = FactoresSobrecostoRepo(svc["db"].conn).guardar(1, **req.valores)
             RecalculoRepo(svc["db"].conn).recalcular_proyecto(1)
     bt.add_task(ws_manager.broadcast, nombre, {"evento": "ProyectoRecalculado", "data": {"proyecto_id": 1, "usuario_id": 1}})
+    try:
+        from backend.database.repos import FactoresSobrecostoRepo
+        reg = FactoresSobrecostoRepo(svc["db"].conn).obtener(1) or {}
+        bt.add_task(ws_manager.broadcast, nombre, {"evento": "FactoresSobrecostoActualizados", "data": {"proyecto_id": 1, "registro": reg}})
+    except Exception:
+        pass
     return {"ok": True, "factor_total": factor}
 
 

@@ -35,9 +35,6 @@ if TYPE_CHECKING:
     from decimal import Decimal
     from backend.database.services.data_service import DataService
 
-# ponytail: constante global — evita recrear el dict en cada llamada a apu()
-from frontend.ventana.tipos_insumo import ICONO_SVG as _TIPO_ICONO_SVG
-
 
 # =============================================================================
 # CLASE PRINCIPAL
@@ -687,59 +684,7 @@ class Api:
         return self._backend.resolver_matriz(nodo_id, insumo_id)
 
     def unificar_matrices_apu(self) -> int:
-        """Una sola matriz por APU (Fase de migración).
-
-        La importación OPUS creaba DOS matrices para el mismo desglose:
-        una para el concepto (matriz_id positivo) y otra para el insumo
-        compuesto (matriz_id negativo). Esto causaba desfase de costos.
-
-        Esta migra: para cada concepto con insumo compuesto que tenga
-        matriz propia, redirige los componentes a la matriz del insumo
-        compuesto y borra la matriz duplicada. Devuelve el número de
-        conceptos migrados.
-
-        Corre en cada apertura/importación de proyecto (ver
-        `_wire_servicios()`/`_on_abrir_proyecto()` en
-        `frontend/ventana/mixins/gestion_proyectos.py`), así que si no
-        hay nada que migrar debe ser barato y no debe tocar la UI.
-
-        Excepción deliberada al patrón HTTP de Fase 5: se queda en el
-        camino local (`self._conn` directo) en vez de migrar a
-        `ApiCliente`. No es un verbo CRUD (insertar/actualizar/eliminar/
-        recalcular) sino una operación de mantenimiento en lote sobre
-        `apu_matrices`, y corre ANTES de que el resto de la sesión toque
-        ese proyecto — mismo archivo, misma conexión que ya se abre en
-        `_wire_servicios()` para wireear todo lo demás. Moverla a un
-        endpoint dedicado es posible (mismo patrón que `/recalcular` o
-        `/factores_sobrecosto`) pero no aporta nada mientras corra en el
-        mismo proceso que abre el archivo; revisar si esto cambia cuando
-        el modelo de apertura de proyectos deje de ser "un archivo, una
-        conexión directa del cliente" (Fase 9).
-        """
-        from backend.database.repos import ApuMatricesRepo
-        from backend.database.event_bus import ProyectoRecalculado
-
-        repo = ApuMatricesRepo(self._conn)
-        candidatos = repo.conceptos_con_insumo_compuesto(self._pid)
-
-        migrados = 0
-        with self._ds.transaccion():
-            for row in candidatos:
-                cid = row["cid"]
-                neg = -row["insumo_id"]
-
-                if repo.contar_por_matriz(cid) == 0:
-                    continue  # el concepto no tiene matriz propia, nada que unificar
-
-                if repo.contar_por_matriz(neg) == 0:
-                    repo.redirigir_matriz(origen=cid, destino=neg)
-                else:
-                    repo.eliminar_matriz(cid)
-                migrados += 1
-
-        if migrados:
-            self._ds.emitir(ProyectoRecalculado(self._pid))
-        return migrados
+        return self._backend.unificar_matrices_apu()
 
     # =========================================================================
     # GENERADORES DE OBRA
@@ -782,22 +727,11 @@ class Api:
         return self._backend.generador_mover_renglones(ids, nuevo_generador_id, antes_de_id, copiar)
 
     def concepto_cantidad(self, concepto_id: int) -> float:
-        from backend.database.repos.presupuesto import NodoRepo
-        row = NodoRepo(self._conn).buscar(concepto_id)
-        return float(row["cantidad"]) if row and row.get("cantidad") else 0.0
+        return self._backend.concepto_cantidad(concepto_id)
 
     def concepto_actualizar(self, concepto_id: int, **campos) -> None:
-        self._ds.actualizar("estructura_presupuesto", concepto_id, **campos)
+        return self._backend.concepto_actualizar(concepto_id, **campos)
 
     def campo_valor(self, tabla: str, campo: str, registro_id: int) -> dict | None:
         """Lee un campo concreto de una tabla. Devuelve registro completo o None."""
-        from backend.database.repos import NodoRepo, ApuMatricesRepo, InsumoRepo
-        repos = {
-            "estructura_presupuesto": NodoRepo,
-            "apu_matrices": ApuMatricesRepo,
-            "insumos": InsumoRepo,
-        }
-        cls = repos.get(tabla)
-        if not cls:
-            return None
-        return cls(self._conn).buscar(registro_id)
+        return self._backend.campo_valor(tabla, campo, registro_id)

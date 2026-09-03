@@ -138,6 +138,12 @@ class ToqueApiBackend(Protocol):
     def iniciar_sesion_undo(self) -> str | None: ...
     def cerrar_sesion_undo(self) -> None: ...
 
+    # ── HELPERS LOCALES ─────────────────────────────────────────
+    def concepto_cantidad(self, concepto_id: int) -> float: ...
+    def concepto_actualizar(self, concepto_id: int, **campos) -> None: ...
+    def campo_valor(self, tabla: str, campo: str, registro_id: int) -> dict | None: ...
+    def unificar_matrices_apu(self) -> int: ...
+
 
 def _enriquecer_detalle_apu(data: dict, ids_con_apu: set[int]) -> dict:
     """Enriquece las filas crudas de con_detalle()/apu_completo() con lo
@@ -929,6 +935,49 @@ class _BackendLocal:
     def cerrar_sesion_undo(self) -> None:
         self._api._ds.cerrar_sesion()
 
+    # ── HELPERS LOCALES ────────────────────────────────────────
+
+    def concepto_cantidad(self, concepto_id: int) -> float:
+        from backend.database.repos.presupuesto import NodoRepo
+        row = NodoRepo(self._api._conn).buscar(concepto_id)
+        return float(row["cantidad"]) if row and row.get("cantidad") else 0.0
+
+    def concepto_actualizar(self, concepto_id: int, **campos) -> None:
+        self._api._ds.actualizar("estructura_presupuesto", concepto_id, **campos)
+
+    def campo_valor(self, tabla: str, campo: str, registro_id: int) -> dict | None:
+        from backend.database.repos import NodoRepo, ApuMatricesRepo, InsumoRepo
+        repos = {
+            "estructura_presupuesto": NodoRepo,
+            "apu_matrices": ApuMatricesRepo,
+            "insumos": InsumoRepo,
+        }
+        cls = repos.get(tabla)
+        if not cls:
+            return None
+        return cls(self._api._conn).buscar(registro_id)
+
+    def unificar_matrices_apu(self) -> int:
+        from backend.database.repos import ApuMatricesRepo
+        from backend.database.event_bus import ProyectoRecalculado
+        repo = ApuMatricesRepo(self._api._conn)
+        candidatos = repo.conceptos_con_insumo_compuesto(self._api._pid)
+        migrados = 0
+        with self._api._ds.transaccion():
+            for row in candidatos:
+                cid = row["cid"]
+                neg = -row["insumo_id"]
+                if repo.contar_por_matriz(cid) == 0:
+                    continue
+                if repo.contar_por_matriz(neg) == 0:
+                    repo.redirigir_matriz(origen=cid, destino=neg)
+                else:
+                    repo.eliminar_matriz(cid)
+                migrados += 1
+        if migrados:
+            self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
+        return migrados
+
 
 class _BackendHTTP:
     """Implementación vía servidor embebido (ApiCliente)."""
@@ -945,9 +994,7 @@ class _BackendHTTP:
         from backend.database.event_bus import FactoresSobrecostoActualizados, ProyectoRecalculado
         r = self._api._http()._post("/factores_sobrecosto", json={"valores": valores})
         factor = r["factor_total"]
-        self._api._ds.emitir(FactoresSobrecostoActualizados(self._api._pid, valores))
         self._api._http().recalcular()
-        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
         return factor
 
     # ── INSUMOS ──────────────────────────────────────────────────────
@@ -969,13 +1016,11 @@ class _BackendHTTP:
     def recalcular_proyecto(self) -> dict:
         self._api._http().recalcular()
         from backend.database.event_bus import ProyectoRecalculado
-        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
         return {}
 
     def reindexar_proyecto(self) -> None:
         self._api._http().reindexar()
         from backend.database.event_bus import ProyectoRecalculado
-        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
 
     def rastrear_insumo(self, insumo_id: int) -> list[dict]:
         return self._api._http()._get(f"/rastrear/{insumo_id}")
@@ -1071,7 +1116,6 @@ class _BackendHTTP:
             raise ValueError("Operador debe ser '*' o '/'")
         self._api._http().actualizar("apu_matrices", comp_id, operador=operador)
         self._api._http().recalcular()
-        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
 
     def apu_agregar_componente(self, matriz_id: int, insumo_id: int,
                                 valor: float = 1.0, operador: str = "*") -> int:
@@ -1085,7 +1129,6 @@ class _BackendHTTP:
         }
         nuevo_id = self._api._http().insertar("apu_matrices", **campos)
         self._api._http().recalcular()
-        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
         return nuevo_id
 
     def apu_actualizar_valor(self, comp_id: int, valor: float,
@@ -1111,13 +1154,11 @@ class _BackendHTTP:
             campos["formula"] = formula
         self._api._http().actualizar("apu_matrices", comp_id, **campos)
         self._api._http().recalcular()
-        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
 
     def apu_reasignar_componente(self, comp_id: int, nuevo_insumo_id: int) -> None:
         from backend.database.event_bus import ProyectoRecalculado
         self._api._http().actualizar("apu_matrices", comp_id, insumo_id=nuevo_insumo_id)
         self._api._http().recalcular()
-        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
 
     def apu_actualizar_precio_componente(self, insumo_id: int, precio: float) -> None:
         self._api.insumo_actualizar_precio(insumo_id, precio)
@@ -1243,14 +1284,12 @@ class _BackendHTTP:
             campos["formula"] = formula
         self._api._http().actualizar("estructura_presupuesto", concepto_id, **campos)
         self._api._http().recalcular()
-        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
 
     def concepto_reasignar_insumo(self, concepto_id: int, nuevo_insumo_id: int) -> None:
         from backend.database.event_bus import ProyectoRecalculado
         self._api._http().actualizar("estructura_presupuesto", concepto_id,
                                       insumo_id=nuevo_insumo_id)
         self._api._http().recalcular()
-        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
 
     def nodo_descripcion_actual(self, nodo_id: int) -> str:
         nodo = self._api._http().buscar("estructura_presupuesto", nodo_id)
@@ -1272,8 +1311,7 @@ class _BackendHTTP:
             self._api._http().actualizar("insumos", nodo["insumo_id"], unidad=unidad)
             from backend.database.event_bus import InsumoActualizado
             registro = self._api._http().buscar("insumos", nodo["insumo_id"]) or {}
-            self._api._ds.emitir(InsumoActualizado(nodo["insumo_id"], {"unidad": unidad}, registro))
-
+    
     def agrupador_actualizar_descripcion(self, nodo_id: int, descripcion: str) -> None:
         self._api._http().actualizar("estructura_presupuesto", nodo_id, descripcion=descripcion)
 
@@ -1281,7 +1319,6 @@ class _BackendHTTP:
         from backend.database.event_bus import ProyectoRecalculado
         self._api._http().eliminar("estructura_presupuesto", nodo_id)
         self._api._http().recalcular()
-        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
 
     def agregar_nodo(self, tipo: str, padre_id: int | None = None,
                       descripcion: str = "", insumo_id: int | None = None,
@@ -1304,7 +1341,6 @@ class _BackendHTTP:
         })
         self._api._http().reindexar()
         self._api._http().recalcular()
-        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
         return nuevo_id
 
     def todos_concepto_ids(self) -> list[int]:
@@ -1358,7 +1394,6 @@ class _BackendHTTP:
         self._api._http().actualizar("insumos", insumo_id, descripcion=descripcion, hash=nuevo_hash)
         from backend.database.event_bus import InsumoActualizado
         registro = self._api._http().buscar("insumos", insumo_id) or {}
-        self._api._ds.emitir(InsumoActualizado(insumo_id, {"descripcion": descripcion, "hash": nuevo_hash}, registro))
 
     def insumo_actualizar_precio(self, insumo_id: int, precio: float, usuario_id: int = 1) -> None:
         from backend.database.event_bus import ProyectoRecalculado
@@ -1367,7 +1402,6 @@ class _BackendHTTP:
         self._api._http().actualizar("insumos", insumo_id,
             costo_mn=precio, costo_directo=precio)
         self._api._http().recalcular()
-        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
 
     def insumo_actualizar_precios(self, insumo_id: int, costo_mn: float, costo_me: float, usuario_id: int = 1) -> None:
         from backend.database.event_bus import ProyectoRecalculado
@@ -1376,17 +1410,14 @@ class _BackendHTTP:
         self._api._http().actualizar("insumos", insumo_id,
             costo_mn=costo_mn, costo_directo=costo_mn, costo_me=costo_me)
         self._api._http().recalcular()
-        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
 
     def insumo_actualizar_campo(self, insumo_id: int, campo: str, valor, usuario_id: int = 1) -> None:
         from backend.database.event_bus import InsumoActualizado, ProyectoRecalculado
         self._api._http().actualizar("insumos", insumo_id, **{campo: valor})
         registro = self._api._http().buscar("insumos", insumo_id) or {}
-        self._api._ds.emitir(InsumoActualizado(insumo_id, {campo: valor}, registro))
         if campo == "costo_final":
             self._api._http().recalcular()
-            self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
-
+    
     def insumo_insertar(self, tipo_id: int, descripcion: str, descripcion_corta: str | None = None,
                          unidad: str | None = None, costo: float = 0.0, costo_me: float = 0.0,
                          es_compuesto: int = 0, familia_id: int | None = None,
@@ -1419,7 +1450,6 @@ class _BackendHTTP:
         from backend.database.event_bus import ProyectoRecalculado
         self._api._http().eliminar("insumos", insumo_id)
         self._api._http().recalcular()
-        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
 
     # ── UNDO / SESIÓN ──────────────────────────────────────────
 
@@ -1436,3 +1466,38 @@ class _BackendHTTP:
 
     def cerrar_sesion_undo(self) -> None:
         return None
+
+    # ── HELPERS LOCALES ────────────────────────────────────────
+
+    def concepto_cantidad(self, concepto_id: int) -> float:
+        nodo = self._api._http().buscar("estructura_presupuesto", concepto_id)
+        return float(nodo["cantidad"]) if nodo and nodo.get("cantidad") else 0.0
+
+    def concepto_actualizar(self, concepto_id: int, **campos) -> None:
+        self._api._http().actualizar("estructura_presupuesto", concepto_id, **campos)
+
+    def campo_valor(self, tabla: str, campo: str, registro_id: int) -> dict | None:
+        # buscar es genérico para las 3 tablas; campo se ignora aquí (se lee registro completo)
+        return self._api._http().buscar(tabla, registro_id)
+
+    def unificar_matrices_apu(self) -> int:
+        # Misma excepción que _BackendLocal: operación de mantenimiento local (ver docstring en api.py)
+        from backend.database.repos import ApuMatricesRepo
+        from backend.database.event_bus import ProyectoRecalculado
+        repo = ApuMatricesRepo(self._api._conn)
+        candidatos = repo.conceptos_con_insumo_compuesto(self._api._pid)
+        migrados = 0
+        with self._api._ds.transaccion():
+            for row in candidatos:
+                cid = row["cid"]
+                neg = -row["insumo_id"]
+                if repo.contar_por_matriz(cid) == 0:
+                    continue
+                if repo.contar_por_matriz(neg) == 0:
+                    repo.redirigir_matriz(origen=cid, destino=neg)
+                else:
+                    repo.eliminar_matriz(cid)
+                migrados += 1
+        if migrados:
+            self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
+        return migrados

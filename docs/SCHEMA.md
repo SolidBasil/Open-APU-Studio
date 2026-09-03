@@ -308,5 +308,5 @@ ORDER BY n.wbs;
 ```
 
 ```
-Actualizado: 2026-07-22 (hora local)
+Actualizado: 2026-08-31 05:00 (hora local)
 ```
