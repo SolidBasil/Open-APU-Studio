@@ -258,7 +258,7 @@ def actualizar(nombre: str, req: ActualizarRequest, bt: BackgroundTasks):
     except (ValidationError, RepositoryError) as e:
         raise HTTPException(status_code=422 if isinstance(e, ValidationError) else 500,
                             detail=str(e))
-    bt.add_task(ws_manager.broadcast, nombre, {"evento": "cambio"})
+    bt.add_task(ws_manager.broadcast, nombre, {"evento": "ProyectoRecalculado", "data": {"proyecto_id": 1, "usuario_id": 1}})
     return {"ok": True}
 
 
@@ -272,7 +272,7 @@ def insertar(nombre: str, req: InsertarRequest, bt: BackgroundTasks):
     except (ValidationError, RepositoryError) as e:
         raise HTTPException(status_code=422 if isinstance(e, ValidationError) else 500,
                             detail=str(e))
-    bt.add_task(ws_manager.broadcast, nombre, {"evento": "cambio"})
+    bt.add_task(ws_manager.broadcast, nombre, {"evento": "ProyectoRecalculado", "data": {"proyecto_id": 1, "usuario_id": 1}})
     return {"ok": True, "id": nuevo_id}
 
 
@@ -284,7 +284,7 @@ def eliminar(nombre: str, req: EliminarRequest, bt: BackgroundTasks):
             svc["ds"].eliminar(req.entidad, req.registro_id, usuario_id=req.usuario_id)
     except RepositoryError as e:
         raise HTTPException(status_code=500, detail=str(e))
-    bt.add_task(ws_manager.broadcast, nombre, {"evento": "cambio"})
+    bt.add_task(ws_manager.broadcast, nombre, {"evento": "ProyectoRecalculado", "data": {"proyecto_id": 1, "usuario_id": 1}})
     return {"ok": True}
 
 
@@ -295,7 +295,7 @@ def recalcular(nombre: str, bt: BackgroundTasks):
     with svc["lock"]:
         with svc["db"].transaction():
             RecalculoRepo(svc["db"].conn).recalcular_proyecto(1)
-    bt.add_task(ws_manager.broadcast, nombre, {"evento": "cambio"})
+    bt.add_task(ws_manager.broadcast, nombre, {"evento": "ProyectoRecalculado", "data": {"proyecto_id": 1, "usuario_id": 1}})
     return {"ok": True}
 
 
@@ -313,7 +313,7 @@ def reindexar(nombre: str, bt: BackgroundTasks):
     with svc["lock"]:
         with svc["db"].transaction():
             NodoRepo(svc["db"].conn).reindexar(1)
-    bt.add_task(ws_manager.broadcast, nombre, {"evento": "cambio"})
+    bt.add_task(ws_manager.broadcast, nombre, {"evento": "ProyectoRecalculado", "data": {"proyecto_id": 1, "usuario_id": 1}})
     return {"ok": True}
 
 
@@ -324,7 +324,7 @@ def factores_sobrecosto(nombre: str, req: FactoresSobrecostoRequest, bt: Backgro
         with svc["db"].transaction():
             factor = FactoresSobrecostoRepo(svc["db"].conn).guardar(1, **req.valores)
             RecalculoRepo(svc["db"].conn).recalcular_proyecto(1)
-    bt.add_task(ws_manager.broadcast, nombre, {"evento": "cambio"})
+    bt.add_task(ws_manager.broadcast, nombre, {"evento": "ProyectoRecalculado", "data": {"proyecto_id": 1, "usuario_id": 1}})
     return {"ok": True, "factor_total": factor}
 
 
@@ -349,7 +349,7 @@ def indirectos_calcular_totales(nombre: str, bt: BackgroundTasks):
     with svc["lock"]:
         with svc["db"].transaction():
             resultado = IndirectoRepo(svc["db"].conn).calcular_totales(1)
-    bt.add_task(ws_manager.broadcast, nombre, {"evento": "cambio"})
+    bt.add_task(ws_manager.broadcast, nombre, {"evento": "ProyectoRecalculado", "data": {"proyecto_id": 1, "usuario_id": 1}})
     return resultado
 
 
@@ -380,7 +380,7 @@ def indirectos_cargar_plantilla(nombre: str, req: PlantillaRequest, bt: Backgrou
                     )
                     insertados += 1
     if insertados:
-        bt.add_task(ws_manager.broadcast, nombre, {"evento": "cambio"})
+        bt.add_task(ws_manager.broadcast, nombre, {"evento": "ProyectoRecalculado", "data": {"proyecto_id": 1, "usuario_id": 1}})
     return {"ok": True, "insertados": insertados}
 
 
@@ -426,7 +426,7 @@ def indirectos_aplicar_a_sobrecosto(nombre: str, bt: BackgroundTasks):
             factor_total = FactoresSobrecostoRepo(svc["db"].conn).guardar(1, **valores)
             RecalculoRepo(svc["db"].conn).recalcular_proyecto(1)
 
-    bt.add_task(ws_manager.broadcast, nombre, {"evento": "cambio"})
+    bt.add_task(ws_manager.broadcast, nombre, {"evento": "ProyectoRecalculado", "data": {"proyecto_id": 1, "usuario_id": 1}})
     return {
         "pct_indirectos_campo": pct_campo,
         "pct_indirectos_oficina": pct_oficina,
@@ -482,7 +482,7 @@ def generador_renglon_guardar(nombre: str, generador_id: int, req: RenglonReques
     except (ValidationError, RepositoryError) as e:
         raise HTTPException(status_code=422 if isinstance(e, ValidationError) else 500,
                             detail=str(e))
-    bt.add_task(ws_manager.broadcast, nombre, {"evento": "cambio"})
+    bt.add_task(ws_manager.broadcast, nombre, {"evento": "ProyectoRecalculado", "data": {"proyecto_id": 1, "usuario_id": 1}})
     return {"ok": True, "renglon_id": renglon_id}
 
 
@@ -491,7 +491,7 @@ def generador_renglon_eliminar(nombre: str, renglon_id: int, bt: BackgroundTasks
     svc = _obtener_servicios(nombre)
     with svc["lock"]:
         svc["ds"].eliminar_renglon_generador(renglon_id)
-    bt.add_task(ws_manager.broadcast, nombre, {"evento": "cambio"})
+    bt.add_task(ws_manager.broadcast, nombre, {"evento": "ProyectoRecalculado", "data": {"proyecto_id": 1, "usuario_id": 1}})
     return {"ok": True}
 
 
@@ -503,7 +503,7 @@ def generador_mover_renglones(nombre: str, req: MoverRenglonesRequest, bt: Backg
             req.ids, req.nuevo_generador_id, req.antes_de_id, req.copiar
         )
     if ok:
-        bt.add_task(ws_manager.broadcast, nombre, {"evento": "cambio"})
+        bt.add_task(ws_manager.broadcast, nombre, {"evento": "ProyectoRecalculado", "data": {"proyecto_id": 1, "usuario_id": 1}})
     return {"ok": ok}
 
 
@@ -518,7 +518,7 @@ def deshacer(nombre: str, req: UndoRequest, bt: BackgroundTasks):
     with svc["lock"]:
         ok = svc["ds"].deshacer(usuario_id=req.usuario_id)
     if ok:
-        bt.add_task(ws_manager.broadcast, nombre, {"evento": "cambio"})
+        bt.add_task(ws_manager.broadcast, nombre, {"evento": "ProyectoRecalculado", "data": {"proyecto_id": 1, "usuario_id": 1}})
     return {"ok": ok}
 
 
@@ -529,7 +529,7 @@ def rehacer(nombre: str, req: UndoRequest, bt: BackgroundTasks):
     with svc["lock"]:
         ok = svc["ds"].rehacer(usuario_id=req.usuario_id)
     if ok:
-        bt.add_task(ws_manager.broadcast, nombre, {"evento": "cambio"})
+        bt.add_task(ws_manager.broadcast, nombre, {"evento": "ProyectoRecalculado", "data": {"proyecto_id": 1, "usuario_id": 1}})
     return {"ok": ok}
 
 
@@ -604,7 +604,7 @@ def variables_crear(nombre: str, req: VariableCrearRequest, bt: BackgroundTasks)
             "variables_formula", proyecto_id=1,
             nombre=req.nombre, expresion=req.expresion, descripcion=req.descripcion,
         )
-    bt.add_task(ws_manager.broadcast, nombre, {"evento": "cambio"})
+    bt.add_task(ws_manager.broadcast, nombre, {"evento": "ProyectoRecalculado", "data": {"proyecto_id": 1, "usuario_id": 1}})
     return {"ok": True, "id": nuevo_id}
 
 
@@ -671,7 +671,7 @@ def variables_actualizar(nombre: str, variable_id: int, req: VariableActualizarR
         except (ValidationError, RepositoryError) as e:
             raise HTTPException(status_code=422 if isinstance(e, ValidationError) else 500,
                                 detail=str(e))
-    bt.add_task(ws_manager.broadcast, nombre, {"evento": "cambio"})
+    bt.add_task(ws_manager.broadcast, nombre, {"evento": "ProyectoRecalculado", "data": {"proyecto_id": 1, "usuario_id": 1}})
     return {"ok": True}
 
 
@@ -761,7 +761,7 @@ def variables_eliminar(nombre: str, variable_id: int, bt: BackgroundTasks):
             if afectadas["conceptos"] or afectadas["componentes_apu"]:
                 RecalculoRepo(conn).recalcular_proyecto(1)
 
-    bt.add_task(ws_manager.broadcast, nombre, {"evento": "cambio"})
+    bt.add_task(ws_manager.broadcast, nombre, {"evento": "ProyectoRecalculado", "data": {"proyecto_id": 1, "usuario_id": 1}})
     return afectadas
 
 

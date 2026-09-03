@@ -1,6 +1,6 @@
 # Open APU Studio — AGENTS.md
 
-Actualizado: 2026-08-31 04:55 (hora local)
+Actualizado: 2026-08-31 05:00 (hora local)
 ## Regla DE DESARROLLO
 no conservar codigo viejo o migraciones de bases de datos con codigo antiguo si no funciona se rehace no se conserva nada antiguo
 ## Regla: NO subir a GitHub sin pedido expreso

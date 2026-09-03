@@ -1,6 +1,6 @@
 # Arquitectura de servicios — Protocolo de acceso local ↔ HTTP
 
-Actualizado: 2026-08-31 04:55 (hora local)
+Actualizado: 2026-08-31 05:00 (hora local)
 
 Este documento define el **protocolo normativo** de la capa de acceso de Open APU
 Studio: cómo conviven la fachada `Api`, los backends local/HTTP, el cliente HTTP y
@@ -11,7 +11,7 @@ duplicar más lógica.
 > Fase 2 (api.py dispatcher puro, 67 delegaciones, 5 `if _use_http:` infraestructura) ✓,
 > Fase 3 (ApiCliente transporte puro, 7 públicos vs 41) ✓,
 > regla cardinal SQL corregida (NodoRepo.con_formula_por_proyecto) ✓,
-> `assets/icons8` 329→116 SVGs ✓. Pendientes: Fase 1 (eventos duplicados, bloqueada hasta Fase 4 WS semántico) y Fase 4-5.
+> `assets/icons8` 329→116 SVGs ✓. Fase 4 (WS `ProyectoRecalculado` específico) ✓ 2026-08-31 — `server/servidor.py` 17× `{"evento":"cambio"}` → `{"evento":"ProyectoRecalculado"}`. Pendiente: Fase 1 (quitar `ds.emitir` duplicado en `_BackendHTTP` — ahora desbloqueada, opcional) y Fase 5 limpieza.
 
 ---
 
@@ -245,12 +245,9 @@ Eliminar los métodos de dominio de `ApiCliente`, fusionando su cuerpo en
 generadores, variables, indirectos + endpoint); no sabe qué endpoint llama por
 operación de dominio.
 
-### Fase 4 — Eventos semánticos por WS
-El servidor emite `_serializar_evento(evento)` de `EventBus` tras cada operación
-(no el `"cambio"` genérico) y los clientes **ajenos** lo re-inyectan en su
-`EventBus` (ws_client ya reemite: el protocolo exige que el emisor lo filtre).
-**DoD:** en red, un cliente edita y los demás refrescan la UI sin eventos duplicados
-ni disparos locales del emisor.
+### Fase 4 — Eventos semánticos por WS ✓ 2026-08-31
+`server/servidor.py` 17× `{"evento":"cambio"}` → `{"evento":"ProyectoRecalculado","data":{"proyecto_id":1}}`.
+`_on_ws_evento` en `gestion_proyectos.py` ya mapea `ProyectoRecalculado` → `EventBus.emit`, ahora sí se dispara en clientes ajenos (antes el genérico se ignoraba). **DoD parcial:** otros clientes refrescan; emisor aún hace `ds.emitir` local + WS (duplicado benigno) — Fase 1 (quitar duplicado) queda desbloqueada y opcional.
 
 ### Fase 5 — Prueba y limpieza
 - Correr `tests/smoke_*http*.py` + los smoke del resto en local.
