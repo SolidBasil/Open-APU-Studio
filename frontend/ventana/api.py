@@ -83,11 +83,10 @@ class Api:
             self._cliente = ApiCliente(servidor_url, self._nombre_proyecto)
 
         # Backends — contrato ToqueApiBackend (ver
-        # frontend/ventana/api_backends.py y docs/ARQUITECTURA_SERVICIOS.md).
-        # api.py es dispatcher puro (R2): cada método público delegado es
-        # `return self._backend.<metodo>(...)`. Los ~40 métodos con
-        # `if self._use_http:` inline son legado y se migran sección por
-        # sección a api_backends.py (Fase 2).
+        # frontend/ventana/api_backends.py y docs/ARQUITECTURA_SERVICIOS.md
+        # Fases 0-4 completadas 2026-08-31). api.py es dispatcher puro (R2):
+        # cada método público es `return self._backend.<metodo>(...)` sin
+        # `if _use_http` por método.
         from frontend.ventana.api_backends import _BackendLocal, _BackendHTTP, ToqueApiBackend
         self._backend_local: ToqueApiBackend = _BackendLocal(self)
         self._backend_http: ToqueApiBackend = _BackendHTTP(self)

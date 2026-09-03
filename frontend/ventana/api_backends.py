@@ -8,11 +8,12 @@ como `if self._use_http: ... else: ...` dentro de cada método de Api.
 Cada backend implementa el mismo conjunto de métodos que expone Api.
 Api delega al backend activo en vez de repetir el if/else en cada método.
 
-Contrato normativo: ToqueApiBackend (Protocol) — ver
-docs/ARQUITECTURA_SERVICIOS.md R1-R9. Ambos backends deben implementar
-exactamente esa interfaz. Fase 0 completa; fases 1-5 en progreso.
+Contrato normativo: ToqueApiBackend (Protocol, 66 métodos) — ver
+docs/ARQUITECTURA_SERVICIOS.md R1-R9. Fases 0,2,3 completadas 2026-08-31
+(api.py dispatcher, ApiCliente 7 transporte); Fase 4 WS ProyectoRecalculado
+completada; Fase 1 (quitar ds.emitir duplicado) desbloqueada y opcional.
 
-Actualizado: 2026-08-30 19:45 (hora local)
+Actualizado: 2026-08-31 05:00 (hora local)
 """
 from __future__ import annotations
 
