@@ -1,6 +1,6 @@
 # Plan de reparación — Auditoría GUIA_INTERFAZ.md
 
-Actualizado: 2026-07-07 23:55 (hora local)
+Actualizado: 2026-08-31 04:55 (hora local)
 
 ## 1. Resumen ejecutivo
 
@@ -131,11 +131,14 @@ Descubiertos durante la verificación cruzada de los hallazgos principales:
 
 | Hallazgos | Motivo |
 |-----------|--------|
-| #1: api.py raw SQL (6 consultas, `unificar_matrices_apu`) | Refactor mayor. Funcional hoy. Requiere nuevos métodos de repo. |
+| #1: api.py raw SQL (6 consultas, `unificar_matrices_apu`) | **Resuelto 2026-08-31:** `api.py` ya no tiene SQL; `unificar_matrices_apu` sigue local pero sin `if _use_http:` (dispatcher). Pendiente extraer 1 `SELECT` restante de `api_backends.py:455` → hecho vía `NodoRepo.con_formula_por_proyecto()` (ver Fase 2). |
 | #2: diag_dialogs.py UPDATE directos (migrar a DataService) | Depende de #1. Misma área de código. |
+| #3: apu.py f-string SQL | **Resuelto 2026-08-31:** movido a `NodoRepo`/`ApuMatricesRepo` vía backends (Fase 2). |
 | #8-16: imports directos de `backend.database.db` (9 archivos) | No hay beneficio funcional inmediato. Mover Config/Rutas detrás de Api es trabajo mecánico sin impacto visible. |
-| #19: `unificar_matrices_apu()` sin eventos | Se resuelve cuando #1 extraiga ese método a repos. |
+| #18: bug commit condicional `insumo_actualizar_campo` | **Resuelto 2026-08-31:** `insumo_actualizar_campo` ahora pasa por `_BackendLocal` con `transaccion()` + `recalcular` + `emitir` unificado (Fase 2). |
+| #19: `unificar_matrices_apu()` sin eventos | Pendiente — extraer a repo manteniendo eventos (Fase 1). |
 | #24: closeEvent en VentanaPrincipal | Bajo riesgo, mitigado por `_cerrar_tab_widget()`. |
+| #28-29: `resolver_matriz` privado | **Resuelto 2026-08-31:** `api.py:693` `resolver_matriz` ya es público y delegado a `ToqueApiBackend` (Fase 2). |
 
 ## 7. Referencias cruzadas
 

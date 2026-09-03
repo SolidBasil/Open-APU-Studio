@@ -1,5 +1,7 @@
 # Guía: Generadores de obra (con captura de medidas desde CAD)
 
+Actualizado: 2026-08-31 04:55 (hora local)
+
 ## 1. Qué es esto y por qué se hace
 
 Hoy `estructura_presupuesto.cantidad` de un concepto se captura a mano o vía
@@ -131,9 +133,10 @@ CREATE TABLE generador_cad_archivos (
 ```
 
 **Por qué `BLOB` y no una ruta a disco:** ya decidido — el proyecto entero
-es un único archivo `.presup` portable (`docs/SCHEMA.md`, "Formato
-archivo"). Si el DXF viviera aparte, el proyecto se rompería en cuanto el
-plano se moviera, se borrara, o se abriera el `.presup` en otra máquina.
+es un único archivo `.db` portable (`docs/SCHEMA.md`, "Formato
+archivo"; `.presup` deprecado). Si el DXF viviera aparte, el proyecto
+se rompería en cuanto el plano se moviera, se borrara, o se abriera el
+`.db` en otra máquina.
 
 ---
 

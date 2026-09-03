@@ -1,5 +1,7 @@
 # Especificación de arquitectura de la interfaz (PySide6)
 
+Actualizado: 2026-08-31 04:55 (hora local)
+
 Este documento define los principios, restricciones, decisiones, patrones y
 convenciones de la interfaz gráfica de Open APU Studio. Su propósito es que
 cualquier persona pueda desarrollar un módulo nuevo sin estudiar el código
@@ -266,7 +268,7 @@ VentanaPrincipal (QMainWindow)
                  │  Solo SQL
                  ▼
 ┌────────────────────────────────────────────────────┐
-│  SQLite (.presup)                                  │
+│  SQLite (.db)                                      │
 └────────────────────────────────────────────────────┘
 ```
 

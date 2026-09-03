@@ -868,7 +868,12 @@ class HandlersMixin:
                 objetivo_id = hermanos[idx0 - 1]
                 objetivo = repo.buscar(objetivo_id)
                 if objetivo and objetivo["tipo"] != "capitulo":
-                    orden_nuevo = repo.proximo_orden(proyecto_id, padre_id)
+                    # El nuevo agrupador debe quedar EN EL LUGAR de objetivo
+                    # (justo después de él, entre sus hermanos bajo padre_id),
+                    # no al final de todo el grupo — por eso orden_tras() en
+                    # vez de proximo_orden() (bug: mandaba el agrupador hasta
+                    # el fondo del presupuesto).
+                    orden_nuevo = repo.orden_tras(proyecto_id, padre_id, objetivo["orden"])
                     nuevo_ag_id = repo.insert({
                         "proyecto_id": proyecto_id,
                         "padre_id":    padre_id,

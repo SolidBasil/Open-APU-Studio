@@ -504,7 +504,10 @@ INSERT OR IGNORE INTO schema_version (version, descripcion) VALUES
     (6, 'v6: elimina catfsr y fsr_minimo de insumos (FSR solo manual via factor_fsr)'),
     (7, 'v7: elimina tabla notas, salario_nominal, salario_real e indice_inegi de insumos'),
     (8, 'v8: generadores de obra — tablas generadores y generador_renglones'),
-    (9, 'v9: generadores.cad_archivo_path — cada generador liga su propio DXF');
+    (9, 'v9: generadores.cad_archivo_path — cada generador liga su propio DXF'),
+    (10, 'v10: generador_renglones.cad_campo — a qué celda apunta la medición CAD, para saber qué sobrescribir al editar sus nodos'),
+    (11, 'v11: generador_renglones.cad_origen_archivo — de qué DXF salió la medición, además de sus coordenadas'),
+    (12, 'v12: generador_renglones.cad_medidas — una medición CAD independiente POR CELDA (Veces/Largo/Ancho/Alto), en vez de una sola por renglón');
 
 
 -- =============================================================================
@@ -551,7 +554,24 @@ CREATE TABLE IF NOT EXISTS generador_renglones (
     cad_capa        TEXT,
     cad_tipo_medicion TEXT CHECK(cad_tipo_medicion IN
                         ('punto', 'linea', 'polilinea', 'area', 'contador')),
-    cad_geometria   TEXT,   -- JSON
+    cad_geometria   TEXT,   -- JSON — LEGACY: una sola medición por renglón.
+                    -- Ver cad_medidas (v12): un renglón puede tener Largo,
+                    -- Ancho y Alto medidos cada uno con su propia línea, y
+                    -- esta columna solo alcanzaba para guardar una.
+    cad_campo       TEXT CHECK(cad_campo IN ('veces', 'largo', 'ancho', 'alto')),
+                    -- LEGACY — ver cad_medidas.
+    cad_origen_archivo TEXT,  -- LEGACY — ver cad_medidas.
+    cad_medidas     TEXT,   -- JSON: {"largo": {"tipo":"linea","puntos":[[x,y],...],"archivo":"plano.dxf"},
+                    -- "ancho": {...}, "alto": {...}, "veces": {...}} — UNA
+                    -- entrada independiente por celda (Veces/Largo/Ancho/
+                    -- Alto), cada una con su propio trazo y de qué DXF
+                    -- salió. Reemplaza a cad_tipo_medicion/cad_geometria/
+                    -- cad_campo/cad_origen_archivo, que solo guardaban UNA
+                    -- medición por renglón — medir Ancho después de Largo
+                    -- borraba el trazo de Largo al pisar esas mismas
+                    -- columnas. Los renglones medidos antes de v12 quedan
+                    -- con cad_medidas vacío y sus datos solo en las
+                    -- columnas legacy (se siguen leyendo desde ahí).
 
     notas           TEXT,
     activo          INTEGER NOT NULL DEFAULT 1,

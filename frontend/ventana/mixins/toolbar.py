@@ -62,6 +62,7 @@ _HANDLERS = {
     "Restablecer":       "_on_restablecer_formato",
     "Pantalla completa": "_on_pantalla_completa",
     "Recalcular":        "_on_recalcular",
+    "Renumerar":         "_on_renumerar",
     "Izquierda":         "_on_izquierda",
     "Derecha":           "_on_derecha",
     "Subir":             "_on_subir",
@@ -185,7 +186,7 @@ _TOOLBAR_CFG = {
             ("filter-x", "Limpiar filtros"),
         ]),
         ("Desplegar",    [("hash", "Primer nivel"), ("sigma", "Resumen agrupadores"), ("square-plus", "Todo"), ("align-left", "Nivel")]),
-        ("Cálculo",      [("refresh-cw", "Recalcular")]),
+        ("Cálculo",      [("refresh-cw", "Recalcular"), ("list", "Renumerar")]),
     ],
     "HERRAMIENTAS": [
         ("Sistema",     [("settings", "Configuración")]),

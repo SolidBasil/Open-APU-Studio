@@ -163,7 +163,7 @@ class PanelesMixin:
         # Mover nodos del árbol de presupuesto con Alt+flechas — mismos
         # handlers que los botones Subir/Bajar/Izquierda/Derecha de la
         # toolbar (ver _HANDLERS en toolbar.py y HandlersMixin en
-        # handlers/__init__.py). Shortcuts a nivel de ventana: operan
+        # mixins/navegacion.py). Shortcuts a nivel de ventana: operan
         # sobre la tabla activa (self._get_active_table()) sin importar
         # qué widget tenga el foco puntual dentro de la pestaña.
         QShortcut(QKeySequence("Alt+Left"),  self).activated.connect(self._on_izquierda)

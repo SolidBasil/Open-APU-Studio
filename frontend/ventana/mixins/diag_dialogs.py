@@ -50,6 +50,27 @@ class DiagDialogsMixin:
             )
         self._sb.showMessage(f"Presupuesto recalculado ({n_iter} iteración(es))", 4000)
 
+    def _on_renumerar(self):
+        """Recalcula wbs/nivel de todo el árbol ("1", "1.1", "1.1.3"…) a
+        partir de la jerarquía real (padre_id + orden). Corrige numeración
+        desactualizada, típicamente en proyectos importados con una
+        versión anterior que dejaba el código crudo de OPUS (ej. "0101")
+        en la columna Nivel en vez de la numeración propia del presupuesto."""
+        from frontend.ventana.ui_utils import progreso_indeterminado
+
+        if self._requiere_proyecto(api=True):
+            return
+
+        try:
+            with progreso_indeterminado(self, "Renumerando estructura…"):
+                self._api.reindexar_proyecto()
+        except Exception as e:
+            from frontend.ventana.ui_utils import mostrar_error
+            mostrar_error(self, "Error al renumerar", e)
+            return
+
+        self._sb.showMessage("Numeración (1, 1.1, 1.2…) recalculada", 4000)
+
     def _on_depurar_catalogos(self):
         from PySide6.QtWidgets import QMessageBox, QWidget, QVBoxLayout, QLabel, QAbstractItemView, QHeaderView
         from PySide6.QtCore import Qt

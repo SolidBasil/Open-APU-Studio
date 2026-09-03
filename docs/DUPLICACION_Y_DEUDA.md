@@ -1,6 +1,6 @@
 # Duplicación y deuda técnica — Auditoría completa
 
-Actualizado: 2026-07-11 (hora local)
+Actualizado: 2026-08-31 04:55 (hora local)
 
 ---
 
@@ -122,16 +122,17 @@ Eliminado: 2026-07-11 — todos eliminados excepto 4.17 (usuario_id en Api).
 - **Pasos redundantes eliminados**: `api.py` — `concepto_reasignar_insumo()`
   y `eliminar_nodo()` llamaban `recalcular_desde()` inmediatamente
   sobreescrito por `recalcular_proyecto()`.
-- **Migración `Api` a backends** (en progreso): patrón Strategy para
-  reemplazar el `if self._use_http` repetido en cada uno de los 65
-  métodos. Ver `frontend/ventana/api_backends.py`. Secciones migradas:
-  FACTORES DE SOBRECOSTO, INSUMOS. Pendientes: PRESUPUESTO, APU,
-  EXPLOSIÓN DE INSUMOS, CATÁLOGOS, MUTACIÓN DE INSUMOS, GESTIÓN DE
-  PROYECTOS, INDIRECTOS, SRV-10, GENERADORES DE OBRA.
-- **`tests/smoke_api_backends.py`** (nuevo): primer test del proyecto —
-  corre contra una BD SQLite real, sin mocks. Extenderlo con cada
-  sección nueva que se migre a backends, antes de dar la sección por
-  cerrada.
+- **Migración `Api` a backends** (completada 2026-08-31): patrón
+  `ToqueApiBackend` (Protocol, 66 métodos) reemplaza el `if
+  self._use_http` por método. `api.py` es dispatcher puro (67
+  delegaciones, 5 `if` infraestructura). Ver
+  `frontend/ventana/api_backends.py` y `docs/ARQUITECTURA_SERVICIOS.md`
+  Fases 0-3. `ApiCliente` 41→7 públicos (transporte puro). Secciones
+  migradas: TODAS (PRESUPUESTO, APU, EXPLOSIÓN, CATÁLOGOS, INSUMOS,
+  VARIABLES, GENERADORES, INDIRECTOS, UNDO). Pendiente solo Fase 1
+  (eventos duplicados en `_BackendHTTP`, bloqueada hasta WS semántico Fase 4).
+- **`tests/smoke_api_backends.py`** + `smoke_presupuesto_http.py` (local),
+  `smoke_variables_eliminar.py`, etc.: cubren backends contra BD real.
 
 ## 8. Sesión de auditoría (2026-07-24)
 
@@ -181,3 +182,17 @@ porque la pila de undo nunca se llena — no relacionado con el undo de
 SRV-09 (ese es para presupuesto/insumos vía `HistorialRepo`, y ese sí
 funciona por edición individual).
 
+
+## 9. Sesión 2026-08-30/31 — Protocolo y migración completa (punto 3)
+
+**Protocolo definido:** `docs/ARQUITECTURA_SERVICIOS.md` creado (ToqueApiBackend Protocol, reglas R1-R9, 6 fases, DoD por método). `AGENTS.md` actualizado (LOCAL vs HTTP, stack, estructura real con `server/`, `cad/`, `mixins/`).
+
+**Migración ejecutada (35 métodos en 6 tandas):**
+- Fase 0: `ToqueApiBackend` Protocol declarado (31→66 métodos) + asserts en `Api.__init__`.
+- Fase 2: `api.py` 40 → 5 `if _use_http:` (solo infraestructura), 31 → 67 delegaciones. Secciones: PRESUPUESTO (12), APU escritura (6), EXPLOSIÓN+CATÁLOGOS (6), INSUMOS (7), UNDO (4).
+- Fase 3: `ApiCliente` 41 → 7 públicos (`_get`/`_post` + `buscar`/`actualizar`/`insertar`/`eliminar`/`recalcular`/`reindexar`/`close`). Inlinéados a `_BackendHTTP._get/_post` con traducción `422→ValueError` y `Decimal`: familias/subfamilias (2), factores/insumos/rastrear/todos/conceptos/descendientes/explotar (8), variables/apu (7), generadores/indirectos (10), factores_guardar/deshaer (3).
+- Regla cardinal: `NodoRepo.con_formula_por_proyecto()` y reemplazo de raw `SELECT` en `api_backends.py:455`.
+- `assets/icons8` 329→116 SVGs (213 sin mapear eliminados).
+- `frontend/ventana/iconos.py:268` stub duplicado `_colored_icon` eliminado.
+
+**Pendiente:** Fase 1 (quitar `ds.emitir` duplicado en `_BackendHTTP`, bloqueada hasta Fase 4 WS semántico) y Fase 4-5 (WS semántico + limpieza docs). Ver `docs/ARQUITECTURA_SERVICIOS.md` §6.

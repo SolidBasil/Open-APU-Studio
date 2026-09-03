@@ -39,11 +39,11 @@ import logging
 from PySide6.QtCore import Qt, QPointF, QRectF, QPoint, Signal
 from PySide6.QtGui import (
     QPen, QColor, QBrush, QPainter, QWheelEvent, QMouseEvent,
-    QTransform,
+    QTransform, QPolygonF,
 )
 from PySide6.QtWidgets import (
     QGraphicsView, QGraphicsScene, QGraphicsItem,
-    QGraphicsLineItem, QGraphicsEllipseItem,
+    QGraphicsLineItem, QGraphicsEllipseItem, QGraphicsPolygonItem,
     QLabel,
 )
 
@@ -57,6 +57,7 @@ from backend.cad.lector_dxf import ACI_COLORS
 
 from .ortho import snap_to_ortho
 from .medicion import Pt2, calculate_distance, calculate_area, calculate_perimeter
+from frontend.ventana.widgets.generador import medidas_efectivas
 
 
 log = logging.getLogger(__name__)
@@ -98,6 +99,19 @@ class VisorCadWidget(QGraphicsView):
     point_clicked = Signal(float, float)  # world x, y (DXF coords, Y-up)
     snap_point = Signal(float, float)     # snapped world coords
     measurement_ready = Signal(float, str, str, list)  # (valor, tipo: distancia|area|punto|conteo, tipo_cad, puntos_mundo)
+    medicion_click = Signal(int, str)     # renglon_id, campo — overlay de medición guardada clickeado en el plano
+    medicion_editada = Signal(int, str, float, list)  # renglon_id, campo, nuevo valor, nuevos puntos [[x,y],...]
+
+    # Claves de datos propias en QGraphicsItem.setData()/data() — enteros
+    # arbitrarios que no colisionan con las claves que usa PyQtBackend
+    # (CorrespondingDXFEntity/CorrespondingDXFParentStack) porque cada
+    # clave es un slot independiente del item, no un espacio compartido.
+    _ROLE_MEDICION_ID = 5001  # renglon_id dueño de este item de overlay
+    _ROLE_MEDICION_CAMPO = 5003  # campo ('veces'|'largo'|'ancho'|'alto') que mide este overlay —
+                                  # un renglón puede tener Largo, Ancho y Alto medidos cada uno
+                                  # con su propia línea, así que un overlay se identifica por
+                                  # (renglon_id, campo), no solo por renglon_id.
+    _ROLE_GRIP_INDEX = 5002   # índice del punto que representa este grip
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -116,6 +130,7 @@ class VisorCadWidget(QGraphicsView):
         # Viewport raster por defecto (sin QOpenGLWidget): ver notas de
         # módulo. No llamar setViewport aquí — el widget por defecto ya
         # es el correcto para este caso de uso.
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)  # para recibir Del/Backspace
 
         self.scale(1, -1)  # Y-up (convención DXF) en vez de Y-down (Qt)
         self.setBackgroundBrush(QBrush(QColor("#1a1a2e")))
@@ -137,6 +152,18 @@ class VisorCadWidget(QGraphicsView):
         self._persisted_items: list[QGraphicsItem] = []
         self._ortho_preview: QPointF | None = None
         self._highlight_item: QGraphicsItem | None = None
+
+        # Overlays persistentes de renglones origen="cad" (ver
+        # set_medicion_overlays) — de dónde salió cada medición, dibujado
+        # en el plano sin importar cuántas veces se reabra el proyecto,
+        # y editable con grips (ver _mostrar_grips/_mover_grip).
+        self._overlays_data: dict[int, dict] = {}
+        self._overlay_seleccionado: tuple[int, str] | None = None
+        self._grip_items: list[QGraphicsItem] = []
+        self._grip_drag_idx: int | None = None
+        self._grip_drag_clave: tuple[int, str] | None = None
+        self._grip_drag_moved: bool = False
+        self._grip_seleccionado_idx: int | None = None  # último grip clickeado (para Del)
 
         self._coord_label = QLabel(self)
         self._coord_label.setStyleSheet(
@@ -240,6 +267,12 @@ class VisorCadWidget(QGraphicsView):
         self._preview_items.clear()
         self._persisted_items.clear()
         self._highlight_item = None
+        # scene.clear() va a destruir también los overlays e ítems de
+        # grips de C++ — descartar las listas Python sin llamar
+        # removeItem() sobre objetos que ya van a quedar destruidos.
+        self._overlays_data.clear()
+        self._grip_items.clear()
+        self._overlay_seleccionado = None
         self._scene.clear()
         self._item_layer_cache.clear()
 
@@ -405,6 +438,8 @@ class VisorCadWidget(QGraphicsView):
         self._measure_label.hide()
         self._clear_persisted()
         self._clear_highlight()
+        if tool != CadTool.SELECT:
+            self.seleccionar_medicion(None)
         if tool == CadTool.SELECT:
             self.setDragMode(QGraphicsView.DragMode.NoDrag)
             self.setCursor(Qt.CursorShape.ArrowCursor)
@@ -444,9 +479,45 @@ class VisorCadWidget(QGraphicsView):
         self._zoom_label.move(vw - 60, vh - 28)
         self._measure_label.move(8, 8)
 
-    def _handle_select_click(self, screen_pos: QPoint):
+    def _handle_select_click(self, screen_pos: QPoint, world: QPointF | None = None):
         item = self.itemAt(screen_pos)
         self._clear_highlight()
+
+        # ¿Clic sobre el overlay de una medición guardada (renglón CAD)?
+        # Se revisa antes que la selección normal de entidades DXF —
+        # ambos tipos de item pueden compartir la misma zona de pantalla.
+        # Un overlay se identifica por (renglon_id, campo): un renglón
+        # puede tener Largo, Ancho y Alto medidos cada uno con su propia
+        # línea independiente.
+        rid = item.data(self._ROLE_MEDICION_ID) if item is not None else None
+        campo = item.data(self._ROLE_MEDICION_CAMPO) if item is not None else None
+        if rid is not None and campo is not None:
+            clave = (rid, campo)
+            self.seleccionar_medicion(clave)
+            self.medicion_click.emit(rid, campo)
+            return
+
+        # Clic en espacio vacío con un CONTADOR ya seleccionado: en vez
+        # de deseleccionarlo, se interpreta como "agregar otro elemento
+        # contado" — permite seguir sumando puntos sin volver a la
+        # herramienta Contador cada vez que se quiere corregir/completar
+        # un conteo ya hecho.
+        if item is None and world is not None and self._overlay_seleccionado is not None:
+            data = self._overlays_data.get(self._overlay_seleccionado)
+            if data and data.get("tipo_cad") == "contador":
+                clave_activa = self._overlay_seleccionado
+                snapped = self.snap_to_entity(world)
+                pt = snapped if snapped else world
+                data["puntos"].append([pt.x(), pt.y()])
+                self._grip_seleccionado_idx = None
+                self._dibujar_overlay(clave_activa)
+                self._mostrar_grips(clave_activa)
+                self._finalizar_edicion_medicion(clave_activa)
+                return
+
+        if self._overlay_seleccionado is not None:
+            self.seleccionar_medicion(None)
+
         if item is None:
             return
         entity = item.data(CorrespondingDXFEntity)
@@ -469,6 +540,320 @@ class VisorCadWidget(QGraphicsView):
         if self._highlight_item is not None:
             self._scene.removeItem(self._highlight_item)
             self._highlight_item = None
+
+    # ── Overlays de medición persistentes (renglones origen="cad") ──
+    #
+    # A diferencia de _persisted_items (el trazo de la medición EN CURSO,
+    # que se borra al iniciar la siguiente — ver _handle_measure_click),
+    # esto dibuja TODOS los renglones ya guardados con origen="cad" de
+    # forma permanente, para que el trazo de dónde salió cada cantidad
+    # se vea en el plano sin importar cuántas veces se cierre y reabra
+    # el proyecto. Se guarda además el detalle en self._overlays_data
+    # para poder resaltar uno desde la tabla y editarlo con grips.
+
+    def set_medicion_overlays(self, renglones: list[dict], archivo_actual: str | None = None):
+        """Dibuja el overlay persistente de cada medición CAD guardada
+        (una por celda — Veces/Largo/Ancho/Alto pueden venir cada una de
+        su propia línea, ver medidas_efectivas) a partir de cad_medidas.
+        Llamar después de set_document() (que limpia toda la escena).
+
+        `archivo_actual`: nombre del DXF actualmente cargado — si una
+        medición se hizo en un plano distinto (cad_origen_archivo no
+        coincide, ej. el generador cambió de DXF ligado), su overlay se
+        pinta en gris punteado en vez del naranja normal, para avisar
+        que esas coordenadas probablemente ya no corresponden al plano
+        que se está viendo."""
+        # Quitar de la ESCENA los ítems del overlay anterior antes de
+        # descartar el diccionario — self._overlays_data.clear() solo
+        # borraba la referencia en Python; los QGraphicsItem ya
+        # agregados a self._scene se quedaban huérfanos ahí pintados
+        # para siempre. Esto es lo que dejaba una copia vieja "pegada"
+        # en su posición original cada vez que se refrescaba (por
+        # ejemplo, justo al soltar un grip tras mover un nodo).
+        for data in self._overlays_data.values():
+            for item in data.get("items", []):
+                try:
+                    self._scene.removeItem(item)
+                except RuntimeError:
+                    pass  # ya destruido por un scene.clear() (_redraw)
+        self._overlays_data.clear()
+        self._clear_grips()
+        self._overlay_seleccionado = None
+        for rn in renglones:
+            if rn.get("origen") != "cad":
+                continue
+            rid = rn.get("id")
+            if rid is None:
+                continue
+            # Un renglón puede tener Largo, Ancho y Alto medidos cada
+            # uno con su propia línea — cada campo es un overlay
+            # independiente, identificado por (renglon_id, campo).
+            for campo, info in medidas_efectivas(rn).items():
+                puntos = info.get("puntos") or []
+                tipo_cad = info.get("tipo")
+                # Contador con 0 puntos vigentes (se borraron todos con
+                # Del) sigue registrándose sin overlay dibujado — para
+                # poder seguir seleccionándolo y agregarle puntos de
+                # nuevo. Línea/polilínea/área sin puntos no tienen sentido.
+                if not puntos and tipo_cad != "contador":
+                    continue
+                origen_archivo = info.get("archivo")
+                otro_archivo = bool(origen_archivo and archivo_actual and origen_archivo != archivo_actual)
+                clave = (rid, campo)
+                self._overlays_data[clave] = {
+                    "tipo_cad":       tipo_cad,
+                    "puntos":         [list(p) for p in puntos],
+                    "origen_archivo": origen_archivo,
+                    "otro_archivo":   otro_archivo,
+                    "items":          [],
+                }
+                self._dibujar_overlay(clave)
+
+    def _dibujar_overlay(self, clave: tuple[int, str]):
+        """(Re)dibuja el overlay de una medición (renglon_id, campo)
+        desde self._overlays_data[clave]["puntos"] — se llama tanto al
+        cargar como en cada frame de arrastre de un grip (edición en
+        vivo)."""
+        data = self._overlays_data.get(clave)
+        if not data:
+            return
+        rid, campo = clave
+        for item in data["items"]:
+            try:
+                self._scene.removeItem(item)
+            except RuntimeError:
+                pass  # ya destruido por un scene.clear() (_redraw)
+        puntos = data["puntos"]
+        tipo_cad = data.get("tipo_cad")
+        seleccionado = (clave == self._overlay_seleccionado)
+        if data.get("otro_archivo"):
+            color = QColor("#9E9E9E")
+        elif seleccionado:
+            color = QColor("#00E5FF")
+        else:
+            color = QColor("#FF8A00")
+        tooltip = None
+        if data.get("otro_archivo"):
+            tooltip = (f"Medido en \"{data.get('origen_archivo')}\" — "
+                       f"puede no coincidir con el plano actual")
+        items: list[QGraphicsItem] = []
+
+        if tipo_cad in ("linea", "polilinea"):
+            pen = QPen(color, 2.0 if seleccionado else 1.5)
+            pen.setCosmetic(True)
+            if data.get("otro_archivo"):
+                pen.setStyle(Qt.PenStyle.DashLine)
+            for i in range(len(puntos) - 1):
+                x1, y1 = puntos[i]
+                x2, y2 = puntos[i + 1]
+                line = QGraphicsLineItem(x1, y1, x2, y2)
+                line.setPen(pen)
+                line.setZValue(500)
+                line.setData(self._ROLE_MEDICION_ID, rid)
+                line.setData(self._ROLE_MEDICION_CAMPO, campo)
+                if tooltip:
+                    line.setToolTip(tooltip)
+                self._scene.addItem(line)
+                items.append(line)
+        elif tipo_cad == "area":
+            poly = QPolygonF([QPointF(x, y) for x, y in puntos])
+            pol_item = QGraphicsPolygonItem(poly)
+            pen = QPen(color, 2.0 if seleccionado else 1.5)
+            pen.setCosmetic(True)
+            if data.get("otro_archivo"):
+                pen.setStyle(Qt.PenStyle.DashLine)
+            pol_item.setPen(pen)
+            relleno = QColor(color)
+            relleno.setAlpha(40)
+            pol_item.setBrush(QBrush(relleno))
+            pol_item.setZValue(500)
+            pol_item.setData(self._ROLE_MEDICION_ID, rid)
+            pol_item.setData(self._ROLE_MEDICION_CAMPO, campo)
+            if tooltip:
+                pol_item.setToolTip(tooltip)
+            self._scene.addItem(pol_item)
+            items.append(pol_item)
+        else:  # punto / contador — un marcador por cada punto guardado
+            radio = 5.0 / max(self._scale, 1e-6)
+            pen = QPen(color, 1.5)
+            pen.setCosmetic(True)
+            for x, y in puntos:
+                ellipse = QGraphicsEllipseItem(x - radio, y - radio, radio * 2, radio * 2)
+                ellipse.setPen(pen)
+                ellipse.setBrush(QBrush(color))
+                ellipse.setZValue(500)
+                ellipse.setData(self._ROLE_MEDICION_ID, rid)
+                ellipse.setData(self._ROLE_MEDICION_CAMPO, campo)
+                if tooltip:
+                    ellipse.setToolTip(tooltip)
+                self._scene.addItem(ellipse)
+                items.append(ellipse)
+
+        data["items"] = items
+
+    def seleccionar_medicion(self, clave: tuple[int, str] | None):
+        """Resalta el overlay de UNA medición específica —(renglon_id,
+        campo)— y, si la herramienta activa es Seleccionar, muestra sus
+        grips para poder editarla. clave=None limpia la selección.
+
+        Para resaltar TODAS las mediciones de una fila de la tabla sin
+        saber cuál campo en particular, usar resaltar_renglon() en su
+        lugar (traza tabla→plano) — esta función es para cuando se sabe
+        exactamente cuál medición (un clic directo en el plano, o tras
+        terminar de medir)."""
+        anterior = self._overlay_seleccionado
+        self._overlay_seleccionado = clave
+        if anterior is not None and anterior in self._overlays_data:
+            self._dibujar_overlay(anterior)
+        self._clear_grips()
+        if clave is None or clave not in self._overlays_data:
+            return
+        self._dibujar_overlay(clave)
+        if self._tool == CadTool.SELECT:
+            self._mostrar_grips(clave)
+        self._centrar_en_medicion(clave)
+
+    def resaltar_renglon(self, renglon_id: int | None):
+        """Traza tabla→plano: al seleccionar una fila, resalta la
+        PRIMERA medición CAD de esa fila que exista (Largo, si no
+        Ancho, si no Alto, si no Veces). Si la fila tiene varias celdas
+        medidas, esto solo elige una para mostrarle los grips; las
+        demás se siguen viendo en el plano con su color normal —
+        alcanza para ubicar la fila sin tener que adivinar cuál de sus
+        celdas resaltar."""
+        if renglon_id is None:
+            self.seleccionar_medicion(None)
+            return
+        for campo in ("largo", "ancho", "alto", "veces"):
+            clave = (renglon_id, campo)
+            if clave in self._overlays_data:
+                self.seleccionar_medicion(clave)
+                return
+        self.seleccionar_medicion(None)
+
+    def _centrar_en_medicion(self, clave: tuple[int, str]):
+        data = self._overlays_data.get(clave)
+        if not data or not data["puntos"]:
+            return
+        xs = [p[0] for p in data["puntos"]]
+        ys = [p[1] for p in data["puntos"]]
+        self.centerOn(QPointF((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2))
+
+    # ── Edición de nodos (grips) ──────────────────────────────────
+
+    def _mostrar_grips(self, clave: tuple[int, str]):
+        idx_previo = self._grip_seleccionado_idx
+        self._clear_grips()
+        data = self._overlays_data.get(clave)
+        if not data:
+            return
+        radio = 5.0 / max(self._scale, 1e-6)
+        pen = QPen(QColor("#FFFFFF"), 1.5)
+        pen.setCosmetic(True)
+        brush_normal = QBrush(QColor("#00E5FF"))
+        brush_sel = QBrush(QColor("#FF3D3D"))  # rojo = el que borra Del/Backspace
+        for idx, (x, y) in enumerate(data["puntos"]):
+            grip = QGraphicsEllipseItem(x - radio, y - radio, radio * 2, radio * 2)
+            grip.setPen(pen)
+            grip.setBrush(brush_sel if idx == idx_previo else brush_normal)
+            grip.setZValue(1500)
+            grip.setData(self._ROLE_GRIP_INDEX, idx)
+            self._scene.addItem(grip)
+            self._grip_items.append(grip)
+        # _clear_grips() de arriba resetea _grip_seleccionado_idx — se
+        # repone acá para no perder cuál seguía marcado tras redibujar
+        # (ej. al mover otro nodo del mismo trazo).
+        if idx_previo is not None and idx_previo < len(data["puntos"]):
+            self._grip_seleccionado_idx = idx_previo
+
+    def _clear_grips(self):
+        for item in self._grip_items:
+            try:
+                self._scene.removeItem(item)
+            except RuntimeError:
+                pass
+        self._grip_items = []
+        self._grip_seleccionado_idx = None
+
+    def _iniciar_arrastre_grip(self, screen_pos: QPoint) -> bool:
+        """Si screen_pos cae sobre un grip del renglón seleccionado,
+        arranca su arrastre y devuelve True (para que mousePressEvent
+        no siga con la selección normal)."""
+        if self._overlay_seleccionado is None:
+            return False
+        item = self.itemAt(screen_pos)
+        if item is None:
+            return False
+        idx = item.data(self._ROLE_GRIP_INDEX)
+        if idx is None:
+            return False
+        self._grip_drag_idx = idx
+        self._grip_drag_clave = self._overlay_seleccionado
+        self._grip_drag_moved = False
+        self._grip_seleccionado_idx = idx  # resalta en rojo desde que se agarra, no solo al soltar
+        return True
+
+    def _mover_grip(self, clave: tuple[int, str], idx: int, world: QPointF):
+        data = self._overlays_data.get(clave)
+        if not data or idx >= len(data["puntos"]):
+            return
+        data["puntos"][idx] = [world.x(), world.y()]
+        self._grip_drag_moved = True
+        self._dibujar_overlay(clave)
+        self._mostrar_grips(clave)
+
+    def _finalizar_edicion_medicion(self, clave: tuple[int, str] | None):
+        """Al soltar un grip: recalcula el valor con la misma fórmula
+        que la medición original (medicion.py) y emite medicion_editada
+        con el (renglon_id, campo) exactos — mover nodos corrige la
+        medición, nunca cambia a qué celda apunta."""
+        if clave is None:
+            return
+        data = self._overlays_data.get(clave)
+        if not data:
+            return
+        rid, campo = clave
+        puntos = data["puntos"]
+        tipo_cad = data.get("tipo_cad")
+        pts2 = [Pt2(x, y) for x, y in puntos]
+        if tipo_cad == "linea" and len(pts2) >= 2:
+            valor = calculate_distance(pts2[0], pts2[1])
+        elif tipo_cad == "polilinea":
+            valor = calculate_perimeter(pts2, closed=False)
+        elif tipo_cad == "area":
+            valor = calculate_area(pts2)
+        elif tipo_cad == "contador":
+            # El conteo ES la cantidad de puntos vigentes — agregar o
+            # borrar uno con Del/Backspace cambia el número solo, sin
+            # tener que volver a contar todo desde cero.
+            valor = float(len(puntos))
+        else:
+            valor = None  # punto: se corrige la posición, no hay valor que recalcular
+        if valor is not None:
+            self.medicion_editada.emit(rid, campo, valor, [[p[0], p[1]] for p in puntos])
+
+    def _eliminar_grip_seleccionado(self) -> bool:
+        """Del/Backspace: borra el punto actualmente marcado en rojo.
+        Solo aplica a contador — línea/polilínea/área tienen una
+        cantidad de nodos que define la forma medida (borrar uno ahí
+        rompería el trazo, no corregiría un elemento contado de más).
+        Devuelve True si borró algo, para que keyPressEvent no siga con
+        el comportamiento default del widget."""
+        clave = self._overlay_seleccionado
+        idx = self._grip_seleccionado_idx
+        if clave is None or idx is None:
+            return False
+        data = self._overlays_data.get(clave)
+        if not data or data.get("tipo_cad") != "contador":
+            return False
+        if idx >= len(data["puntos"]):
+            return False
+        del data["puntos"][idx]
+        self._grip_seleccionado_idx = None
+        self._dibujar_overlay(clave)
+        self._mostrar_grips(clave)
+        self._finalizar_edicion_medicion(clave)
+        return True
 
     def _persist_items(self):
         """Mueve los items de preview a la lista persistente (sobreviven al zoom/pan)."""
@@ -495,7 +880,10 @@ class VisorCadWidget(QGraphicsView):
             self.point_clicked.emit(world.x(), world.y())
 
             if self._tool == CadTool.SELECT:
-                self._handle_select_click(event.position().toPoint())
+                self.setFocus()  # para que Del funcione sin tener que clickear la vista primero
+                if self._iniciar_arrastre_grip(event.position().toPoint()):
+                    return
+                self._handle_select_click(event.position().toPoint(), world)
                 return
 
             if self._tool == CadTool.CALIBRATE:
@@ -535,6 +923,9 @@ class VisorCadWidget(QGraphicsView):
                 self._measure_label.hide()
                 self._draw_measure_preview()
                 return
+            if self._overlay_seleccionado is not None:
+                self.seleccionar_medicion(None)
+                return
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             if self._tool == CadTool.POLYLINE and len(self._measure_points) >= 2:
                 self._finalize_polyline()
@@ -542,9 +933,26 @@ class VisorCadWidget(QGraphicsView):
             if self._tool == CadTool.POLYGON and len(self._measure_points) >= 3:
                 self._finalize_polygon()
                 return
+            if self._overlay_seleccionado is not None:
+                # Enter = dar por terminada la edición de esta medición
+                # (quita los grips y la deselecciona), igual que clickear
+                # en espacio vacío — para no depender de tener que volver
+                # a clickear el plano solo para salir del modo edición.
+                self.seleccionar_medicion(None)
+                return
+        if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+            if self._eliminar_grip_seleccionado():
+                return
         super().keyPressEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent):
+        if self._grip_drag_idx is not None:
+            world = self._map_to_world(event.position())
+            snapped = self.snap_to_entity(world)
+            pt = snapped if snapped else world
+            self._mover_grip(self._grip_drag_clave, self._grip_drag_idx, pt)
+            return
+
         if self._panning:
             delta = event.position() - self._pan_start
             self._pan_start = event.position()
@@ -577,6 +985,18 @@ class VisorCadWidget(QGraphicsView):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent):
+        if event.button() == Qt.MouseButton.LeftButton and self._grip_drag_idx is not None:
+            clave, idx, movio = self._grip_drag_clave, self._grip_drag_idx, self._grip_drag_moved
+            self._grip_drag_idx = None
+            self._grip_drag_clave = None
+            self._grip_drag_moved = False
+            # Un clic sobre un grip SIN arrastrarlo lo deja "seleccionado"
+            # (para poder borrarlo con Del/Backspace) sin disparar un
+            # guardado — solo si realmente se movió se recalcula y persiste.
+            self._grip_seleccionado_idx = idx
+            if movio:
+                self._finalizar_edicion_medicion(clave)
+            return
         if event.button() == Qt.MouseButton.MiddleButton:
             self._panning = False
             self.setCursor(Qt.CursorShape.ArrowCursor if self._tool == CadTool.SELECT

@@ -1,5 +1,7 @@
 # Decisiones de diseño — Open APU Studio
 
+Actualizado: 2026-08-31 04:55 (hora local)
+
 Documento vivo que registra decisiones tomadas, pendientes y descartadas.
 Actualizar cada vez que se tome una decisión relevante.
 

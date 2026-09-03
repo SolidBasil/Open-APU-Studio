@@ -1,7 +1,9 @@
 # Guía de implementación — Fórmulas y variables paramétricas (Open APU Studio)
 
+Actualizado: 2026-08-31 04:55 (hora local)
+
 **Fecha:** 2026-07-20
-**Estado:** Diseño aprobado, pendiente de implementación
+**Estado:** Implementado (variables vía `VariableFormulaRepo`, fórmulas en `apu_matrices.formula`/`estructura_presupuesto.formula`, `backend/formulas.py`)
 **Estimado:** 10-13 horas
 
 ---

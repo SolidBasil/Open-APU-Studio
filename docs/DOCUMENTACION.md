@@ -1,6 +1,6 @@
 # Open APU Studio — Documentación completa
 
-Versión del documento: **Junio 2026** — actualizado contra el código fuente.
+Actualizado: 2026-08-31 04:55 (hora local)
 
 ---
 
@@ -63,6 +63,54 @@ filas,t = api.explotar(concepto_ids=[5,23], nivel="basico", tipos_ids=[1,2,4])
 ## 3. Estructura del proyecto
 
 ```
+Open APU Studio/
+├── main.py                          ← Entry point (QApplication, tema, ventana)
+├── requirements.txt
+├── backend/
+│   ├── __init__.py
+│   ├── formulas.py                  ← simpleeval vendereado
+│   ├── cad/lector_dxf.py            ← Parseo DXF (ezdxf)
+│   ├── database/
+│   │   ├── db.py                    ← SQLite + schema + Rutas/Config
+│   │   ├── schema.sql               ← Single file, sin migraciones
+│   │   ├── core.py                  ← Lógica de negocio (árbol, métricas)
+│   │   ├── event_bus.py             ← EventBus + eventos semánticos
+│   │   ├── schema_registry.py       ← SchemaRegistry (Field types)
+│   │   ├── repos/                   ← SQL vive aquí
+│   │   │   ├── base.py, proyecto.py, presupuesto.py, insumos.py, apu.py,
+│   │   │   │   recalculo.py, catalogos.py, explosion.py, diagnostico.py,
+│   │   │   │   formulas.py, generador.py, historial.py, indirectos.py
+│   │   │   └── __init__.py
+│   │   └── services/                ← DataService, RepositoryRegistry
+│   ├── importar/importar.py         ← OPUS 2010 (.DBF → SQLite)
+│   └── exportar/
+│       ├── exportar_generadores_excel.py
+│       └── informe_pdf/latex.py     ← pdflatex (2 pasadas)
+├── server/servidor.py               ← FastAPI + WebSocket (único que toca .db en red)
+├── frontend/
+│   ├── temas/                       ← modo×acento (QSS) + Config
+│   └── ventana/
+│       ├── ventana.py               ← VentanaPrincipal (mixins)
+│       ├── api.py                   ← Fachada (dispatcher a _BackendLocal/_BackendHTTP)
+│       ├── api_backends.py          ← ToqueApiBackend Protocol (66 métodos)
+│       ├── api_cliente.py           ← ApiCliente (transporte httpx, 7 métodos)
+│       ├── ws_client.py             ← WebSocketClient (QThread)
+│       ├── colores.py, iconos.py, tipos_insumo.py, ui_utils.py
+│       ├── cad/                     ← VisorCadWidget, medición, cuantificación
+│       ├── mixins/                  ← 9 mixins (navegacion, toolbar, paneles, gestion_proyectos, informes, diag_dialogs, apu, rastreo, explosion, generador)
+│       └── widgets/                 ← TreeTableWidget, TablaArbol, TablaInsumos, TablaApuDetalle, PestañaExplosion, TablaGenerador, FilterDialog, dialogs, ajustes, ayuda, config_impresion, presupuesto_popup
+├── assets/
+│   ├── icons/                       ← Lucide (monocolor, tint)
+│   ├── icons8/                      ← Icons8 Color (116 SVGs, mapeo en iconos.py)
+│   └── favicon.ico
+├── datos_usuario/                   ← gitignored: proyectos/*.db, reportes/, config.json
+└── docs/
+    ├── SCHEMA.md, DECISIONES_PENDIENTES.md, DOCUMENTACION.md
+    ├── ARQUITECTURA_SERVICIOS.md    ← Protocolo local↔HTTP (R1-R9, Fases 0-5)
+    ├── GUIA_*.md, DUPLICACION_Y_DEUDA.md, PLAN_REPARACION.md
+    └── planes/                      ← PLAN_INSUMOS, PLAN_FSR, PLAN_MULTIUSUARIO, PLAN_FORMULAS_VARIABLES, PLAN_PRESUPUESTO
+```
+
 Open APU Studio/
 │
 ├── main.py                      ← 44 L — Entry point
@@ -360,7 +408,7 @@ transparente — sin dependencia de archivos de imagen.
 Cada builder crea un widget que se inserta en el `QTabWidget` central.
 Click simple → pestaña temporal (reemplazable). Doble click → pestaña permanente.
 
-### 5.4 `frontend/ventana/handlers/` — HandlersMixin (paquete)
+### 5.4 `frontend/ventana/mixins/` — HandlersMixin (navegacion) + 8 mixins
 
 | Archivo | Clase | Función |
 |---|---|---|

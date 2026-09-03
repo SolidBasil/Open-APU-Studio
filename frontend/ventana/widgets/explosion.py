@@ -644,7 +644,7 @@ class PestañaExplosion(QWidget):
     def desconectar_eventos(self):
         """Delega a TablaExplosion.desconectar_eventos().
 
-        _cerrar_tab_widget() (ver handlers/__init__.py) ya llama esto
+        _cerrar_tab_widget() (ver mixins/navegacion.py) ya llama esto
         automáticamente en cualquier widget que lo tenga al cerrar una
         pestaña — no requiere wiring adicional.
         """

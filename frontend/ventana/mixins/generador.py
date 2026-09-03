@@ -39,10 +39,10 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QMessageBox, QHeaderView, QFileDialog, QStackedWidget,
-    QSplitter,
+    QSplitter, QComboBox,
 )
 
-from frontend.ventana.widgets.generador import TablaGenerador
+from frontend.ventana.widgets.generador import TablaGenerador, medidas_efectivas
 from frontend.ventana.widgets.base import EMPTY_ROLE, TabWidgetCerrable
 from frontend.ventana.cad.visor import VisorCadWidget, CadTool
 
@@ -280,6 +280,17 @@ class GeneradorMixin:
         container._renglones_panel.hide()
         container._renglones_panel.setParent(container)
 
+        # Traza tabla↔plano: seleccionar una fila resalta TODAS sus
+        # mediciones en el visor (una fila puede tener Largo, Ancho y
+        # Alto medidos cada uno con su propia línea); clickear un trazo
+        # específico en el visor selecciona su fila.
+        viewer = container._cad_viewer
+        tabla = container._tabla_generador
+        tabla.renglon_seleccionado.connect(viewer.resaltar_renglon)
+        viewer.medicion_click.connect(lambda rid, campo, t=tabla: t.seleccionar_renglon_por_id(rid))
+        viewer.medicion_editada.connect(
+            lambda rid, campo, valor, pts, c=container: self._on_medicion_editada(c, rid, campo, valor, pts))
+
         renglones = self._api.generador_renglones(generador_id)
         container._tabla_generador.poblar(renglones)
         total = sum(r.get("subtotal", 0) or 0 for r in renglones)
@@ -326,6 +337,26 @@ class GeneradorMixin:
         status_bar = QHBoxLayout()
         status_bar.setContentsMargins(8, 4, 8, 4)
         status_bar.setSpacing(4)
+
+        # Selector explícito de a qué celda va la próxima medición
+        # (Veces/Largo/Ancho/Alto). ANTES se usaba silenciosamente la
+        # celda que tuviera el foco en la tabla (currentColumn()) — pero
+        # el foco se pierde en cuanto se clickea el visor CAD para
+        # dibujar, así que terminaba dependiendo de detalles de Qt poco
+        # confiables (qué celda quedó "actual" antes de perder el foco).
+        # Con un selector explícito, la celda destino no depende de eso:
+        # se elige aquí y se queda así hasta que se cambie a mano.
+        status_bar.addWidget(QLabel("Medir hacia:"))
+        combo_campo = QComboBox()
+        combo_campo.addItem("Veces", 2)
+        combo_campo.addItem("Largo", 3)
+        combo_campo.addItem("Ancho", 4)
+        combo_campo.addItem("Alto", 5)
+        combo_campo.setCurrentIndex(1)  # Largo, el más común, como default
+        combo_campo.setFixedWidth(90)
+        status_bar.addWidget(combo_campo)
+        container._cad_campo_combo = combo_campo
+
         status_bar.addStretch()
 
         coords_lbl = QLabel("")
@@ -424,6 +455,7 @@ class GeneradorMixin:
             return
         renglones = self._api.generador_renglones(generador_id)
         container._tabla_generador.poblar(renglones, seleccionar_id=seleccionar_id)
+        self._refrescar_overlay_cad(container, renglones)
 
     def _on_renglon_editado_tab(self, container, renglon_id: int, campos: dict) -> None:
         """Diferido a propósito (ver TablaArbol._on_proyecto_recalculado,
@@ -443,6 +475,20 @@ class GeneradorMixin:
             return
         renglones = self._api.generador_renglones(generador_id)
         container._tabla_generador.poblar(renglones)
+        self._refrescar_overlay_cad(container, renglones)
+
+    def _refrescar_overlay_cad(self, container, renglones: list[dict]) -> None:
+        """Vuelve a dibujar en el visor de esta pestaña el trazo
+        persistente de cada renglón con origen="cad" (ver
+        VisorCadWidget.set_medicion_overlays). Se llama en cada refresco
+        de la tabla para que el plano nunca quede desincronizado: un
+        renglón borrado hace desaparecer su trazo, uno medido o editado
+        aparece o se corrige de inmediato."""
+        viewer = getattr(container, "_cad_viewer", None)
+        if viewer is None:
+            return
+        archivo = Path(container._cad_dxf_path).name if getattr(container, "_cad_dxf_path", None) else None
+        viewer.set_medicion_overlays(renglones, archivo_actual=archivo)
 
     def _eliminar_renglones_tab(self, container, ids: list[int]) -> None:
         """Elimina un bloque de renglones (ya confirmado por
@@ -453,10 +499,11 @@ class GeneradorMixin:
             self._api.generador_renglon_eliminar(rid)
         renglones = self._api.generador_renglones(container._generador_id)
         container._tabla_generador.poblar(renglones)
+        self._refrescar_overlay_cad(container, renglones)
 
     def _on_delete_solicitado_tab(self, container, ids: list[int]) -> None:
         """Confirma antes de eliminar (Delete, o el ítem "Eliminar" del
-        menú contextual — ver conectar_handlers/_HANDLERS_ESTANDAR en
+        menú contextual — ver conectar_mixins/_HANDLERS_ESTANDAR en
         arbol.py para el patrón equivalente en Presupuesto)."""
         texto = ("¿Eliminar este renglón del generador?" if len(ids) == 1 else
                  f"¿Eliminar estos {len(ids)} renglones del generador?")
@@ -490,6 +537,7 @@ class GeneradorMixin:
                 if tabla is not None and tabla._generador_id is not None:
                     renglones = api.generador_renglones(tabla._generador_id)
                     tabla.poblar(renglones)
+                    self._refrescar_overlay_cad(w, renglones)
         return True
 
     # ── Handlers del visor CAD (actúan sobre la pestaña activa) ──────
@@ -545,6 +593,13 @@ class GeneradorMixin:
             container._cad_layers = result.layers
             container._cad_entities_raw = [e.to_dict() for e in result.entities]
             container._cad_dxf_path = path
+            # Redibuja sobre el plano, de forma persistente, el trazo de
+            # cada renglón ya medido en este generador (ver
+            # set_medicion_overlays en visor.py) — set_document() acaba de
+            # limpiar toda la escena, así que hay que reponerlos.
+            renglones = self._api.generador_renglones(container._generador_id)
+            container._cad_viewer.set_medicion_overlays(
+                renglones, archivo_actual=Path(path).name)
             if self._api:
                 self._api.generador_actualizar_cad(container._generador_id, path)
         except Exception as e:
@@ -600,8 +655,11 @@ class GeneradorMixin:
     def _on_cad_measurement(self, container, valor: float, tipo: str,
                              tipo_cad: str, puntos: list):
         """Al terminar una medición en el visor, la liga a la celda que el
-        usuario haya dejado seleccionada en la tabla de renglones de esta
-        misma pestaña (Veces/Largo/Ancho/Alto). Punto y Contador acumulan
+        usuario haya elegido en el selector "Medir hacia" del panel CAD
+        (Veces/Largo/Ancho/Alto) — ya NO depende de cuál celda de la
+        tabla haya quedado "actual" antes de perder el foco al clickear
+        el visor, que es lo que hacía que todo terminara en una sola
+        columna sin importar la intención. Punto y Contador acumulan
         (+1 por clic); Línea, Polilínea y Área sobrescriben con el valor
         recién medido.
 
@@ -611,15 +669,67 @@ class GeneradorMixin:
         """
         tabla = container._tabla_generador
         modo = "sumar" if tipo in ("punto", "conteo") else "set"
-        aplicado = tabla.aplicar_medicion(valor, modo=modo, tipo_cad=tipo_cad, puntos=puntos)
-        if aplicado:
+        archivo = Path(container._cad_dxf_path).name if getattr(container, "_cad_dxf_path", None) else None
+        col = container._cad_campo_combo.currentData()
+        renglon_id = tabla.aplicar_medicion(valor, modo=modo, tipo_cad=tipo_cad,
+                                             puntos=puntos, archivo=archivo, col=col)
+        if renglon_id is not None:
             container._cad_measurement_lbl.setText(f"{valor:.4f} → celda")
             container._cad_measurement_lbl.setStyleSheet("color: #4CAF50; font-size: 10px;")
+            # Línea/Polilínea/Área quedan trazadas de una sola vez (no como
+            # Punto/Contador, que se van acumulando clic a clic) — apenas se
+            # suelta el trazo, lo más útil es poder corregir sus nodos, no
+            # seguir dibujando encima. Se cambia sola a Seleccionar y se
+            # muestran sus grips, para no obligar a cambiar de herramienta
+            # a mano cada vez que se quiere ajustar lo recién medido.
+            if tipo_cad in ("linea", "polilinea", "area"):
+                # Diferido: aplicar_medicion() ya disparó renglon_editado,
+                # que a su vez difirió (QTimer.singleShot) el refresco de
+                # la tabla Y del overlay del plano (_refrescar_overlay_cad)
+                # — si se seleccionara aquí mismo, el renglón recién
+                # medido todavía no existiría en self._overlays_data del
+                # visor y no se verían los grips. Se encola con el mismo
+                # delay 0 para correr justo después.
+                campo = {2: "veces", 3: "largo", 4: "ancho", 5: "alto"}.get(col)
+                QTimer.singleShot(
+                    0, lambda c=container, rid=renglon_id, cp=campo:
+                        self._activar_edicion_medicion(c, rid, cp))
         else:
             container._cad_measurement_lbl.setText(
-                "Selecciona Veces/Largo/Ancho/Alto para ligar"
+                "Selecciona un renglón en la tabla para ligar"
             )
             container._cad_measurement_lbl.setStyleSheet("color: #FFA500; font-size: 10px;")
+
+    def _activar_edicion_medicion(self, container, renglon_id: int, campo: str) -> None:
+        """Cambia a la herramienta Seleccionar y muestra los grips de la
+        medición recién hecha (renglon_id, campo) — ver el llamado
+        diferido en _on_cad_measurement."""
+        self._on_cad_tool(CadTool.SELECT)
+        container._cad_viewer.seleccionar_medicion((renglon_id, campo))
+
+    def _on_medicion_editada(self, container, renglon_id: int, campo: str, valor: float, puntos: list) -> None:
+        """Al soltar un grip en el visor (mover, agregar o borrar un nodo
+        de una medición ya guardada): persiste el valor recalculado en
+        la entrada de cad_medidas para ESE campo exacto — sin tocar las
+        mediciones de las otras celdas del mismo renglón (ver
+        medidas_efectivas), y sin cambiar nunca a qué celda apunta."""
+        if not self._api:
+            return
+        gid = container._generador_id
+        renglones = self._api.generador_renglones(gid)
+        rn = next((r for r in renglones if r.get("id") == renglon_id), None)
+        if rn is None:
+            return
+        medidas = medidas_efectivas(rn)
+        info = dict(medidas.get(campo) or {})
+        info["puntos"] = puntos
+        medidas[campo] = info
+        import json
+        self._api.generador_renglon_guardar(
+            gid, renglon_id=renglon_id,
+            **{campo: valor, "cad_medidas": json.dumps(medidas)},
+        )
+        self._refrescar_generador_tab_seguro(container, gid)
 
     def _on_cad_entity_clicked(self, container, handle: str):
         """Muestra qué entidad se seleccionó (herramienta Seleccionar)."""

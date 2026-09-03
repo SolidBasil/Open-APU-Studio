@@ -138,7 +138,7 @@ class ApuMixin:
         # Ciclo de vida estándar (ver GUIA_INTERFAZ.md §7.6): poblar()
         # antes que conectar_eventos(). desconectar_eventos() no necesita
         # wiring aquí — _cerrar_tab_widget() ya recorre findChildren(QWidget)
-        # y lo llama solo en cualquier hijo que lo tenga (ver handlers/__init__.py).
+        # y lo llama solo en cualquier hijo que lo tenga (ver mixins/navegacion.py).
         detail.poblar(resultado)
         detail.conectar_eventos(self._event_bus, self._api)
 

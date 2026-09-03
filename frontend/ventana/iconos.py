@@ -265,8 +265,6 @@ def icono(nombre: str, size: int = 20, color: str | None = None,
     return _tinted_icon(path, size, color or _DEFAULT_TINT)
 
 
-def _colored_icon(path: str, size: int) -> QIcon:
-    """Carga SVG de Icons8 Color tal cual (colores ya embebidos)."""
 def _dpr() -> float:
     """DevicePixelRatio de la pantalla principal (1.0 si no hay sesión gráfica).
 

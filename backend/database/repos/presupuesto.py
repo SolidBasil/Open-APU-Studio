@@ -494,6 +494,18 @@ class NodoRepo(RepoBase):
             self._duplicar_nodo(hijo["id"], proyecto_id, nuevo_id)
         return nuevo_id
 
+    def con_formula_por_proyecto(self, proyecto_id: int) -> list[dict]:
+        """Conceptos con `formula` no vacía de este proyecto (para sustitución de variables).
+
+        Usado por VariableFormulaRepo.eliminar / api_backends.variables_eliminar
+        para encontrar fórmulas que referencian una variable antes de borrarla.
+        """
+        return self._lista(
+            "SELECT id, formula FROM estructura_presupuesto "
+            "WHERE proyecto_id = ? AND formula IS NOT NULL AND formula != '' AND activo = 1",
+            [proyecto_id],
+        )
+
 
 # =============================================================================
 # INSUMOS

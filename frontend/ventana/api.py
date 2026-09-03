@@ -64,7 +64,7 @@ class Api:
         if data_service is None:
             raise ValueError(
                 "Api requiere un DataService. Ver _wire_servicios() en "
-                "frontend/ventana/handlers/gestion_proyectos.py."
+                "frontend/ventana/mixins/gestion_proyectos.py."
             )
         self._conn   = conn
         self._db_path = str(db_path)
@@ -82,15 +82,20 @@ class Api:
             from frontend.ventana.api_cliente import ApiCliente
             self._cliente = ApiCliente(servidor_url, self._nombre_proyecto)
 
-        # Backends (migración en progreso, ver api_backends.py): por ahora
-        # solo la sección FACTORES DE SOBRECOSTO delega aquí; el resto de
-        # Api sigue con el patrón "if self._use_http" método por método.
-        from frontend.ventana.api_backends import _BackendLocal, _BackendHTTP
-        self._backend_local = _BackendLocal(self)
-        self._backend_http  = _BackendHTTP(self)
+        # Backends — contrato ToqueApiBackend (ver
+        # frontend/ventana/api_backends.py y docs/ARQUITECTURA_SERVICIOS.md).
+        # api.py es dispatcher puro (R2): cada método público delegado es
+        # `return self._backend.<metodo>(...)`. Los ~40 métodos con
+        # `if self._use_http:` inline son legado y se migran sección por
+        # sección a api_backends.py (Fase 2).
+        from frontend.ventana.api_backends import _BackendLocal, _BackendHTTP, ToqueApiBackend
+        self._backend_local: ToqueApiBackend = _BackendLocal(self)
+        self._backend_http: ToqueApiBackend = _BackendHTTP(self)
+        assert isinstance(self._backend_local, ToqueApiBackend)
+        assert isinstance(self._backend_http, ToqueApiBackend)
 
     @property
-    def _backend(self):
+    def _backend(self) -> "ToqueApiBackend":
         """Backend activo. Es una property (no un valor fijo) porque
         _use_http puede promoverse a True a medio uso — ver _http()."""
         return self._backend_http if self._use_http else self._backend_local
@@ -117,22 +122,14 @@ class Api:
 
     def presupuesto_arbol(self, extra: bool = False) -> list[dict]:
         """Devuelve el árbol del presupuesto (es_extra=0) o extra (es_extra=1)."""
-        if self._use_http:
-            return self._http().arbol(extra=extra)
-        from backend.database.repos import NodoRepo
-        return NodoRepo(self._conn).arbol(self._pid, extra=extra)
+        return self._backend.presupuesto_arbol(extra=extra)
 
     def nodo_total(self, nodo_id: int) -> float:
         """Devuelve el total de un nodo del presupuesto."""
-        if self._use_http:
-            nodo = self._http().buscar("estructura_presupuesto", nodo_id)
-            return (nodo.get("total") or 0) if nodo else 0
-        from backend.database.repos import NodoRepo
-        nodo = NodoRepo(self._conn).buscar(nodo_id)
-        return (nodo.get("total") or 0) if nodo else 0
+        return self._backend.nodo_total(nodo_id)
 
     def concepto_actualizar_cantidad(self, concepto_id: int, cantidad: float,
-                                      formula: str | None = None) -> None:
+                                       formula: str | None = None) -> None:
         """Actualiza la cantidad y opcionalmente la fórmula de un concepto.
 
         Si se proporciona `formula`, se evalúa antes de guardar (valida
@@ -140,34 +137,7 @@ class Api:
         `cantidad` y el texto de la fórmula se persiste en la columna
         `formula`. Si la evaluación falla, no se guarda nada (ValueError).
         """
-        from backend.database.event_bus import ProyectoRecalculado
-        if cantidad < 0:
-            raise ValueError("La cantidad no puede ser negativa")
-        if formula is not None and formula.strip():
-            from backend.formulas import evaluar_formula, ErrorFormula
-            try:
-                resuelta = evaluar_formula(formula.strip(), self.variables_resueltas())
-                cantidad = float(resuelta)
-            except ErrorFormula as e:
-                raise ValueError(str(e))
-        else:
-            formula = None
-        if self._use_http:
-            campos = {"cantidad": cantidad}
-            if formula is not None:
-                campos["formula"] = formula
-            self._http().actualizar("estructura_presupuesto", concepto_id, **campos)
-            self._http().recalcular()
-            self._ds.emitir(ProyectoRecalculado(self._pid))
-            return
-        from backend.database.repos import NodoRepo
-        with self._ds.transaccion():
-            campos = {"cantidad": cantidad}
-            if formula is not None:
-                campos["formula"] = formula
-            self._ds.actualizar("estructura_presupuesto", concepto_id, **campos)
-            NodoRepo(self._conn).recalcular_desde(concepto_id)
-        self._ds.emitir(ProyectoRecalculado(self._pid))
+        return self._backend.concepto_actualizar_cantidad(concepto_id, cantidad, formula)
 
     def concepto_reasignar_insumo(self, concepto_id: int, nuevo_insumo_id: int) -> None:
         """Reasigna un concepto a otro insumo del catálogo.
@@ -176,19 +146,7 @@ class Api:
         insumo (descripción, unidad, precio se resuelven desde allí).
         Dispara recálculo completo del proyecto y reconstrucción del árbol.
         """
-        from backend.database.event_bus import ProyectoRecalculado
-        if self._use_http:
-            self._http().actualizar("estructura_presupuesto", concepto_id,
-                                      insumo_id=nuevo_insumo_id)
-            self._http().recalcular()
-            self._ds.emitir(ProyectoRecalculado(self._pid))
-            return
-        from backend.database.repos import RecalculoRepo
-        with self._ds.transaccion():
-            self._ds.actualizar("estructura_presupuesto", concepto_id,
-                                 insumo_id=nuevo_insumo_id)
-            RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
-        self._ds.emitir(ProyectoRecalculado(self._pid))
+        return self._backend.concepto_reasignar_insumo(concepto_id, nuevo_insumo_id)
 
     def nodo_descripcion_actual(self, nodo_id: int) -> str:
         """Devuelve la descripción visible actual de un nodo del árbol
@@ -197,22 +155,7 @@ class Api:
         Uso: revertir una celda tras un ValueError de validación (ej.
         descripción duplicada) sin recargar todo el árbol.
         """
-        if self._use_http:
-            nodo = self._http().buscar("estructura_presupuesto", nodo_id)
-            if not nodo:
-                return ""
-            if nodo.get("insumo_id"):
-                insumo = self._http().buscar("insumos", nodo["insumo_id"])
-                return (insumo or {}).get("descripcion", "") or ""
-            return nodo.get("descripcion", "") or ""
-        from backend.database.repos import NodoRepo, InsumoRepo
-        nodo = NodoRepo(self._conn).buscar(nodo_id)
-        if not nodo:
-            return ""
-        if nodo.get("insumo_id"):
-            insumo = InsumoRepo(self._conn).buscar(nodo["insumo_id"])
-            return (insumo or {}).get("descripcion", "") or ""
-        return nodo.get("descripcion", "") or ""
+        return self._backend.nodo_descripcion_actual(nodo_id)
 
     def concepto_actualizar_descripcion(self, nodo_id: int, descripcion: str) -> None:
         """Actualiza la descripción del insumo ligado a un concepto.
@@ -220,49 +163,19 @@ class Api:
         Reutiliza insumo_actualizar_descripcion() para no duplicar la
         lógica de regeneración de hash y verificación de colisión.
         """
-        if self._use_http:
-            nodo = self._http().buscar("estructura_presupuesto", nodo_id)
-        else:
-            from backend.database.repos import NodoRepo
-            nodo = NodoRepo(self._conn).buscar(nodo_id)
-        if nodo and nodo.get("insumo_id"):
-            self.insumo_actualizar_descripcion(nodo["insumo_id"], descripcion)
+        return self._backend.concepto_actualizar_descripcion(nodo_id, descripcion)
 
     def concepto_actualizar_unidad(self, nodo_id: int, unidad: str) -> None:
         """Actualiza la unidad de un concepto (escribe en insumos)."""
-        if self._use_http:
-            nodo = self._http().buscar("estructura_presupuesto", nodo_id)
-            if nodo and nodo.get("insumo_id"):
-                self._http().actualizar("insumos", nodo["insumo_id"], unidad=unidad)
-                from backend.database.event_bus import InsumoActualizado
-                registro = self._http().buscar("insumos", nodo["insumo_id"]) or {}
-                self._ds.emitir(InsumoActualizado(nodo["insumo_id"], {"unidad": unidad}, registro))
-            return
-        from backend.database.repos import NodoRepo
-        nodo = NodoRepo(self._conn).buscar(nodo_id)
-        if nodo and nodo.get("insumo_id"):
-            self._ds.actualizar("insumos", nodo["insumo_id"], unidad=unidad)
+        return self._backend.concepto_actualizar_unidad(nodo_id, unidad)
 
     def agrupador_actualizar_descripcion(self, nodo_id: int, descripcion: str) -> None:
         """Actualiza la descripción de un agrupador (capítulo)."""
-        if self._use_http:
-            self._http().actualizar("estructura_presupuesto", nodo_id, descripcion=descripcion)
-            return
-        self._ds.actualizar("estructura_presupuesto", nodo_id, descripcion=descripcion)
+        return self._backend.agrupador_actualizar_descripcion(nodo_id, descripcion)
 
     def eliminar_nodo(self, nodo_id: int) -> None:
         """Elimina (soft-delete) un nodo del presupuesto y recalcula en cascada."""
-        from backend.database.event_bus import ProyectoRecalculado
-        if self._use_http:
-            self._http().eliminar("estructura_presupuesto", nodo_id)
-            self._http().recalcular()
-            self._ds.emitir(ProyectoRecalculado(self._pid))
-            return
-        from backend.database.repos import RecalculoRepo
-        with self._ds.transaccion():
-            self._ds.eliminar("estructura_presupuesto", nodo_id)
-            RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
-        self._ds.emitir(ProyectoRecalculado(self._pid))
+        return self._backend.eliminar_nodo(nodo_id)
 
     def agregar_nodo(
         self, tipo: str, padre_id: int | None = None,
@@ -285,70 +198,16 @@ class Api:
         Returns:
             id del nodo insertado
         """
-        from backend.database.event_bus import ProyectoRecalculado
-
-        if self._use_http:
-            if orden is None and antes_de is not None:
-                ref = self._http().buscar("estructura_presupuesto", antes_de)
-                if ref:
-                    orden = ref["orden"] - 0.5
-            if orden is None:
-                orden = self._http().proximo_orden(padre_id)
-            nuevo_id = self._http().insertar("estructura_presupuesto", **{
-                "proyecto_id": self._pid, "padre_id": padre_id, "wbs": "",
-                "nivel": 0, "tipo": tipo, "descripcion": descripcion or "",
-                "orden": orden, "insumo_id": insumo_id, "cantidad": cantidad,
-                "total": 0.0, "es_extra": 1 if es_extra else 0,
-                "estado": 0, "activo": 1, "creado_por": 1,
-            })
-            self._http().reindexar()
-            self._http().recalcular()
-            self._ds.emitir(ProyectoRecalculado(self._pid))
-            return nuevo_id
-
-        from backend.database.repos import NodoRepo, RecalculoRepo
-        repo = NodoRepo(self._conn)
-        if orden is None and antes_de is not None:
-            ref = repo.buscar(antes_de)
-            if ref:
-                orden = ref["orden"] - 0.5
-        if orden is None:
-            orden = repo.proximo_orden(self._pid, padre_id)
-        with self._ds.transaccion():
-            nuevo_id = repo.insert({
-                "proyecto_id": self._pid,
-                "padre_id":    padre_id,
-                "wbs":         "",
-                "nivel":       0,
-                "tipo":        tipo,
-                "descripcion": descripcion or "",
-                "orden":       orden,
-                "insumo_id":   insumo_id,
-                "cantidad":    cantidad,
-                "total":       0.0,
-                "es_extra":    1 if es_extra else 0,
-                "estado":      0,
-                "activo":      1,
-                "creado_por":  1,
-            })
-            repo.reindexar(self._pid)
-            RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
-        self._ds.emitir(ProyectoRecalculado(self._pid))
-        return nuevo_id
+        return self._backend.agregar_nodo(tipo, padre_id, descripcion, insumo_id,
+                                           cantidad, orden, antes_de, es_extra)
 
     def todos_concepto_ids(self) -> list[int]:
         """Devuelve los ids de todos los conceptos activos del proyecto."""
-        if self._use_http:
-            return self._http().todos_concepto_ids()
-        from backend.database.repos import NodoRepo
-        return NodoRepo(self._conn).ids_por_tipo(self._pid, tipo="concepto")
+        return self._backend.todos_concepto_ids()
 
     def conceptos_planos(self) -> list[dict]:
         """Lista plana de todos los conceptos con clave, descripción, unidad, cantidad, total."""
-        if self._use_http:
-            return self._http().conceptos_planos()
-        from backend.database.repos import NodoRepo
-        return NodoRepo(self._conn).todos(self._pid, tipo="concepto")
+        return self._backend.conceptos_planos()
 
     # =========================================================================
     # VARIABLES DE FÓRMULA
@@ -438,19 +297,7 @@ class Api:
 
     def apu_actualizar_operador(self, comp_id: int, operador: str) -> None:
         """Actualiza el operador (* o /) de un componente APU y recalcula en cascada."""
-        from backend.database.event_bus import ProyectoRecalculado
-        if operador not in ('*', '/'):
-            raise ValueError("Operador debe ser '*' o '/'")
-        if self._use_http:
-            self._http().actualizar("apu_matrices", comp_id, operador=operador)
-            self._http().recalcular()
-            self._ds.emitir(ProyectoRecalculado(self._pid))
-            return
-        from backend.database.repos import RecalculoRepo
-        with self._ds.transaccion():
-            self._ds.actualizar("apu_matrices", comp_id, operador=operador)
-            RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
-        self._ds.emitir(ProyectoRecalculado(self._pid))
+        return self._backend.apu_actualizar_operador(comp_id, operador)
 
     def apu_agregar_componente(self, matriz_id: int, insumo_id: int,
                                 valor: float = 1.0, operador: str = "*") -> int:
@@ -461,25 +308,7 @@ class Api:
         Ctrl+Z), mismo patrón de bug que el Hallazgo 1 original.
         Encontrado al migrar APU a la API HTTP (este método era el único
         de los 5 de escritura de APU sin soporte HTTP en absoluto)."""
-        from backend.database.event_bus import ProyectoRecalculado
-        from backend.database.repos import ApuMatricesRepo
-        orden = ApuMatricesRepo(self._conn).proximo_orden(matriz_id)
-        campos = {
-            "matriz_id": matriz_id, "insumo_id": insumo_id,
-            "valor": valor, "operador": operador,
-            "precio": 0.0, "orden": orden, "formula": None,
-        }
-        if self._use_http:
-            nuevo_id = self._http().insertar("apu_matrices", **campos)
-            self._http().recalcular()
-            self._ds.emitir(ProyectoRecalculado(self._pid))
-            return nuevo_id
-        from backend.database.repos import RecalculoRepo
-        with self._ds.transaccion():
-            nuevo_id = self._ds.insertar("apu_matrices", **campos)
-            RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
-        self._ds.emitir(ProyectoRecalculado(self._pid))
-        return nuevo_id
+        return self._backend.apu_agregar_componente(matriz_id, insumo_id, valor, operador)
 
     def apu_actualizar_valor(self, comp_id: int, valor: float,
                               formula: str | None = None) -> None:
@@ -487,42 +316,7 @@ class Api:
 
         Si se proporciona `formula`, se evalúa antes de guardar.
         """
-        from backend.database.event_bus import ProyectoRecalculado
-        if valor is None or valor < 0:
-            raise ValueError("La cantidad no puede ser negativa")
-        if formula is not None and formula.strip():
-            from backend.formulas import evaluar_formula, ErrorFormula
-            try:
-                resuelta = evaluar_formula(formula.strip(), self.variables_resueltas())
-                valor = float(resuelta)
-            except ErrorFormula as e:
-                raise ValueError(str(e))
-        else:
-            formula = None
-        if self._use_http:
-            if valor == 0:
-                comp = self._http().buscar("apu_matrices", comp_id)
-                if comp and comp["operador"] == "/":
-                    raise ValueError("La cantidad no puede ser cero con operador división (división por cero)")
-            campos = {"valor": valor}
-            if formula is not None:
-                campos["formula"] = formula
-            self._http().actualizar("apu_matrices", comp_id, **campos)
-            self._http().recalcular()
-            self._ds.emitir(ProyectoRecalculado(self._pid))
-            return
-        from backend.database.repos import ApuMatricesRepo, RecalculoRepo
-        if valor == 0:
-            comp = ApuMatricesRepo(self._conn).buscar(comp_id)
-            if comp and comp["operador"] == "/":
-                raise ValueError("La cantidad no puede ser cero con operador división (división por cero)")
-        with self._ds.transaccion():
-            campos = {"valor": valor}
-            if formula is not None:
-                campos["formula"] = formula
-            self._ds.actualizar("apu_matrices", comp_id, **campos)
-            RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
-        self._ds.emitir(ProyectoRecalculado(self._pid))
+        return self._backend.apu_actualizar_valor(comp_id, valor, formula)
 
     def apu_reasignar_componente(self, comp_id: int, nuevo_insumo_id: int) -> None:
         """Reasigna el insumo de un componente dentro de un APU.
@@ -530,17 +324,7 @@ class Api:
         Cambia el insumo_id del registro en apu_matrices. Dispara recálculo
         completo y todos los widgets suscritos se refrescan solos.
         """
-        from backend.database.event_bus import ProyectoRecalculado
-        if self._use_http:
-            self._http().actualizar("apu_matrices", comp_id, insumo_id=nuevo_insumo_id)
-            self._http().recalcular()
-            self._ds.emitir(ProyectoRecalculado(self._pid))
-            return
-        from backend.database.repos import RecalculoRepo
-        with self._ds.transaccion():
-            self._ds.actualizar("apu_matrices", comp_id, insumo_id=nuevo_insumo_id)
-            RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
-        self._ds.emitir(ProyectoRecalculado(self._pid))
+        return self._backend.apu_reasignar_componente(comp_id, nuevo_insumo_id)
 
     def apu_actualizar_precio_componente(self, insumo_id: int, precio: float) -> None:
         """Actualiza el Precio de un componente editado desde dentro de un APU.
@@ -553,14 +337,11 @@ class Api:
         Insumos — así que reutiliza insumo_actualizar_precio() para que el
         cambio se propague a todo lo que use ese insumo, no solo a esta fila.
         """
-        self.insumo_actualizar_precio(insumo_id, precio)
+        return self._backend.apu_actualizar_precio_componente(insumo_id, precio)
 
     def insumo_ids_con_apu(self) -> set[int]:
         """Conjunto de ids de insumos compuestos (tienen APU propio)."""
-        if self._use_http:
-            return set(self._http().insumos_con_apu())
-        from backend.database.repos import InsumoRepo
-        return InsumoRepo(self._conn).ids_con_apu(self._pid)
+        return self._backend.insumo_ids_con_apu()
 
     # =========================================================================
     # INSUMOS
@@ -587,6 +368,15 @@ class Api:
         capítulos. Útil tras editar precios o cantidades a mano.
         """
         return self._backend.recalcular_proyecto()
+
+    def reindexar_proyecto(self) -> None:
+        """Recalcula wbs/nivel de TODO el árbol del proyecto abierto a partir
+        de padre_id + orden (ver NodoRepo.reindexar()). Corrige numeración
+        desactualizada — por ejemplo proyectos importados con una versión
+        anterior de la app que dejaba el código crudo de OPUS (ej. "0101",
+        "010203") en vez del formato "1.1", "1.1.3" que usa la numeración
+        propia del presupuesto."""
+        self._backend.reindexar_proyecto()
 
     def rastrear_insumo(self, insumo_id: int) -> list[dict]:
         """Devuelve las matrices (conceptos o compuestos) donde aparece un insumo.
@@ -621,25 +411,11 @@ class Api:
             filas — list[dict] con tipo_id, tipo_nombre, clave, descripcion,
                     unidad, cantidad_total, pu, total, pct, pct_mo
         """
-        if self._use_http:
-            return self._http().explotar(concepto_ids, nivel, tipos_ids)
-        from backend.database.repos  import ExplosionRepo
-
-        return ExplosionRepo(self._conn).calcular(
-            proyecto_id  = self._pid,
-            concepto_ids = concepto_ids,
-            nivel        = nivel,
-            tipos_ids    = tipos_ids,
-        )
+        return self._backend.explotar(concepto_ids, nivel, tipos_ids)
 
     def conceptos_bajo_nodo(self, nodo_id: int) -> list[int]:
         """IDs de todos los conceptos descendientes de un nodo (capítulo)."""
-        if self._use_http:
-            desc = self._http().descendientes(nodo_id)
-            return [d["id"] for d in desc if d.get("tipo") == "concepto"]
-        from backend.database.repos import NodoRepo
-        descendientes = NodoRepo(self._conn).descendientes(nodo_id)
-        return [d["id"] for d in descendientes if d.get("tipo") == "concepto"]
+        return self._backend.conceptos_bajo_nodo(nodo_id)
 
     def resumen_tipos_explosion(self, tipos_ids: list[int]) -> str:
         """Genera el string de tipos para el encabezado de la pestaña de explosión.
@@ -658,10 +434,7 @@ class Api:
 
     def familias(self) -> list[dict]:
         """Lista de familias activas del proyecto."""
-        if self._use_http:
-            return self._http().familias()
-        from backend.database.repos import FamiliaRepo
-        return FamiliaRepo(self._conn).todas()
+        return self._backend.familias()
 
     def familia_insertar(self, nombre: str) -> int:
         """Inserta una nueva familia.
@@ -675,16 +448,11 @@ class Api:
         Emite `NodoInsertado(id, "familias", None)`; los widgets ya
         filtran por `evento.tipo`, así que no reaccionan a esto.
         """
-        if self._use_http:
-            return self._http().insertar("familias", nombre=nombre)
-        return self._ds.insertar("familias", nombre=nombre)
+        return self._backend.familia_insertar(nombre)
 
     def subfamilias(self, familia_id: int) -> list[dict]:
         """Lista de subfamilias activas de una familia."""
-        if self._use_http:
-            return self._http().subfamilias(familia_id)
-        from backend.database.repos import SubfamiliaRepo
-        return SubfamiliaRepo(self._conn).por_familia(familia_id)
+        return self._backend.subfamilias(familia_id)
 
     def subfamilia_insertar(self, familia_id: int, nombre: str) -> int:
         """Inserta una nueva subfamilia dentro de una familia.
@@ -692,9 +460,7 @@ class Api:
         Mismo motivo que `familia_insertar()`: pasa por `DataService` para
         que la escritura quede realmente confirmada en disco.
         """
-        if self._use_http:
-            return self._http().insertar("subfamilias", familia_id=familia_id, nombre=nombre)
-        return self._ds.insertar("subfamilias", familia_id=familia_id, nombre=nombre)
+        return self._backend.subfamilia_insertar(familia_id, nombre)
 
     # =========================================================================
     # MUTACIÓN DE INSUMOS
@@ -703,134 +469,26 @@ class Api:
     def insumo_actualizar_descripcion(
         self, insumo_id: int, descripcion: str, usuario_id: int = 1
     ) -> None:
-        """Actualiza la descripción de un insumo y regenera su hash.
-
-        Verifica antes de escribir que el hash nuevo no colisione con otro
-        insumo del mismo proyecto. Si hay colisión, lanza ValueError con el
-        id y descripción del insumo existente para que la UI informe al
-        usuario. El hash es una llave de deduplicación interna, no un dato
-        de dominio con reglas de SchemaRegistry, así que se calcula aquí y
-        se envía como campo extra a DataService.actualizar().
-        """
-        from backend.database.core import generar_hash
-        descripcion = descripcion.strip()
-        if not descripcion:
-            raise ValueError("La descripción no puede estar vacía")
-        nuevo_hash = generar_hash(descripcion)
-        if self._use_http:
-            existente = self._http().insumo_por_hash(nuevo_hash)
-            if existente and existente["id"] != insumo_id:
-                raise ValueError(
-                    f"Ya existe un insumo con esa descripción: "
-                    f"[{existente['id']}] {existente['descripcion']}"
-                )
-            self._http().actualizar("insumos", insumo_id, descripcion=descripcion, hash=nuevo_hash)
-            from backend.database.event_bus import InsumoActualizado
-            registro = self._http().buscar("insumos", insumo_id) or {}
-            self._ds.emitir(InsumoActualizado(insumo_id, {"descripcion": descripcion, "hash": nuevo_hash}, registro))
-            return
-        from backend.database.repos import InsumoRepo
-        existente = InsumoRepo(self._conn).buscar_por_hash(nuevo_hash, self._pid)
-        if existente and existente["id"] != insumo_id:
-            raise ValueError(
-                f"Ya existe un insumo con esa descripción: "
-                f"[{existente['id']}] {existente['descripcion']}"
-            )
-        self._ds.actualizar("insumos", insumo_id, descripcion=descripcion, hash=nuevo_hash)
+        """Actualiza la descripción de un insumo y regenera su hash."""
+        return self._backend.insumo_actualizar_descripcion(insumo_id, descripcion, usuario_id)
 
     def insumo_actualizar_precio(
         self, insumo_id: int, precio: float, usuario_id: int = 1
     ) -> None:
-        """Actualiza el costo_directo de un insumo y recalcula en cascada.
-
-        costo_final se calcula en recalcular_proyecto como
-        costo_directo × factor_sobrecosto — no se escribe aquí.
-        """
-        from backend.database.event_bus import ProyectoRecalculado
-        if precio < 0:
-            raise ValueError("El precio no puede ser negativo")
-        if self._use_http:
-            self._http().actualizar("insumos", insumo_id,
-                costo_mn=precio, costo_directo=precio)
-            self._http().recalcular()
-            self._ds.emitir(ProyectoRecalculado(self._pid))
-            return
-        from backend.database.repos import RecalculoRepo
-        with self._ds.transaccion():
-            self._ds.actualizar("insumos", insumo_id,
-                                costo_mn=precio, costo_directo=precio)
-            RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
-        self._ds.emitir(ProyectoRecalculado(self._pid))
+        """Actualiza el costo_directo de un insumo y recalcula en cascada."""
+        return self._backend.insumo_actualizar_precio(insumo_id, precio, usuario_id)
 
     def insumo_actualizar_precios(
         self, insumo_id: int, costo_mn: float, costo_me: float, usuario_id: int = 1
     ) -> None:
-        """Actualiza costo_mn y costo_me de un insumo y recalcula en cascada.
-
-        costo_directo = costo_mn (precio base). costo_final se calcula
-        en recalcular_proyecto (costo_directo × factor_sobrecosto).
-        """
-        from backend.database.event_bus import ProyectoRecalculado
-        if costo_mn < 0 or costo_me < 0:
-            raise ValueError("Los precios no pueden ser negativos")
-        if self._use_http:
-            self._http().actualizar("insumos", insumo_id,
-                costo_mn=costo_mn, costo_directo=costo_mn,
-                costo_me=costo_me)
-            self._http().recalcular()
-            self._ds.emitir(ProyectoRecalculado(self._pid))
-            return
-        from backend.database.repos import RecalculoRepo
-        with self._ds.transaccion():
-            self._ds.actualizar("insumos", insumo_id,
-                                costo_mn=costo_mn, costo_directo=costo_mn,
-                                costo_me=costo_me)
-            RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
-        self._ds.emitir(ProyectoRecalculado(self._pid))
+        """Actualiza costo_mn y costo_me de un insumo y recalcula en cascada."""
+        return self._backend.insumo_actualizar_precios(insumo_id, costo_mn, costo_me, usuario_id)
 
     def insumo_actualizar_campo(
         self, insumo_id: int, campo: str, valor, usuario_id: int = 1
     ) -> None:
-        """Actualiza un campo simple de un insumo del catálogo.
-
-        `DataService.actualizar()` ya emite `InsumoActualizado` por su
-        cuenta — eso basta para que la fila del insumo se refresque. Solo
-        cuando el campo cambiado es `costo_final` hay que además recalcular
-        en cascada (afecta compuestos que lo referencian y los totales del
-        árbol) y avisar con `ProyectoRecalculado`. Emitir ese evento sin
-        haber corrido el recálculo hacía que los widgets suscritos (árbol,
-        insumos) repoblaran creyendo que hay totales nuevos que no existen
-        — además de ser trabajo desperdiciado, con historial multiusuario
-        (ver SRV-08 en docs/DECISIONES_MULTIUSUARIO.md) dispararía la
-        invalidación cruzada de la pila de undo de otros usuarios por un
-        cambio que nunca tocó ningún total.
-
-        Con `servidor_url` configurado (Fase 4/5), va por HTTP vía
-        `ApiCliente` — incluyendo `costo_final`, ahora que el servidor
-        expone `/recalcular` (Fase 5); ya no hace falta la excepción
-        local que tenía en Fase 4. El servidor emite sus propios eventos
-        en SU EventBus (otro proceso), que no llegan aquí; sin WebSocket
-        todavía (SRV-05, Fase 7), el propio cliente que hizo el cambio
-        emite el evento LOCAL tras la respuesta HTTP exitosa.
-        """
-        from backend.database.event_bus import InsumoActualizado, ProyectoRecalculado
-
-        if not self._use_http:
-            from backend.database.repos import RecalculoRepo
-            with self._ds.transaccion():
-                self._ds.actualizar("insumos", insumo_id, **{campo: valor})
-                if campo == "costo_final":
-                    RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
-            if campo == "costo_final":
-                self._ds.emitir(ProyectoRecalculado(self._pid))
-            return
-
-        self._http().actualizar("insumos", insumo_id, **{campo: valor})
-        registro = self._http().buscar("insumos", insumo_id) or {}
-        self._ds.emitir(InsumoActualizado(insumo_id, {campo: valor}, registro))
-        if campo == "costo_final":
-            self._http().recalcular()
-            self._ds.emitir(ProyectoRecalculado(self._pid))
+        """Actualiza un campo simple de un insumo del catálogo."""
+        return self._backend.insumo_actualizar_campo(insumo_id, campo, valor, usuario_id)
 
     def insumo_insertar(
         self,
@@ -845,83 +503,16 @@ class Api:
         subfamilia_id: int | None = None,
         usuario_id: int = 1,
     ) -> int:
-        """Crea un insumo nuevo desde la app (no importado).
-
-        Genera el hash de deduplicación aquí, igual que
-        insumo_actualizar_descripcion(): el hash es una llave interna, no
-        un dato de dominio con reglas de SchemaRegistry, así que se calcula
-        en la fachada y se envía como campo extra a DataService.insertar().
-        Verifica colisión con otro insumo del proyecto antes de crear.
-        """
-        from backend.database.core import generar_hash
-        nuevo_hash = generar_hash(descripcion) if descripcion else None
-        if self._use_http:
-            if nuevo_hash:
-                existente = self._http().insumo_por_hash(nuevo_hash)
-                if existente:
-                    raise ValueError(
-                        f"Ya existe un insumo con esa descripción: "
-                        f"[{existente['id']}] {existente['descripcion']}"
-                    )
-            campos = dict(
-                proyecto_id=self._pid, tipo_id=tipo_id, descripcion=descripcion,
-                descripcion_corta=descripcion_corta, unidad=unidad,
-                costo_mn=costo, costo_me=costo_me, costo_directo=costo,
-                costo_final=costo, es_compuesto=es_compuesto, hash=nuevo_hash,
-            )
-            if familia_id is not None:
-                campos["familia_id"] = familia_id
-            if subfamilia_id is not None:
-                campos["subfamilia_id"] = subfamilia_id
-            return self._http().insertar("insumos", **campos)
-
-        from backend.database.repos import InsumoRepo
-        if nuevo_hash:
-            existente = InsumoRepo(self._conn).buscar_por_hash(nuevo_hash, self._pid)
-            if existente:
-                raise ValueError(
-                    f"Ya existe un insumo con esa descripción: "
-                    f"[{existente['id']}] {existente['descripcion']}"
-                )
-        campos = dict(
-            proyecto_id=self._pid,
-            tipo_id=tipo_id,
-            descripcion=descripcion,
-            descripcion_corta=descripcion_corta,
-            unidad=unidad,
-            costo_mn=costo,
-            costo_me=costo_me,
-            costo_directo=costo,
-            costo_final=costo,
-            es_compuesto=es_compuesto,
-            hash=nuevo_hash,
-        )
-        if familia_id is not None:
-            campos["familia_id"] = familia_id
-        if subfamilia_id is not None:
-            campos["subfamilia_id"] = subfamilia_id
-        return self._ds.insertar("insumos", **campos)
+        """Crea un insumo nuevo desde la app (no importado)."""
+        return self._backend.insumo_insertar(tipo_id, descripcion, descripcion_corta, unidad, costo, costo_me, es_compuesto, familia_id, subfamilia_id, usuario_id)
 
     def insumo_por_id(self, insumo_id: int) -> dict | None:
         """Devuelve el dict completo de un insumo por su id, o None si no existe."""
-        if self._use_http:
-            return self._http().buscar("insumos", insumo_id)
-        from backend.database.repos import InsumoRepo
-        return InsumoRepo(self._conn).buscar(insumo_id)
+        return self._backend.insumo_por_id(insumo_id)
 
     def eliminar_insumo(self, insumo_id: int) -> None:
         """Elimina (soft-delete) un insumo del catálogo y recalcula en cascada."""
-        from backend.database.event_bus import ProyectoRecalculado
-        if self._use_http:
-            self._http().eliminar("insumos", insumo_id)
-            self._http().recalcular()
-            self._ds.emitir(ProyectoRecalculado(self._pid))
-            return
-        from backend.database.repos import RecalculoRepo
-        with self._ds.transaccion():
-            self._ds.eliminar("insumos", insumo_id)
-            RecalculoRepo(self._conn).recalcular_proyecto(self._pid)
-        self._ds.emitir(ProyectoRecalculado(self._pid))
+        return self._backend.eliminar_insumo(insumo_id)
 
     # =========================================================================
     # GESTIÓN DE PROYECTOS
@@ -1064,36 +655,20 @@ class Api:
 
     def deshacer(self, usuario_id: int = 1) -> bool:
         """Deshace la última operación del usuario (SRV-10)."""
-        if self._use_http:
-            return self._http().deshacer(usuario_id)
-        return self._ds.deshacer(usuario_id, proyecto_id=self._pid)
+        return self._backend.deshacer(usuario_id)
 
     def rehacer(self, usuario_id: int = 1) -> bool:
         """Rehace la última operación deshecha (SRV-10)."""
-        if self._use_http:
-            return self._http().rehacer(usuario_id)
-        return self._ds.rehacer(usuario_id, proyecto_id=self._pid)
+        return self._backend.rehacer(usuario_id)
 
     def iniciar_sesion_undo(self) -> str | None:
         """Agrupa todas las escrituras hechas hasta cerrar_sesion_undo() en
-        una sola entrada de deshacer (SRV-09 'sesion'). Pensado para
-        operaciones que tocan varios campos/filas a la vez, como el pegado
-        multi-celda, para que Ctrl+Z las revierta de un solo golpe en vez
-        de una por una.
-
-        Nota: en modo servidor (_use_http) todavía no hay agrupación de
-        sesión entre requests — cada campo pegado queda como una entrada
-        de deshacer independiente hasta que SRV-10 se extienda al cliente
-        HTTP. No falla, solo no agrupa.
-        """
-        if self._use_http:
-            return None
-        return self._ds.iniciar_sesion()
+        una sola entrada de deshacer (SRV-09 'sesion')."""
+        return self._backend.iniciar_sesion_undo()
 
     def cerrar_sesion_undo(self) -> None:
         """Cierra la sesión de deshacer agrupada abierta con iniciar_sesion_undo()."""
-        if not self._use_http:
-            self._ds.cerrar_sesion()
+        return self._backend.cerrar_sesion_undo()
 
     # =========================================================================
     # HELPERS INTERNOS
@@ -1126,7 +701,7 @@ class Api:
 
         Corre en cada apertura/importación de proyecto (ver
         `_wire_servicios()`/`_on_abrir_proyecto()` en
-        `frontend/ventana/handlers/gestion_proyectos.py`), así que si no
+        `frontend/ventana/mixins/gestion_proyectos.py`), así que si no
         hay nada que migrar debe ser barato y no debe tocar la UI.
 
         Excepción deliberada al patrón HTTP de Fase 5: se queda en el

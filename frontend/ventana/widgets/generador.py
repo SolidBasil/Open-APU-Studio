@@ -12,6 +12,57 @@ from PySide6.QtWidgets import QHeaderView, QAbstractItemView
 from frontend.ventana.widgets.base import TreeTableWidget, EMPTY_ROLE
 from frontend.ventana.iconos import icono
 
+# Medidas CAD del renglón (una entrada por celda — Veces/Largo/Ancho/Alto),
+# cacheadas en el propio item (col 0, cubre toda la fila) para poder
+# acumular puntos de un contador o agregar la medición de OTRA celda sin
+# pisar lo que ya había — ver medidas_efectivas() y aplicar_medicion().
+CAD_MEDIDAS_ROLE = Qt.ItemDataRole.UserRole + 70
+
+
+def medidas_efectivas(rn: dict) -> dict:
+    """Combina cad_medidas (v12+: una medición independiente por cada
+    celda Veces/Largo/Ancho/Alto) con las columnas legacy de una sola
+    medición por renglón entero (cad_tipo_medicion/cad_geometria/
+    cad_campo/cad_origen_archivo, anteriores a v12) en una sola vista
+    uniforme: {"largo": {"tipo":..., "puntos":[...], "archivo":...}, ...}.
+
+    Antes de v12 medir una celda pisaba esas 4 columnas enteras — así
+    que medir Ancho después de Largo borraba el trazo de Largo, porque
+    ambos vivían en la MISMA columna de la BD. v12 le da a cada celda
+    su propia entrada dentro de un solo JSON, y esto es lo que unifica
+    la lectura de ambos formatos para que compilador/tabla/visor no
+    tengan que preocuparse por cuál usó cada renglón.
+
+    Reusado por TablaGenerador (tabla) y VisorCadWidget (overlays del
+    plano) y GeneradorMixin (al persistir una edición de nodos) — para
+    no repetir este merge en tres lados.
+    """
+    import json
+    medidas: dict = {}
+    raw = rn.get("cad_medidas")
+    if raw:
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                medidas = dict(parsed)
+        except (ValueError, TypeError):
+            pass
+    campo_legacy = rn.get("cad_campo")
+    if campo_legacy and campo_legacy not in medidas:
+        geom = rn.get("cad_geometria")
+        puntos = []
+        if geom:
+            try:
+                puntos = json.loads(geom)
+            except (ValueError, TypeError):
+                puntos = []
+        medidas[campo_legacy] = {
+            "tipo": rn.get("cad_tipo_medicion"),
+            "puntos": puntos,
+            "archivo": rn.get("cad_origen_archivo"),
+        }
+    return medidas
+
 # Columnas: Eje, Tramo, Veces, Largo, Ancho, Alto, Subtotal, Notas
 COLUMNAS = ["Eje", "Tramo", "Veces", "Largo", "Ancho", "Alto", "Subtotal", "Notas"]
 EDITABLE = {0, 1, 2, 3, 4, 5, 7}  # todo excepto Subtotal (col 6)
@@ -28,6 +79,7 @@ class TablaGenerador(TreeTableWidget):
     delete_solicitado = Signal(list)      # (renglon_ids) — tecla Delete, pide confirmación antes de eliminar
     total_actualizado = Signal(float)     # SUM(subtotal) de renglones activos
     nuevo_renglon = Signal()              # clic en fila vacía
+    renglon_seleccionado = Signal(object)  # renglon_id (int) o None — para resaltar su trazo en el plano
 
     _HEADER_KEY = "generador_renglones_header_state"
     _REORDER_ENABLED = True
@@ -53,6 +105,7 @@ class TablaGenerador(TreeTableWidget):
         self._search_cols = {0, 1, 7}
         self._renglon_ids: dict[int, int] = {}  # item_id → renglon_id
         self.itemChanged.connect(self._on_item_changed)
+        self.itemSelectionChanged.connect(self._on_seleccion_cambiada)
 
         # ── Drag and drop entre pestañas de Generadores (misma lógica
         # que APU/Presupuesto — ver TablaApuDetalle) ─────────────────
@@ -61,6 +114,35 @@ class TablaGenerador(TreeTableWidget):
         self.setDropIndicatorShown(True)
         self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
         self._drop_objetivo = None  # (item, 'arriba'|'abajo') — ver paintEvent
+        self._en_seleccion_programatica = False  # ver seleccionar_renglon_por_id
+
+    def _on_seleccion_cambiada(self):
+        """Emite el renglon_id de la fila seleccionada (o None) — el
+        mixin lo usa para resaltar el trazo de esa medición en el plano
+        CAD (traza tabla→plano). No se emite si la selección la disparó
+        seleccionar_renglon_por_id (traza inversa plano→tabla), para no
+        generar un eco de señales entre plano y tabla."""
+        if self._en_seleccion_programatica:
+            return
+        items = self.selectedItems()
+        rid = self._renglon_ids.get(id(items[0])) if items else None
+        self.renglon_seleccionado.emit(rid)
+
+    def seleccionar_renglon_por_id(self, renglon_id: int):
+        """Selecciona en la tabla el renglón dado — traza inversa
+        plano→tabla: al clickear un trazo en el visor CAD, resalta su
+        fila correspondiente aquí."""
+        for item_id, rid in self._renglon_ids.items():
+            if rid != renglon_id:
+                continue
+            for i in range(self.topLevelItemCount()):
+                it = self.topLevelItem(i)
+                if id(it) == item_id:
+                    self._en_seleccion_programatica = True
+                    self.setCurrentItem(it)
+                    self.scrollToItem(it)
+                    self._en_seleccion_programatica = False
+                    return
 
     def poblar(self, renglones: list[dict], seleccionar_id: int | None = None):
         """Llena la tabla con renglones del generador.
@@ -120,31 +202,36 @@ class TablaGenerador(TreeTableWidget):
         "linea": "Línea", "polilinea": "Polilínea", "area": "Área",
         "punto": "Punto", "contador": "Contador",
     }
+    _CAMPO_A_COLUMNA = {"veces": 2, "largo": 3, "ancho": 4, "alto": 5}
 
     def _marcar_origen_cad(self, item, rn: dict):
-        """Ícono de regla en Eje (col 0) para renglones medidos con una
-        herramienta CAD (ver aplicar_medicion / _on_cad_measurement en
-        mixins/generador.py) — para poder distinguir a simple vista un
-        renglón medido del dibujo de uno tecleado a mano, y el tooltip
-        trae el detalle exacto (tipo de medición + los puntos del
-        dibujo donde se tomó) para poder auditarlo sin tener que ir a
-        buscar nada en la base de datos.
+        """Ícono de regla junto al número de CADA celda que tenga su
+        propia medición CAD (Veces/Largo/Ancho/Alto pueden venir cada
+        una de una línea distinta — ver medidas_efectivas) — para poder
+        distinguir a simple vista qué dato viene del plano en vez de
+        haberse tecleado a mano. El tooltip trae el detalle exacto
+        (tipo de medición, archivo de origen, puntos) para poder
+        auditarlo sin ir a buscar nada en la base de datos.
         """
         if rn.get("origen") != "cad":
             return
-        item.setIcon(0, icono("ruler", 16))
-        tipo = self._NOMBRE_TIPO_CAD.get(rn.get("cad_tipo_medicion"), rn.get("cad_tipo_medicion") or "?")
-        detalle = f"Medido en CAD — {tipo}"
-        geom = rn.get("cad_geometria")
-        if geom:
-            import json
-            try:
-                puntos = json.loads(geom)
+        medidas = medidas_efectivas(rn)
+        item.setData(0, CAD_MEDIDAS_ROLE, medidas)
+        for campo, info in medidas.items():
+            col = self._CAMPO_A_COLUMNA.get(campo)
+            if col is None:
+                continue
+            tipo = self._NOMBRE_TIPO_CAD.get(info.get("tipo"), info.get("tipo") or "?")
+            detalle = f"Medido en CAD — {tipo}"
+            archivo = info.get("archivo")
+            if archivo:
+                detalle += f"\nArchivo: {archivo}"
+            puntos = info.get("puntos") or []
+            if puntos:
                 coords = "; ".join(f"({x:.2f}, {y:.2f})" for x, y in puntos)
                 detalle += f"\nPuntos: {coords}"
-            except (ValueError, TypeError):
-                pass
-        item.setToolTip(0, detalle)
+            item.setIcon(col, icono("ruler", 14))
+            item.setToolTip(col, detalle)
 
     def _add_empty_row(self):
         item = self.add_row(
@@ -373,14 +460,25 @@ class TablaGenerador(TreeTableWidget):
             self.renglon_nuevo.emit(campos)
 
     def aplicar_medicion(self, valor: float, modo: str = "set", *,
-                          tipo_cad: str | None = None, puntos: list | None = None) -> bool:
-        """Escribe un valor medido en el CAD dentro de la celda actualmente
-        seleccionada (Veces, Largo, Ancho o Alto).
+                          tipo_cad: str | None = None, puntos: list | None = None,
+                          archivo: str | None = None, col: int | None = None) -> int | None:
+        """Escribe un valor medido en el CAD dentro de una celda del
+        renglón actualmente seleccionado (Veces, Largo, Ancho o Alto).
+
+        `col`: columna destino explícita (2=Veces, 3=Largo, 4=Ancho,
+        5=Alto) — la pasa el combo "Medir hacia" del panel CAD (ver
+        _on_cad_measurement en mixins/generador.py). Si se omite, cae en
+        currentColumn() por compatibilidad, pero eso es justo lo que
+        causaba que toda medición terminara en la última celda que
+        hubiera tenido el foco en la tabla ANTES de perderlo al clickear
+        el visor — con `col` explícito ya no depende de ese estado.
 
         `modo="set"` sobrescribe (línea/polilínea/área); `modo="sumar"`
         acumula sobre el valor ya presente (punto/conteo — cada clic suma 1).
-        Devuelve False si no hay una celda válida seleccionada, para que
-        quien llama pueda avisar al usuario que debe elegir una celda.
+        Devuelve el renglon_id afectado, o None si no hay una celda válida
+        seleccionada (para que quien llama pueda avisar al usuario que
+        debe elegir una celda, o para saber a qué renglón mostrarle los
+        grips de edición justo después de medir).
 
         `tipo_cad` + `puntos`: cuando la medición viene de una herramienta
         CAD (ver _on_cad_measurement en mixins/generador.py), además del
@@ -388,16 +486,21 @@ class TablaGenerador(TreeTableWidget):
         el dibujo (origen="cad", cad_tipo_medicion, cad_geometria en JSON)
         — para poder auditar después de dónde salió cada renglón, en vez
         de solo tener un número sin rastro de su origen.
+
+        `archivo`: nombre del DXF activo al momento de medir
+        (cad_origen_archivo) — un generador solo liga un plano a la vez,
+        así que si más adelante se reemplaza por otro, esto deja
+        registro de en qué archivo se midió originalmente cada renglón.
         """
         item = self.currentItem()
-        col = self.currentColumn()
+        col = col if col is not None else self.currentColumn()
         if item is None or col not in COLUMNAS_MEDIBLES:
-            return False
+            return None
         if item.data(0, EMPTY_ROLE):
-            return False
+            return None
         renglon_id = self._renglon_ids.get(id(item))
         if renglon_id is None:
-            return False
+            return None
 
         if modo == "sumar":
             try:
@@ -413,11 +516,27 @@ class TablaGenerador(TreeTableWidget):
         campo = {2: "veces", 3: "largo", 4: "ancho", 5: "alto"}.get(col)
         if campo and tipo_cad:
             import json
+            # Medidas de las OTRAS celdas de este renglón (ej. si Largo ya
+            # se midió antes) — se fusiona, nunca se pisa: antes de v12,
+            # medir Ancho después de Largo sobrescribía la única columna
+            # de geometría del renglón entero y borraba el trazo de Largo.
+            medidas = dict(item.data(0, CAD_MEDIDAS_ROLE) or {})
+            if tipo_cad == "contador":
+                # A diferencia de línea/polilínea/área (un solo trazo que se
+                # sobrescribe entero), el contador se arma de MUCHOS clics
+                # sueltos sobre la misma celda — hay que ACUMULAR los puntos
+                # de cada clic (si solo se guardara el último, se perdería
+                # el registro de dónde estaban los elementos anteriores).
+                anteriores = (medidas.get(campo) or {}).get("puntos") or []
+                puntos_finales = list(anteriores) + list(puntos or [])
+            else:
+                puntos_finales = list(puntos or [])
+            medidas[campo] = {"tipo": tipo_cad, "puntos": puntos_finales, "archivo": archivo}
+            item.setData(0, CAD_MEDIDAS_ROLE, medidas)
             campos = {
                 campo: nuevo,
                 "origen": "cad",
-                "cad_tipo_medicion": tipo_cad,
-                "cad_geometria": json.dumps(puntos or []),
+                "cad_medidas": json.dumps(medidas),
             }
             # TablaGenerador nunca llama a self._api directo — siempre
             # emite y deja que el mixin (que sí lo tiene) persista. Se
@@ -430,4 +549,4 @@ class TablaGenerador(TreeTableWidget):
             self.renglon_editado.emit(renglon_id, campos)
         else:
             item.setText(col, texto)  # dispara itemChanged → _on_item_changed → persiste
-        return True
+        return renglon_id

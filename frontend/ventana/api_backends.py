@@ -8,16 +8,134 @@ como `if self._use_http: ... else: ...` dentro de cada método de Api.
 Cada backend implementa el mismo conjunto de métodos que expone Api.
 Api delega al backend activo en vez de repetir el if/else en cada método.
 
-Migración en progreso — ver docs/DUPLICACION_Y_DEUDA.md. Por ahora cubre
-FACTORES DE SOBRECOSTO e INSUMOS; el resto de Api sigue con el patrón
-viejo hasta terminar la migración sección por sección.
+Contrato normativo: ToqueApiBackend (Protocol) — ver
+docs/ARQUITECTURA_SERVICIOS.md R1-R9. Ambos backends deben implementar
+exactamente esa interfaz. Fase 0 completa; fases 1-5 en progreso.
+
+Actualizado: 2026-08-30 19:45 (hora local)
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import httpx
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from frontend.ventana.api import Api
+
+
+@runtime_checkable
+class ToqueApiBackend(Protocol):
+    """Contrato que cumplen _BackendLocal y _BackendHTTP.
+
+    Reglas de firma (obligatorias para TODO método nuevo, ver
+    docs/ARQUITECTURA_SERVICIOS.md §3-§4):
+    - Parámetros por id (int), nunca por texto/clave.
+    - Retornos JSON-serializables: dict | list[dict] | int | float | str | bool | None.
+      Decimal se transfiere como str y se reconstruye en el lado HTTP.
+    - Sin azúcar de kwargs en la firma: campos explícitos.
+
+    Lista viva — crece al migrar cada sección (Fase 2). Los ~31 métodos
+    de abajo ya delegan; los ~40 con `if self._use_http:` inline en api.py
+    se incorporan aquí al migrarlos sección por sección.
+    """
+
+    # ── FACTORES DE SOBRECOSTO ──────────────────────────────────
+    def factores_sobrecosto_obtener(self) -> dict: ...
+    def factores_sobrecosto_guardar(self, valores: dict) -> float: ...
+
+    # ── INSUMOS / RECÁLCULO / RASTREO ───────────────────────────
+    def insumos(self, tipo_clave: str | None = None) -> list[dict]: ...
+    def insumo_por_hash(self, hash_val: str) -> dict | None: ...
+    def recalcular_proyecto(self) -> dict: ...
+    def reindexar_proyecto(self) -> None: ...
+    def rastrear_insumo(self, insumo_id: int) -> list[dict]: ...
+    def proyecto_guardar(self, campos: dict) -> None: ...
+
+    # ── VARIABLES DE FÓRMULA ────────────────────────────────────
+    def variables_listar(self) -> list[dict]: ...
+    def variables_crear(self, nombre: str, expresion: str, descripcion: str) -> int: ...
+    def variables_actualizar(self, variable_id: int, campos: dict) -> None: ...
+    def variables_eliminar(self, variable_id: int) -> dict: ...
+    def variables_resueltas(self) -> dict: ...
+    def formula_evaluar(self, expr: str): ...
+
+    # ── APU ─────────────────────────────────────────────────────
+    def apu(self, nodo_id: int | None, insumo_id: int | None) -> dict | None: ...
+    def resolver_matriz(self, nodo_id: int | None, insumo_id: int | None) -> tuple[int | None, str]: ...
+    def apu_actualizar_operador(self, comp_id: int, operador: str) -> None: ...
+    def apu_agregar_componente(self, matriz_id: int, insumo_id: int,
+                                valor: float = 1.0, operador: str = "*") -> int: ...
+    def apu_actualizar_valor(self, comp_id: int, valor: float,
+                              formula: str | None = None) -> None: ...
+    def apu_reasignar_componente(self, comp_id: int, nuevo_insumo_id: int) -> None: ...
+    def apu_actualizar_precio_componente(self, insumo_id: int, precio: float) -> None: ...
+    def insumo_ids_con_apu(self) -> set[int]: ...
+
+    # ── GENERADORES ─────────────────────────────────────────────
+    def generadores_por_concepto(self, concepto_id: int | None) -> list[dict]: ...
+    def generador_por_id(self, generador_id: int) -> dict | None: ...
+    def generador_crear(self, nombre: str, concepto_id: int | None, unidad: str | None) -> int: ...
+    def generador_actualizar_cad(self, generador_id: int, path: str | None) -> None: ...
+    def generador_renglones(self, generador_id: int) -> list[dict]: ...
+    def generador_renglon_guardar(self, generador_id: int, renglon_id: int | None, campos: dict) -> int: ...
+    def generador_renglon_eliminar(self, renglon_id: int) -> None: ...
+    def generador_mover_renglones(self, ids: list[int], nuevo_generador_id: int,
+                                   antes_de_id: int | None, copiar: bool) -> bool: ...
+
+    # ── INDIRECTOS ──────────────────────────────────────────────
+    def indirectos_lista(self, tipo: str | None = None) -> list[dict]: ...
+    def indirectos_guardar(self, registro_id: int, campos: dict) -> None: ...
+    def indirectos_insertar(self, campos: dict) -> int: ...
+    def indirectos_eliminar(self, registro_id: int) -> None: ...
+    def indirectos_calcular_totales(self) -> dict: ...
+    def indirectos_cargar_plantilla(self, tipo: str) -> int: ...
+    def indirectos_aplicar_a_sobrecosto(self) -> dict: ...
+
+    # ── PRESUPUESTO ─────────────────────────────────────────────
+    def presupuesto_arbol(self, extra: bool = False) -> list[dict]: ...
+    def nodo_total(self, nodo_id: int) -> float: ...
+    def concepto_actualizar_cantidad(self, concepto_id: int, cantidad: float,
+                                      formula: str | None = None) -> None: ...
+    def concepto_reasignar_insumo(self, concepto_id: int, nuevo_insumo_id: int) -> None: ...
+    def nodo_descripcion_actual(self, nodo_id: int) -> str: ...
+    def concepto_actualizar_descripcion(self, nodo_id: int, descripcion: str) -> None: ...
+    def concepto_actualizar_unidad(self, nodo_id: int, unidad: str) -> None: ...
+    def agrupador_actualizar_descripcion(self, nodo_id: int, descripcion: str) -> None: ...
+    def eliminar_nodo(self, nodo_id: int) -> None: ...
+    def agregar_nodo(self, tipo: str, padre_id: int | None = None,
+                      descripcion: str = "", insumo_id: int | None = None,
+                      cantidad: float | None = None, orden: float | None = None,
+                      antes_de: int | None = None, es_extra: bool = False) -> int: ...
+    def todos_concepto_ids(self) -> list[int]: ...
+    def conceptos_planos(self) -> list[dict]: ...
+
+    # ── EXPLOSIÓN ───────────────────────────────────────────────
+    def explotar(self, concepto_ids: list[int], nivel: str, tipos_ids: list[int]) -> tuple[list[dict], float]: ...
+    def conceptos_bajo_nodo(self, nodo_id: int) -> list[int]: ...
+
+    # ── CATÁLOGOS (FAMILIAS / SUBFAMILIAS) ──────────────────────
+    def familias(self) -> list[dict]: ...
+    def familia_insertar(self, nombre: str) -> int: ...
+    def subfamilias(self, familia_id: int) -> list[dict]: ...
+    def subfamilia_insertar(self, familia_id: int, nombre: str) -> int: ...
+
+    # ── INSUMOS (MUTACIÓN) ──────────────────────────────────────
+    def insumo_actualizar_descripcion(self, insumo_id: int, descripcion: str, usuario_id: int = 1) -> None: ...
+    def insumo_actualizar_precio(self, insumo_id: int, precio: float, usuario_id: int = 1) -> None: ...
+    def insumo_actualizar_precios(self, insumo_id: int, costo_mn: float, costo_me: float, usuario_id: int = 1) -> None: ...
+    def insumo_actualizar_campo(self, insumo_id: int, campo: str, valor, usuario_id: int = 1) -> None: ...
+    def insumo_insertar(self, tipo_id: int, descripcion: str, descripcion_corta: str | None = None,
+                         unidad: str | None = None, costo: float = 0.0, costo_me: float = 0.0,
+                         es_compuesto: int = 0, familia_id: int | None = None,
+                         subfamilia_id: int | None = None, usuario_id: int = 1) -> int: ...
+    def insumo_por_id(self, insumo_id: int) -> dict | None: ...
+    def eliminar_insumo(self, insumo_id: int) -> None: ...
+
+    # ── UNDO / SESIÓN ───────────────────────────────────────────
+    def deshacer(self, usuario_id: int = 1) -> bool: ...
+    def rehacer(self, usuario_id: int = 1) -> bool: ...
+    def iniciar_sesion_undo(self) -> str | None: ...
+    def cerrar_sesion_undo(self) -> None: ...
 
 
 def _enriquecer_detalle_apu(data: dict, ids_con_apu: set[int]) -> dict:
@@ -111,19 +229,21 @@ class _BackendLocal:
         from backend.database.repos import InsumoRepo
         return InsumoRepo(self._api._conn).donde_se_usa(insumo_id)
 
+    def reindexar_proyecto(self) -> None:
+        """Recalcula wbs/nivel de todo el árbol desde padre_id+orden (ver
+        NodoRepo.reindexar()). Útil para proyectos con wbs desactualizado
+        (ej. importados con una versión anterior que dejaba el código
+        crudo de OPUS en vez de "1.1", "1.1.3"…)."""
+        from backend.database.repos import NodoRepo
+        from backend.database.event_bus import ProyectoRecalculado
+        with self._api._ds.transaccion():
+            NodoRepo(self._api._conn).reindexar(self._api._pid)
+        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
+
     def proyecto_guardar(self, campos: dict) -> None:
         self._api._ds.actualizar("proyectos", self._api._pid, **campos)
 
     # ── APU ──────────────────────────────────────────────────────────
-    # Los 5 métodos de escritura de apu_matrices (actualizar_operador,
-    # agregar_componente, actualizar_valor, reasignar_componente,
-    # actualizar_precio_componente) siguen con el patrón viejo
-    # `if self._use_http:` inline dentro de Api — no se migraron a
-    # _BackendLocal/_BackendHTTP en esta ronda porque ya funcionan en
-    # ambos modos tal cual están. Solo la lectura compuesta (apu(),
-    # resolver_matriz()) se migra aquí, porque es la única que combina
-    # varias consultas en una sola respuesta (matriz_id + detalle +
-    # enriquecimiento de UI) — el resto son CRUD de una fila.
 
     def resolver_matriz(self, nodo_id: int | None, insumo_id: int | None) -> tuple[int | None, str]:
         from backend.database.repos import NodoRepo, InsumoRepo, ApuMatricesRepo
@@ -155,6 +275,77 @@ class _BackendLocal:
             return None, ""
 
         return None, ""
+
+    def apu_actualizar_operador(self, comp_id: int, operador: str) -> None:
+        from backend.database.event_bus import ProyectoRecalculado
+        if operador not in ('*', '/'):
+            raise ValueError("Operador debe ser '*' o '/'")
+        from backend.database.repos import RecalculoRepo
+        with self._api._ds.transaccion():
+            self._api._ds.actualizar("apu_matrices", comp_id, operador=operador)
+            RecalculoRepo(self._api._conn).recalcular_proyecto(self._api._pid)
+        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
+
+    def apu_agregar_componente(self, matriz_id: int, insumo_id: int,
+                                valor: float = 1.0, operador: str = "*") -> int:
+        from backend.database.event_bus import ProyectoRecalculado
+        from backend.database.repos import ApuMatricesRepo
+        orden = ApuMatricesRepo(self._api._conn).proximo_orden(matriz_id)
+        campos = {
+            "matriz_id": matriz_id, "insumo_id": insumo_id,
+            "valor": valor, "operador": operador,
+            "precio": 0.0, "orden": orden, "formula": None,
+        }
+        from backend.database.repos import RecalculoRepo
+        with self._api._ds.transaccion():
+            nuevo_id = self._api._ds.insertar("apu_matrices", **campos)
+            RecalculoRepo(self._api._conn).recalcular_proyecto(self._api._pid)
+        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
+        return nuevo_id
+
+    def apu_actualizar_valor(self, comp_id: int, valor: float,
+                              formula: str | None = None) -> None:
+        from backend.database.event_bus import ProyectoRecalculado
+        if valor is None or valor < 0:
+            raise ValueError("La cantidad no puede ser negativa")
+        if formula is not None and formula.strip():
+            from backend.formulas import evaluar_formula, ErrorFormula
+            try:
+                resuelta = evaluar_formula(formula.strip(), self.variables_resueltas())
+                valor = float(resuelta)
+            except ErrorFormula as e:
+                raise ValueError(str(e))
+        else:
+            formula = None
+        from backend.database.repos import ApuMatricesRepo, RecalculoRepo
+        if valor == 0:
+            comp = ApuMatricesRepo(self._api._conn).buscar(comp_id)
+            if comp and comp["operador"] == "/":
+                raise ValueError("La cantidad no puede ser cero con operador división (división por cero)")
+        with self._api._ds.transaccion():
+            campos = {"valor": valor}
+            if formula is not None:
+                campos["formula"] = formula
+            self._api._ds.actualizar("apu_matrices", comp_id, **campos)
+            RecalculoRepo(self._api._conn).recalcular_proyecto(self._api._pid)
+        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
+
+    def apu_reasignar_componente(self, comp_id: int, nuevo_insumo_id: int) -> None:
+        from backend.database.event_bus import ProyectoRecalculado
+        from backend.database.repos import RecalculoRepo
+        with self._api._ds.transaccion():
+            self._api._ds.actualizar("apu_matrices", comp_id, insumo_id=nuevo_insumo_id)
+            RecalculoRepo(self._api._conn).recalcular_proyecto(self._api._pid)
+        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
+
+    def apu_actualizar_precio_componente(self, insumo_id: int, precio: float) -> None:
+        # No escribe en apu_matrices.precio (lo sobreescribe el recálculo);
+        # delega en el insumo — la vía canónica.
+        self._api.insumo_actualizar_precio(insumo_id, precio)
+
+    def insumo_ids_con_apu(self) -> set[int]:
+        from backend.database.repos import InsumoRepo
+        return InsumoRepo(self._api._conn).ids_con_apu(self._api._pid)
 
     # ── VARIABLES DE FÓRMULA ─────────────────────────────────────────
 
@@ -262,11 +453,8 @@ class _BackendLocal:
                         ds.actualizar("variables_formula", v["id"], expresion=nueva_expr)
                         afectadas["variables"].append(v["nombre"])
 
-                conceptos = conn.execute(
-                    "SELECT id, formula FROM estructura_presupuesto "
-                    "WHERE proyecto_id = ? AND formula IS NOT NULL AND formula != '' AND activo = 1",
-                    [pid],
-                ).fetchall()
+                from backend.database.repos import NodoRepo
+                conceptos = NodoRepo(conn).con_formula_por_proyecto(pid)
                 for row in conceptos:
                     if not _referencia(row["formula"]):
                         continue
@@ -478,6 +666,268 @@ class _BackendLocal:
             "afectados_por_duracion_faltante": resultado_totales["afectados_por_duracion_faltante"],
         }
 
+    # ── PRESUPUESTO ────────────────────────────────────────────────
+
+    def presupuesto_arbol(self, extra: bool = False) -> list[dict]:
+        from backend.database.repos import NodoRepo
+        return NodoRepo(self._api._conn).arbol(self._api._pid, extra=extra)
+
+    def nodo_total(self, nodo_id: int) -> float:
+        from backend.database.repos import NodoRepo
+        nodo = NodoRepo(self._api._conn).buscar(nodo_id)
+        return (nodo.get("total") or 0) if nodo else 0
+
+    def concepto_actualizar_cantidad(self, concepto_id: int, cantidad: float,
+                                      formula: str | None = None) -> None:
+        from backend.database.event_bus import ProyectoRecalculado
+        if cantidad < 0:
+            raise ValueError("La cantidad no puede ser negativa")
+        if formula is not None and formula.strip():
+            from backend.formulas import evaluar_formula, ErrorFormula
+            try:
+                resuelta = evaluar_formula(formula.strip(), self.variables_resueltas())
+                cantidad = float(resuelta)
+            except ErrorFormula as e:
+                raise ValueError(str(e))
+        else:
+            formula = None
+        from backend.database.repos import NodoRepo
+        with self._api._ds.transaccion():
+            campos = {"cantidad": cantidad}
+            if formula is not None:
+                campos["formula"] = formula
+            self._api._ds.actualizar("estructura_presupuesto", concepto_id, **campos)
+            NodoRepo(self._api._conn).recalcular_desde(concepto_id)
+        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
+
+    def concepto_reasignar_insumo(self, concepto_id: int, nuevo_insumo_id: int) -> None:
+        from backend.database.event_bus import ProyectoRecalculado
+        from backend.database.repos import RecalculoRepo
+        with self._api._ds.transaccion():
+            self._api._ds.actualizar("estructura_presupuesto", concepto_id,
+                                      insumo_id=nuevo_insumo_id)
+            RecalculoRepo(self._api._conn).recalcular_proyecto(self._api._pid)
+        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
+
+    def nodo_descripcion_actual(self, nodo_id: int) -> str:
+        from backend.database.repos import NodoRepo, InsumoRepo
+        nodo = NodoRepo(self._api._conn).buscar(nodo_id)
+        if not nodo:
+            return ""
+        if nodo.get("insumo_id"):
+            insumo = InsumoRepo(self._api._conn).buscar(nodo["insumo_id"])
+            return (insumo or {}).get("descripcion", "") or ""
+        return nodo.get("descripcion", "") or ""
+
+    def concepto_actualizar_descripcion(self, nodo_id: int, descripcion: str) -> None:
+        from backend.database.repos import NodoRepo
+        nodo = NodoRepo(self._api._conn).buscar(nodo_id)
+        if nodo and nodo.get("insumo_id"):
+            # Reutiliza la lógica de insumo (hash/colisión) a través de Api
+            # para no duplicarla aquí. Api la delegará al backend activo.
+            self._api.insumo_actualizar_descripcion(nodo["insumo_id"], descripcion)
+
+    def concepto_actualizar_unidad(self, nodo_id: int, unidad: str) -> None:
+        from backend.database.repos import NodoRepo
+        nodo = NodoRepo(self._api._conn).buscar(nodo_id)
+        if nodo and nodo.get("insumo_id"):
+            self._api._ds.actualizar("insumos", nodo["insumo_id"], unidad=unidad)
+
+    def agrupador_actualizar_descripcion(self, nodo_id: int, descripcion: str) -> None:
+        self._api._ds.actualizar("estructura_presupuesto", nodo_id, descripcion=descripcion)
+
+    def eliminar_nodo(self, nodo_id: int) -> None:
+        from backend.database.event_bus import ProyectoRecalculado
+        from backend.database.repos import RecalculoRepo
+        with self._api._ds.transaccion():
+            self._api._ds.eliminar("estructura_presupuesto", nodo_id)
+            RecalculoRepo(self._api._conn).recalcular_proyecto(self._api._pid)
+        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
+
+    def agregar_nodo(self, tipo: str, padre_id: int | None = None,
+                      descripcion: str = "", insumo_id: int | None = None,
+                      cantidad: float | None = None, orden: float | None = None,
+                      antes_de: int | None = None, es_extra: bool = False) -> int:
+        from backend.database.event_bus import ProyectoRecalculado
+        from backend.database.repos import NodoRepo, RecalculoRepo
+        repo = NodoRepo(self._api._conn)
+        if orden is None and antes_de is not None:
+            ref = repo.buscar(antes_de)
+            if ref:
+                orden = ref["orden"] - 0.5
+        if orden is None:
+            orden = repo.proximo_orden(self._api._pid, padre_id)
+        with self._api._ds.transaccion():
+            nuevo_id = repo.insert({
+                "proyecto_id": self._api._pid,
+                "padre_id":    padre_id,
+                "wbs":         "",
+                "nivel":       0,
+                "tipo":        tipo,
+                "descripcion": descripcion or "",
+                "orden":       orden,
+                "insumo_id":   insumo_id,
+                "cantidad":    cantidad,
+                "total":       0.0,
+                "es_extra":    1 if es_extra else 0,
+                "estado":      0,
+                "activo":      1,
+                "creado_por":  1,
+            })
+            repo.reindexar(self._api._pid)
+            RecalculoRepo(self._api._conn).recalcular_proyecto(self._api._pid)
+        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
+        return nuevo_id
+
+    def todos_concepto_ids(self) -> list[int]:
+        from backend.database.repos import NodoRepo
+        return NodoRepo(self._api._conn).ids_por_tipo(self._api._pid, tipo="concepto")
+
+    def conceptos_planos(self) -> list[dict]:
+        from backend.database.repos import NodoRepo
+        return NodoRepo(self._api._conn).todos(self._api._pid, tipo="concepto")
+
+    # ── EXPLOSIÓN ──────────────────────────────────────────────────
+
+    def explotar(self, concepto_ids: list[int], nivel: str, tipos_ids: list[int]) -> tuple[list[dict], float]:
+        from backend.database.repos import ExplosionRepo
+        return ExplosionRepo(self._api._conn).calcular(
+            proyecto_id=self._api._pid,
+            concepto_ids=concepto_ids,
+            nivel=nivel,
+            tipos_ids=tipos_ids,
+        )
+
+    def conceptos_bajo_nodo(self, nodo_id: int) -> list[int]:
+        from backend.database.repos import NodoRepo
+        descendientes = NodoRepo(self._api._conn).descendientes(nodo_id)
+        return [d["id"] for d in descendientes if d.get("tipo") == "concepto"]
+
+    # ── CATÁLOGOS (FAMILIAS / SUBFAMILIAS) ─────────────────────────
+
+    def familias(self) -> list[dict]:
+        from backend.database.repos import FamiliaRepo
+        return FamiliaRepo(self._api._conn).todas()
+
+    def familia_insertar(self, nombre: str) -> int:
+        return self._api._ds.insertar("familias", nombre=nombre)
+
+    def subfamilias(self, familia_id: int) -> list[dict]:
+        from backend.database.repos import SubfamiliaRepo
+        return SubfamiliaRepo(self._api._conn).por_familia(familia_id)
+
+    def subfamilia_insertar(self, familia_id: int, nombre: str) -> int:
+        return self._api._ds.insertar("subfamilias", familia_id=familia_id, nombre=nombre)
+
+    # ── INSUMOS (MUTACIÓN) ─────────────────────────────────────
+
+    def insumo_actualizar_descripcion(self, insumo_id: int, descripcion: str, usuario_id: int = 1) -> None:
+        from backend.database.core import generar_hash
+        descripcion = descripcion.strip()
+        if not descripcion:
+            raise ValueError("La descripción no puede estar vacía")
+        nuevo_hash = generar_hash(descripcion)
+        from backend.database.repos import InsumoRepo
+        existente = InsumoRepo(self._api._conn).buscar_por_hash(nuevo_hash, self._api._pid)
+        if existente and existente["id"] != insumo_id:
+            raise ValueError(
+                f"Ya existe un insumo con esa descripción: "
+                f"[{existente['id']}] {existente['descripcion']}"
+            )
+        self._api._ds.actualizar("insumos", insumo_id, descripcion=descripcion, hash=nuevo_hash)
+
+    def insumo_actualizar_precio(self, insumo_id: int, precio: float, usuario_id: int = 1) -> None:
+        from backend.database.event_bus import ProyectoRecalculado
+        if precio < 0:
+            raise ValueError("El precio no puede ser negativo")
+        from backend.database.repos import RecalculoRepo
+        with self._api._ds.transaccion():
+            self._api._ds.actualizar("insumos", insumo_id,
+                                      costo_mn=precio, costo_directo=precio)
+            RecalculoRepo(self._api._conn).recalcular_proyecto(self._api._pid)
+        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
+
+    def insumo_actualizar_precios(self, insumo_id: int, costo_mn: float, costo_me: float, usuario_id: int = 1) -> None:
+        from backend.database.event_bus import ProyectoRecalculado
+        if costo_mn < 0 or costo_me < 0:
+            raise ValueError("Los precios no pueden ser negativos")
+        from backend.database.repos import RecalculoRepo
+        with self._api._ds.transaccion():
+            self._api._ds.actualizar("insumos", insumo_id,
+                                      costo_mn=costo_mn, costo_directo=costo_mn,
+                                      costo_me=costo_me)
+            RecalculoRepo(self._api._conn).recalcular_proyecto(self._api._pid)
+        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
+
+    def insumo_actualizar_campo(self, insumo_id: int, campo: str, valor, usuario_id: int = 1) -> None:
+        from backend.database.repos import RecalculoRepo
+        with self._api._ds.transaccion():
+            self._api._ds.actualizar("insumos", insumo_id, **{campo: valor})
+            if campo == "costo_final":
+                RecalculoRepo(self._api._conn).recalcular_proyecto(self._api._pid)
+        if campo == "costo_final":
+            from backend.database.event_bus import ProyectoRecalculado
+            self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
+
+    def insumo_insertar(self, tipo_id: int, descripcion: str, descripcion_corta: str | None = None,
+                         unidad: str | None = None, costo: float = 0.0, costo_me: float = 0.0,
+                         es_compuesto: int = 0, familia_id: int | None = None,
+                         subfamilia_id: int | None = None, usuario_id: int = 1) -> int:
+        from backend.database.core import generar_hash
+        nuevo_hash = generar_hash(descripcion) if descripcion else None
+        from backend.database.repos import InsumoRepo
+        if nuevo_hash:
+            existente = InsumoRepo(self._api._conn).buscar_por_hash(nuevo_hash, self._api._pid)
+            if existente:
+                raise ValueError(
+                    f"Ya existe un insumo con esa descripción: "
+                    f"[{existente['id']}] {existente['descripcion']}"
+                )
+        campos = dict(
+            proyecto_id=self._api._pid,
+            tipo_id=tipo_id,
+            descripcion=descripcion,
+            descripcion_corta=descripcion_corta,
+            unidad=unidad,
+            costo_mn=costo,
+            costo_me=costo_me,
+            costo_directo=costo,
+            costo_final=costo,
+            es_compuesto=es_compuesto,
+            hash=nuevo_hash,
+        )
+        if familia_id is not None:
+            campos["familia_id"] = familia_id
+        if subfamilia_id is not None:
+            campos["subfamilia_id"] = subfamilia_id
+        return self._api._ds.insertar("insumos", **campos)
+
+    def insumo_por_id(self, insumo_id: int) -> dict | None:
+        from backend.database.repos import InsumoRepo
+        return InsumoRepo(self._api._conn).buscar(insumo_id)
+
+    def eliminar_insumo(self, insumo_id: int) -> None:
+        from backend.database.event_bus import ProyectoRecalculado
+        from backend.database.repos import RecalculoRepo
+        with self._api._ds.transaccion():
+            self._api._ds.eliminar("insumos", insumo_id)
+            RecalculoRepo(self._api._conn).recalcular_proyecto(self._api._pid)
+        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
+
+    # ── UNDO / SESIÓN ──────────────────────────────────────────
+
+    def deshacer(self, usuario_id: int = 1) -> bool:
+        return self._api._ds.deshacer(usuario_id, proyecto_id=self._api._pid)
+
+    def rehacer(self, usuario_id: int = 1) -> bool:
+        return self._api._ds.rehacer(usuario_id, proyecto_id=self._api._pid)
+
+    def iniciar_sesion_undo(self) -> str | None:
+        return self._api._ds.iniciar_sesion()
+
+    def cerrar_sesion_undo(self) -> None:
+        self._api._ds.cerrar_sesion()
+
 
 class _BackendHTTP:
     """Implementación vía servidor embebido (ApiCliente)."""
@@ -488,11 +938,12 @@ class _BackendHTTP:
     # ── FACTORES DE SOBRECOSTO ──────────────────────────────────────
 
     def factores_sobrecosto_obtener(self) -> dict:
-        return self._api._http().factores_sobrecosto_obtener()
+        return self._api._http()._get("/factores_sobrecosto")
 
     def factores_sobrecosto_guardar(self, valores: dict) -> float:
         from backend.database.event_bus import FactoresSobrecostoActualizados, ProyectoRecalculado
-        factor = self._api._http().factores_sobrecosto_guardar(valores)
+        r = self._api._http()._post("/factores_sobrecosto", json={"valores": valores})
+        factor = r["factor_total"]
         self._api._ds.emitir(FactoresSobrecostoActualizados(self._api._pid, valores))
         self._api._http().recalcular()
         self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
@@ -501,10 +952,18 @@ class _BackendHTTP:
     # ── INSUMOS ──────────────────────────────────────────────────────
 
     def insumos(self, tipo_clave: str | None = None) -> list[dict]:
-        return self._api._http().insumos(tipo=tipo_clave)
+        params = {}
+        if tipo_clave:
+            params["tipo"] = tipo_clave
+        return self._api._http()._get("/insumos", params=params)
 
     def insumo_por_hash(self, hash_val: str) -> dict | None:
-        return self._api._http().insumo_por_hash(hash_val)
+        try:
+            return self._api._http()._get(f"/insumo_por_hash/{hash_val}")
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return None
+            raise
 
     def recalcular_proyecto(self) -> dict:
         self._api._http().recalcular()
@@ -512,8 +971,13 @@ class _BackendHTTP:
         self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
         return {}
 
+    def reindexar_proyecto(self) -> None:
+        self._api._http().reindexar()
+        from backend.database.event_bus import ProyectoRecalculado
+        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
+
     def rastrear_insumo(self, insumo_id: int) -> list[dict]:
-        return self._api._http().rastrear(insumo_id)
+        return self._api._http()._get(f"/rastrear/{insumo_id}")
 
     def proyecto_guardar(self, campos: dict) -> None:
         # "proyectos" ya es una entidad registrada en crear_registry() —
@@ -528,44 +992,137 @@ class _BackendHTTP:
     # manda como string y aquí se reconstruye.
 
     def variables_listar(self) -> list[dict]:
-        return self._api._http().variables_listar()
+        return self._api._http()._get("/variables")
 
     def variables_crear(self, nombre: str, expresion: str, descripcion: str) -> int:
-        return self._api._http().variables_crear(nombre, expresion, descripcion)
+        try:
+            r = self._api._http()._post("/variables", json={
+                "nombre": nombre, "expresion": expresion, "descripcion": descripcion,
+            })
+            return r["id"]
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 422:
+                raise ValueError(e.response.json().get("detail", str(e))) from e
+            raise
 
     def variables_actualizar(self, variable_id: int, campos: dict) -> None:
-        self._api._http().variables_actualizar(variable_id, campos)
+        try:
+            self._api._http()._post(f"/variables/{variable_id}", json={"campos": campos})
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 422:
+                raise ValueError(e.response.json().get("detail", str(e))) from e
+            raise
 
     def variables_eliminar(self, variable_id: int) -> dict:
-        return self._api._http().variables_eliminar(variable_id)
+        try:
+            return self._api._http()._post(f"/variables/{variable_id}/eliminar")
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 422:
+                raise ValueError(e.response.json().get("detail", str(e))) from e
+            raise
 
     def variables_resueltas(self) -> dict:
         from decimal import Decimal
-        crudo = self._api._http().variables_resueltas()
+        try:
+            crudo = self._api._http()._get("/variables/resueltas")
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 422:
+                raise ValueError(e.response.json().get("detail", str(e))) from e
+            raise
         return {k: Decimal(v) for k, v in crudo.items()}
 
     def formula_evaluar(self, expr: str):
         from decimal import Decimal
-        return Decimal(self._api._http().formula_evaluar(expr))
+        try:
+            r = self._api._http()._post("/variables/evaluar", json={"expresion": expr})
+            return Decimal(r["resultado"])
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 422:
+                raise ValueError(e.response.json().get("detail", str(e))) from e
+            raise
 
     # ── APU ──────────────────────────────────────────────────────────
 
     def apu(self, nodo_id: int | None, insumo_id: int | None) -> dict | None:
-        data = self._api._http().apu_completo(nodo_id, insumo_id)
+        params = {}
+        if nodo_id is not None:
+            params["nodo_id"] = nodo_id
+        if insumo_id is not None:
+            params["insumo_id"] = insumo_id
+        data = self._api._http()._get("/apu_completo", params=params)
         if data.get("matriz_id") is None:
             return None
-        ids_con_apu = self._api.insumo_ids_con_apu()  # ya funciona en HTTP
+        ids_con_apu = self._api.insumo_ids_con_apu()
         return _enriquecer_detalle_apu(data, ids_con_apu)
 
     def resolver_matriz(self, nodo_id: int | None, insumo_id: int | None) -> tuple[int | None, str]:
-        # Reusa /apu_completo (trae más de lo necesario — detalle y
-        # totales que aquí se descartan) en vez de agregar un endpoint
-        # solo para esto. Es aceptable: el propio resolver_matriz() local
-        # ya hace 2-3 queries por concepto sin batchear cuando se llama
-        # en loop (ver explosion.py) — este no es menos eficiente que eso,
-        # solo cambia dónde ocurre el costo.
-        data = self._api._http().apu_completo(nodo_id, insumo_id)
+        params = {}
+        if nodo_id is not None:
+            params["nodo_id"] = nodo_id
+        if insumo_id is not None:
+            params["insumo_id"] = insumo_id
+        data = self._api._http()._get("/apu_completo", params=params)
         return data.get("matriz_id"), data.get("descripcion", "")
+
+    def apu_actualizar_operador(self, comp_id: int, operador: str) -> None:
+        from backend.database.event_bus import ProyectoRecalculado
+        if operador not in ('*', '/'):
+            raise ValueError("Operador debe ser '*' o '/'")
+        self._api._http().actualizar("apu_matrices", comp_id, operador=operador)
+        self._api._http().recalcular()
+        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
+
+    def apu_agregar_componente(self, matriz_id: int, insumo_id: int,
+                                valor: float = 1.0, operador: str = "*") -> int:
+        from backend.database.event_bus import ProyectoRecalculado
+        from backend.database.repos import ApuMatricesRepo
+        orden = ApuMatricesRepo(self._api._conn).proximo_orden(matriz_id)
+        campos = {
+            "matriz_id": matriz_id, "insumo_id": insumo_id,
+            "valor": valor, "operador": operador,
+            "precio": 0.0, "orden": orden, "formula": None,
+        }
+        nuevo_id = self._api._http().insertar("apu_matrices", **campos)
+        self._api._http().recalcular()
+        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
+        return nuevo_id
+
+    def apu_actualizar_valor(self, comp_id: int, valor: float,
+                              formula: str | None = None) -> None:
+        from backend.database.event_bus import ProyectoRecalculado
+        if valor is None or valor < 0:
+            raise ValueError("La cantidad no puede ser negativa")
+        if formula is not None and formula.strip():
+            from backend.formulas import evaluar_formula, ErrorFormula
+            try:
+                resuelta = evaluar_formula(formula.strip(), self.variables_resueltas())
+                valor = float(resuelta)
+            except ErrorFormula as e:
+                raise ValueError(str(e))
+        else:
+            formula = None
+        if valor == 0:
+            comp = self._api._http().buscar("apu_matrices", comp_id)
+            if comp and comp["operador"] == "/":
+                raise ValueError("La cantidad no puede ser cero con operador división (división por cero)")
+        campos = {"valor": valor}
+        if formula is not None:
+            campos["formula"] = formula
+        self._api._http().actualizar("apu_matrices", comp_id, **campos)
+        self._api._http().recalcular()
+        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
+
+    def apu_reasignar_componente(self, comp_id: int, nuevo_insumo_id: int) -> None:
+        from backend.database.event_bus import ProyectoRecalculado
+        self._api._http().actualizar("apu_matrices", comp_id, insumo_id=nuevo_insumo_id)
+        self._api._http().recalcular()
+        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
+
+    def apu_actualizar_precio_componente(self, insumo_id: int, precio: float) -> None:
+        self._api.insumo_actualizar_precio(insumo_id, precio)
+
+    def insumo_ids_con_apu(self) -> set[int]:
+        return set(self._api._http()._get("/insumos_con_apu"))
 
     # ── GENERADORES ──────────────────────────────────────────────────
     # crear/actualizar_cad reusan insertar()/actualizar() genéricos
@@ -574,10 +1131,13 @@ class _BackendHTTP:
     # cascada, no es un CRUD de una fila) — endpoints dedicados.
 
     def generadores_por_concepto(self, concepto_id: int | None) -> list[dict]:
-        return self._api._http().generadores_por_concepto(concepto_id)
+        params = {}
+        if concepto_id is not None:
+            params["concepto_id"] = concepto_id
+        return self._api._http()._get("/generadores", params=params)
 
     def generador_por_id(self, generador_id: int) -> dict | None:
-        return self._api._http().generador_por_id(generador_id)
+        return self._api._http()._get(f"/generadores/{generador_id}")
 
     def generador_crear(self, nombre: str, concepto_id: int | None, unidad: str | None) -> int:
         campos = {"proyecto_id": self._api._pid, "nombre": nombre, "concepto_id": concepto_id}
@@ -589,17 +1149,25 @@ class _BackendHTTP:
         self._api._http().actualizar("generadores", generador_id, cad_archivo_path=path)
 
     def generador_renglones(self, generador_id: int) -> list[dict]:
-        return self._api._http().generador_renglones(generador_id)
+        return self._api._http()._get(f"/generadores/{generador_id}/renglones")
 
     def generador_renglon_guardar(self, generador_id: int, renglon_id: int | None, campos: dict) -> int:
-        return self._api._http().generador_renglon_guardar(generador_id, renglon_id, campos)
+        r = self._api._http()._post(
+            f"/generadores/{generador_id}/renglon",
+            json={"renglon_id": renglon_id, "campos": campos},
+        )
+        return r["renglon_id"]
 
     def generador_renglon_eliminar(self, renglon_id: int) -> None:
-        self._api._http().generador_renglon_eliminar(renglon_id)
+        self._api._http()._post(f"/generadores/renglon/{renglon_id}/eliminar")
 
     def generador_mover_renglones(self, ids: list[int], nuevo_generador_id: int,
                                    antes_de_id: int | None, copiar: bool) -> bool:
-        return self._api._http().generador_mover_renglones(ids, nuevo_generador_id, antes_de_id, copiar)
+        r = self._api._http()._post(
+            "/generadores/mover_renglones",
+            json={"ids": ids, "nuevo_generador_id": nuevo_generador_id, "antes_de_id": antes_de_id, "copiar": copiar},
+        )
+        return r["ok"]
 
     # ── INDIRECTOS ───────────────────────────────────────────────────
     # guardar/insertar/eliminar reusan actualizar()/insertar()/eliminar()
@@ -611,7 +1179,10 @@ class _BackendHTTP:
     # dedicados — igual que ya pasa con factores_sobrecosto_guardar().
 
     def indirectos_lista(self, tipo: str | None = None) -> list[dict]:
-        return self._api._http().indirectos_lista(tipo)
+        params = {}
+        if tipo:
+            params["tipo"] = tipo
+        return self._api._http()._get("/indirectos", params=params)
 
     def indirectos_guardar(self, registro_id: int, campos: dict) -> None:
         self._api._http().actualizar("indirectos", registro_id, **campos)
@@ -629,10 +1200,238 @@ class _BackendHTTP:
         self._api._http().eliminar("indirectos", registro_id)
 
     def indirectos_calcular_totales(self) -> dict:
-        return self._api._http().indirectos_calcular_totales()
+        return self._api._http()._post("/indirectos/calcular_totales")
 
     def indirectos_cargar_plantilla(self, tipo: str) -> int:
-        return self._api._http().indirectos_cargar_plantilla(tipo)
+        r = self._api._http()._post("/indirectos/cargar_plantilla", json={"tipo": tipo})
+        return r["insertados"]
 
     def indirectos_aplicar_a_sobrecosto(self) -> dict:
-        return self._api._http().indirectos_aplicar_a_sobrecosto()
+        try:
+            return self._api._http()._post("/indirectos/aplicar_a_sobrecosto")
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 422:
+                raise ValueError(e.response.json().get("detail", str(e))) from e
+            raise
+
+    # ── PRESUPUESTO ────────────────────────────────────────────────
+
+    def presupuesto_arbol(self, extra: bool = False) -> list[dict]:
+        return self._api._http()._get("/arbol", params={"extra": extra})
+
+    def nodo_total(self, nodo_id: int) -> float:
+        nodo = self._api._http().buscar("estructura_presupuesto", nodo_id)
+        return (nodo.get("total") or 0) if nodo else 0
+
+    def concepto_actualizar_cantidad(self, concepto_id: int, cantidad: float,
+                                      formula: str | None = None) -> None:
+        from backend.database.event_bus import ProyectoRecalculado
+        if cantidad < 0:
+            raise ValueError("La cantidad no puede ser negativa")
+        if formula is not None and formula.strip():
+            from backend.formulas import evaluar_formula, ErrorFormula
+            try:
+                resuelta = evaluar_formula(formula.strip(), self.variables_resueltas())
+                cantidad = float(resuelta)
+            except ErrorFormula as e:
+                raise ValueError(str(e))
+        else:
+            formula = None
+        campos = {"cantidad": cantidad}
+        if formula is not None:
+            campos["formula"] = formula
+        self._api._http().actualizar("estructura_presupuesto", concepto_id, **campos)
+        self._api._http().recalcular()
+        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
+
+    def concepto_reasignar_insumo(self, concepto_id: int, nuevo_insumo_id: int) -> None:
+        from backend.database.event_bus import ProyectoRecalculado
+        self._api._http().actualizar("estructura_presupuesto", concepto_id,
+                                      insumo_id=nuevo_insumo_id)
+        self._api._http().recalcular()
+        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
+
+    def nodo_descripcion_actual(self, nodo_id: int) -> str:
+        nodo = self._api._http().buscar("estructura_presupuesto", nodo_id)
+        if not nodo:
+            return ""
+        if nodo.get("insumo_id"):
+            insumo = self._api._http().buscar("insumos", nodo["insumo_id"])
+            return (insumo or {}).get("descripcion", "") or ""
+        return nodo.get("descripcion", "") or ""
+
+    def concepto_actualizar_descripcion(self, nodo_id: int, descripcion: str) -> None:
+        nodo = self._api._http().buscar("estructura_presupuesto", nodo_id)
+        if nodo and nodo.get("insumo_id"):
+            self._api.insumo_actualizar_descripcion(nodo["insumo_id"], descripcion)
+
+    def concepto_actualizar_unidad(self, nodo_id: int, unidad: str) -> None:
+        nodo = self._api._http().buscar("estructura_presupuesto", nodo_id)
+        if nodo and nodo.get("insumo_id"):
+            self._api._http().actualizar("insumos", nodo["insumo_id"], unidad=unidad)
+            from backend.database.event_bus import InsumoActualizado
+            registro = self._api._http().buscar("insumos", nodo["insumo_id"]) or {}
+            self._api._ds.emitir(InsumoActualizado(nodo["insumo_id"], {"unidad": unidad}, registro))
+
+    def agrupador_actualizar_descripcion(self, nodo_id: int, descripcion: str) -> None:
+        self._api._http().actualizar("estructura_presupuesto", nodo_id, descripcion=descripcion)
+
+    def eliminar_nodo(self, nodo_id: int) -> None:
+        from backend.database.event_bus import ProyectoRecalculado
+        self._api._http().eliminar("estructura_presupuesto", nodo_id)
+        self._api._http().recalcular()
+        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
+
+    def agregar_nodo(self, tipo: str, padre_id: int | None = None,
+                      descripcion: str = "", insumo_id: int | None = None,
+                      cantidad: float | None = None, orden: float | None = None,
+                      antes_de: int | None = None, es_extra: bool = False) -> int:
+        from backend.database.event_bus import ProyectoRecalculado
+        if orden is None and antes_de is not None:
+            ref = self._api._http().buscar("estructura_presupuesto", antes_de)
+            if ref:
+                orden = ref["orden"] - 0.5
+        if orden is None:
+            r = self._api._http()._get("/proximo_orden", params={"padre_id": padre_id} if padre_id is not None else {})
+            orden = r["orden"]
+        nuevo_id = self._api._http().insertar("estructura_presupuesto", **{
+            "proyecto_id": self._api._pid, "padre_id": padre_id, "wbs": "",
+            "nivel": 0, "tipo": tipo, "descripcion": descripcion or "",
+            "orden": orden, "insumo_id": insumo_id, "cantidad": cantidad,
+            "total": 0.0, "es_extra": 1 if es_extra else 0,
+            "estado": 0, "activo": 1, "creado_por": 1,
+        })
+        self._api._http().reindexar()
+        self._api._http().recalcular()
+        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
+        return nuevo_id
+
+    def todos_concepto_ids(self) -> list[int]:
+        return self._api._http()._get("/todos_concepto_ids")
+
+    def conceptos_planos(self) -> list[dict]:
+        return self._api._http()._get("/conceptos_planos")
+
+    # ── EXPLOSIÓN ──────────────────────────────────────────────────
+
+    def explotar(self, concepto_ids: list[int], nivel: str, tipos_ids: list[int]) -> tuple[list[dict], float]:
+        r = self._api._http()._post("/explotar", json={
+            "concepto_ids": concepto_ids,
+            "nivel": nivel,
+            "tipos_ids": tipos_ids,
+        })
+        return r["filas"], r["total"]
+
+    def conceptos_bajo_nodo(self, nodo_id: int) -> list[int]:
+        desc = self._api._http()._get(f"/descendientes/{nodo_id}")
+        return [d["id"] for d in desc if d.get("tipo") == "concepto"]
+
+    # ── CATÁLOGOS (FAMILIAS / SUBFAMILIAS) ─────────────────────────
+
+    def familias(self) -> list[dict]:
+        return self._api._http()._get("/familias")
+
+    def familia_insertar(self, nombre: str) -> int:
+        return self._api._http().insertar("familias", nombre=nombre)
+
+    def subfamilias(self, familia_id: int) -> list[dict]:
+        return self._api._http()._get(f"/subfamilias/{familia_id}")
+
+    def subfamilia_insertar(self, familia_id: int, nombre: str) -> int:
+        return self._api._http().insertar("subfamilias", familia_id=familia_id, nombre=nombre)
+
+    # ── INSUMOS (MUTACIÓN) ─────────────────────────────────────
+
+    def insumo_actualizar_descripcion(self, insumo_id: int, descripcion: str, usuario_id: int = 1) -> None:
+        from backend.database.core import generar_hash
+        descripcion = descripcion.strip()
+        if not descripcion:
+            raise ValueError("La descripción no puede estar vacía")
+        nuevo_hash = generar_hash(descripcion)
+        existente = self._api._http().insumo_por_hash(nuevo_hash)
+        if existente and existente["id"] != insumo_id:
+            raise ValueError(
+                f"Ya existe un insumo con esa descripción: "
+                f"[{existente['id']}] {existente['descripcion']}"
+            )
+        self._api._http().actualizar("insumos", insumo_id, descripcion=descripcion, hash=nuevo_hash)
+        from backend.database.event_bus import InsumoActualizado
+        registro = self._api._http().buscar("insumos", insumo_id) or {}
+        self._api._ds.emitir(InsumoActualizado(insumo_id, {"descripcion": descripcion, "hash": nuevo_hash}, registro))
+
+    def insumo_actualizar_precio(self, insumo_id: int, precio: float, usuario_id: int = 1) -> None:
+        from backend.database.event_bus import ProyectoRecalculado
+        if precio < 0:
+            raise ValueError("El precio no puede ser negativo")
+        self._api._http().actualizar("insumos", insumo_id,
+            costo_mn=precio, costo_directo=precio)
+        self._api._http().recalcular()
+        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
+
+    def insumo_actualizar_precios(self, insumo_id: int, costo_mn: float, costo_me: float, usuario_id: int = 1) -> None:
+        from backend.database.event_bus import ProyectoRecalculado
+        if costo_mn < 0 or costo_me < 0:
+            raise ValueError("Los precios no pueden ser negativos")
+        self._api._http().actualizar("insumos", insumo_id,
+            costo_mn=costo_mn, costo_directo=costo_mn, costo_me=costo_me)
+        self._api._http().recalcular()
+        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
+
+    def insumo_actualizar_campo(self, insumo_id: int, campo: str, valor, usuario_id: int = 1) -> None:
+        from backend.database.event_bus import InsumoActualizado, ProyectoRecalculado
+        self._api._http().actualizar("insumos", insumo_id, **{campo: valor})
+        registro = self._api._http().buscar("insumos", insumo_id) or {}
+        self._api._ds.emitir(InsumoActualizado(insumo_id, {campo: valor}, registro))
+        if campo == "costo_final":
+            self._api._http().recalcular()
+            self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
+
+    def insumo_insertar(self, tipo_id: int, descripcion: str, descripcion_corta: str | None = None,
+                         unidad: str | None = None, costo: float = 0.0, costo_me: float = 0.0,
+                         es_compuesto: int = 0, familia_id: int | None = None,
+                         subfamilia_id: int | None = None, usuario_id: int = 1) -> int:
+        from backend.database.core import generar_hash
+        nuevo_hash = generar_hash(descripcion) if descripcion else None
+        if nuevo_hash:
+            existente = self._api._http().insumo_por_hash(nuevo_hash)
+            if existente:
+                raise ValueError(
+                    f"Ya existe un insumo con esa descripción: "
+                    f"[{existente['id']}] {existente['descripcion']}"
+                )
+        campos = dict(
+            proyecto_id=self._api._pid, tipo_id=tipo_id, descripcion=descripcion,
+            descripcion_corta=descripcion_corta, unidad=unidad,
+            costo_mn=costo, costo_me=costo_me, costo_directo=costo,
+            costo_final=costo, es_compuesto=es_compuesto, hash=nuevo_hash,
+        )
+        if familia_id is not None:
+            campos["familia_id"] = familia_id
+        if subfamilia_id is not None:
+            campos["subfamilia_id"] = subfamilia_id
+        return self._api._http().insertar("insumos", **campos)
+
+    def insumo_por_id(self, insumo_id: int) -> dict | None:
+        return self._api._http().buscar("insumos", insumo_id)
+
+    def eliminar_insumo(self, insumo_id: int) -> None:
+        from backend.database.event_bus import ProyectoRecalculado
+        self._api._http().eliminar("insumos", insumo_id)
+        self._api._http().recalcular()
+        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
+
+    # ── UNDO / SESIÓN ──────────────────────────────────────────
+
+    def deshacer(self, usuario_id: int = 1) -> bool:
+        r = self._api._http()._post("/deshacer", json={"usuario_id": usuario_id})
+        return r["ok"]
+
+    def rehacer(self, usuario_id: int = 1) -> bool:
+        r = self._api._http()._post("/rehacer", json={"usuario_id": usuario_id})
+        return r["ok"]
+
+    def iniciar_sesion_undo(self) -> str | None:
+        return None
+
+    def cerrar_sesion_undo(self) -> None:
+        return None

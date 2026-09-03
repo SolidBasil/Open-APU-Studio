@@ -319,6 +319,54 @@ class Database:
                 )
             except sqlite3.OperationalError:
                 pass  # columna ya existe
+        # v9: generadores.cad_archivo_path — cada generador liga su propio
+        # DXF. FALTABA esta migración (bug real: quedó solo en schema.sql,
+        # nunca se agregó aquí) — cualquier proyecto creado antes de v9
+        # rompía con "no such column: cad_archivo_path" en cuanto se
+        # intentaba abrir/ligar un DXF a un generador.
+        try:
+            self._conn.execute(
+                "ALTER TABLE generadores ADD COLUMN cad_archivo_path TEXT"
+            )
+        except sqlite3.OperationalError:
+            pass  # columna ya existe
+        # v10: cad_campo en generador_renglones — a qué celda (veces/largo/
+        # ancho/alto) apunta una medición CAD, para saber cuál sobrescribir
+        # al editar sus nodos (ver VisorCadWidget._finalizar_edicion_medicion).
+        # Proyectos con generador_renglones creada antes de v10 no la tienen.
+        try:
+            self._conn.execute(
+                "ALTER TABLE generador_renglones ADD COLUMN cad_campo TEXT"
+            )
+        except sqlite3.OperationalError:
+            pass  # columna ya existe
+        # v11: cad_origen_archivo en generador_renglones — nombre del DXF
+        # del que salió la medición (además de sus coordenadas). Un
+        # generador solo liga UN dxf a la vez (cad_archivo_path), así que
+        # si más adelante se reemplaza por otro archivo, sin este dato no
+        # quedaría registro de en qué plano se midió originalmente cada
+        # renglón — solo puntos sueltos sin poder decir "esto salió del
+        # plano X.dxf".
+        try:
+            self._conn.execute(
+                "ALTER TABLE generador_renglones ADD COLUMN cad_origen_archivo TEXT"
+            )
+        except sqlite3.OperationalError:
+            pass  # columna ya existe
+        # v12: cad_medidas en generador_renglones — JSON con UNA medición
+        # independiente POR CELDA (veces/largo/ancho/alto), cada una con
+        # su propio tipo/puntos/archivo. Las columnas anteriores
+        # (cad_tipo_medicion/cad_geometria/cad_campo/cad_origen_archivo)
+        # solo alcanzaban para UNA medición por renglón entero — medir
+        # Ancho después de Largo pisaba esas mismas columnas y borraba
+        # el trazo de Largo. Se dejan esas columnas (legacy) para poder
+        # seguir leyendo renglones medidos antes de v12.
+        try:
+            self._conn.execute(
+                "ALTER TABLE generador_renglones ADD COLUMN cad_medidas TEXT"
+            )
+        except sqlite3.OperationalError:
+            pass  # columna ya existe
         self._conn.commit()
 
     def _migrar_v5(self):
