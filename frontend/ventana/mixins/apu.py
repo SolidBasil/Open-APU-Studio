@@ -151,6 +151,8 @@ class ApuMixin:
         Col 4 (Descripción) en Concepto → abre selector de insumo.
         Col 6 (Cant) en Concepto con generadores → abre generadores.
         """
+        if item is None:
+            return  # doble clic en zona vacía: Qt pasa item=None
         from frontend.ventana.widgets.arbol import ID_ROLE
         nodo_id = item.data(0, ID_ROLE)
         if not nodo_id or not self._api:

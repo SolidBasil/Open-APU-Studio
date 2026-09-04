@@ -489,6 +489,8 @@ class TablaApuDetalle(TreeTableWidget):
 
     def _on_item_dblclick(self, item, column):
         """Doble clic: Descripción → selector de insumo (como en presupuesto); P.U. → sub-APU."""
+        if item is None:
+            return  # doble clic en zona vacía: Qt pasa item=None
         insumo_id = item.data(0, Qt.ItemDataRole.UserRole)
         if not insumo_id:
             return

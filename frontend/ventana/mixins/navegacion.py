@@ -284,6 +284,8 @@ class HandlersMixin:
 
     def _on_sidebar_click(self, item, column):
         """Click simple en sidebar: abre pestaña temporal o enfoca si ya existe."""
+        if item is None:
+            return  # clic en zona vacía: Qt pasa item=None
         if item.childCount() > 0:
             return
         if not self._db:
@@ -292,6 +294,8 @@ class HandlersMixin:
 
     def _on_sidebar_double_click(self, item, column):
         """Doble click en sidebar: abre pestaña permanente."""
+        if item is None:
+            return  # doble clic en zona vacía: Qt pasa item=None
         if item.childCount() > 0:
             return
         if not self._db:

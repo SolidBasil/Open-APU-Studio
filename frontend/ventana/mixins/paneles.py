@@ -417,6 +417,8 @@ class PanelesMixin:
         def _on_insumo_dblclick(item, column):
             # ponytail: columnas editables (Descripción, Unidad, Precio)
             # deben permitir edición inline — no interceptar
+            if item is None:
+                return  # doble clic en zona vacía: Qt pasa item=None
             if column in EDITABLE:
                 return
             insumo_id = item.data(0, Qt.ItemDataRole.UserRole)

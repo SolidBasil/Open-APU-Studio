@@ -106,6 +106,8 @@ class RastreoMixin:
 
     def _abrir_matriz_desde_rastreo(self, item):
         """Abre el APU de una fila de rastreo."""
+        if item is None:
+            return  # doble clic en zona vacía: Qt pasa item=None
         matriz_id = item.data(0, Qt.ItemDataRole.UserRole)
         if matriz_id is None:
             return
