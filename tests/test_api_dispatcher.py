@@ -21,11 +21,11 @@ def test_toque_backend_70():
     from frontend.ventana.api_backends import ToqueApiBackend
 
     n = len([m for m in dir(ToqueApiBackend) if not m.startswith("_")])
-    assert n == 70, f"esperado 70, got {n}"
+    assert n == 73, f"esperado 73, got {n}"
 
 
 def test_api_cliente_transporte():
     from frontend.ventana.api_cliente import ApiCliente
 
     pub = [m for m in dir(ApiCliente) if not m.startswith("_")]
-    assert len(pub) == 7, f"esperado 7, got {len(pub)}: {pub}"
+    assert len(pub) == 9, f"esperado 9, got {len(pub)}: {pub}"

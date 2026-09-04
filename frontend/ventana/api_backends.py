@@ -138,6 +138,11 @@ class ToqueApiBackend(Protocol):
     def iniciar_sesion_undo(self) -> str | None: ...
     def cerrar_sesion_undo(self) -> None: ...
 
+    # ── ADJUNTOS (Fase E: CAD remoto) ───────────────────────────────
+    def adjuntos_listar(self) -> list[str]: ...
+    def adjunto_guardar(self, filename: str, contenido: bytes) -> None: ...
+    def adjunto_leer(self, filename: str) -> bytes | None: ...
+
     # ── HELPERS LOCALES ─────────────────────────────────────────
     def concepto_cantidad(self, concepto_id: int) -> float: ...
     def concepto_actualizar(self, concepto_id: int, **campos) -> None: ...
@@ -295,20 +300,10 @@ class _BackendLocal:
 
     def apu_agregar_componente(self, matriz_id: int, insumo_id: int,
                                 valor: float = 1.0, operador: str = "*") -> int:
-        from backend.database.event_bus import ProyectoRecalculado
-        from backend.database.repos import ApuMatricesRepo
-        orden = ApuMatricesRepo(self._api._conn).proximo_orden(matriz_id)
-        campos = {
-            "matriz_id": matriz_id, "insumo_id": insumo_id,
-            "valor": valor, "operador": operador,
-            "precio": 0.0, "orden": orden, "formula": None,
-        }
-        from backend.database.repos import RecalculoRepo
-        with self._api._ds.transaccion():
-            nuevo_id = self._api._ds.insertar("apu_matrices", **campos)
-            RecalculoRepo(self._api._conn).recalcular_proyecto(self._api._pid)
-        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
-        return nuevo_id
+        # Lógica única en DataService (Fase B R1).
+        return self._api._ds.apu_agregar_componente(
+            matriz_id, insumo_id, valor, operador,
+            proyecto_id=self._api._pid)
 
     def apu_actualizar_valor(self, comp_id: int, valor: float,
                               formula: str | None = None) -> None:
@@ -755,36 +750,10 @@ class _BackendLocal:
                       descripcion: str = "", insumo_id: int | None = None,
                       cantidad: float | None = None, orden: float | None = None,
                       antes_de: int | None = None, es_extra: bool = False) -> int:
-        from backend.database.event_bus import ProyectoRecalculado
-        from backend.database.repos import NodoRepo, RecalculoRepo
-        repo = NodoRepo(self._api._conn)
-        if orden is None and antes_de is not None:
-            ref = repo.buscar(antes_de)
-            if ref:
-                orden = ref["orden"] - 0.5
-        if orden is None:
-            orden = repo.proximo_orden(self._api._pid, padre_id)
-        with self._api._ds.transaccion():
-            nuevo_id = repo.insert({
-                "proyecto_id": self._api._pid,
-                "padre_id":    padre_id,
-                "wbs":         "",
-                "nivel":       0,
-                "tipo":        tipo,
-                "descripcion": descripcion or "",
-                "orden":       orden,
-                "insumo_id":   insumo_id,
-                "cantidad":    cantidad,
-                "total":       0.0,
-                "es_extra":    1 if es_extra else 0,
-                "estado":      0,
-                "activo":      1,
-                "creado_por":  1,
-            })
-            repo.reindexar(self._api._pid)
-            RecalculoRepo(self._api._conn).recalcular_proyecto(self._api._pid)
-        self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
-        return nuevo_id
+        # Lógica única en DataService (Fase B R1).
+        return self._api._ds.agregar_nodo(
+            self._api._pid, tipo, padre_id, descripcion, insumo_id,
+            cantidad, orden, antes_de, es_extra)
 
     def todos_concepto_ids(self) -> list[int]:
         from backend.database.repos import NodoRepo
@@ -935,6 +904,30 @@ class _BackendLocal:
     def cerrar_sesion_undo(self) -> None:
         self._api._ds.cerrar_sesion()
 
+    # ── ADJUNTOS (Fase E: CAD remoto) ──────────────────────────
+    # En local es FS directo al sidecar (misma convención que el mixin).
+
+    def _adjuntos_dir(self):
+        from pathlib import Path
+        from backend.database.db import Rutas
+        base = Path(self._api._db_path).stem
+        d = Rutas.proyectos() / f"{base}_adjuntos"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    def adjuntos_listar(self) -> list[str]:
+        d = self._adjuntos_dir()
+        return sorted(p.name for p in d.iterdir() if p.is_file())
+
+    def adjunto_guardar(self, filename: str, contenido: bytes) -> None:
+        import os
+        (self._adjuntos_dir() / os.path.basename(filename)).write_bytes(contenido)
+
+    def adjunto_leer(self, filename: str) -> bytes | None:
+        import os
+        ruta = self._adjuntos_dir() / os.path.basename(filename)
+        return ruta.read_bytes() if ruta.is_file() else None
+
     # ── HELPERS LOCALES ────────────────────────────────────────
 
     def concepto_cantidad(self, concepto_id: int) -> float:
@@ -958,25 +951,9 @@ class _BackendLocal:
         return cls(self._api._conn).buscar(registro_id)
 
     def unificar_matrices_apu(self) -> int:
-        from backend.database.repos import ApuMatricesRepo
-        from backend.database.event_bus import ProyectoRecalculado
-        repo = ApuMatricesRepo(self._api._conn)
-        candidatos = repo.conceptos_con_insumo_compuesto(self._api._pid)
-        migrados = 0
-        with self._api._ds.transaccion():
-            for row in candidatos:
-                cid = row["cid"]
-                neg = -row["insumo_id"]
-                if repo.contar_por_matriz(cid) == 0:
-                    continue
-                if repo.contar_por_matriz(neg) == 0:
-                    repo.redirigir_matriz(origen=cid, destino=neg)
-                else:
-                    repo.eliminar_matriz(cid)
-                migrados += 1
-        if migrados:
-            self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
-        return migrados
+        # Lógica única en DataService (R1) — también la usan el servidor
+        # y la apertura de proyecto.
+        return self._api._ds.unificar_matrices_apu(self._api._pid)
 
 
 class _BackendHTTP:
@@ -984,6 +961,8 @@ class _BackendHTTP:
 
     def __init__(self, api: "Api"):
         self._api = api
+        # Fase D: token de sesión undo en red (None = sin sesión).
+        self._sesion_token: str | None = None
 
     # ── FACTORES DE SOBRECOSTO ──────────────────────────────────────
 
@@ -991,11 +970,9 @@ class _BackendHTTP:
         return self._api._http()._get("/factores_sobrecosto")
 
     def factores_sobrecosto_guardar(self, valores: dict) -> float:
-        from backend.database.event_bus import FactoresSobrecostoActualizados, ProyectoRecalculado
+        # El endpoint ya recalcula en servidor (Fase B: quita 2do recalc redundante).
         r = self._api._http()._post("/factores_sobrecosto", json={"valores": valores})
-        factor = r["factor_total"]
-        self._api._http().recalcular()
-        return factor
+        return r["factor_total"]
 
     # ── INSUMOS ──────────────────────────────────────────────────────
 
@@ -1015,12 +992,10 @@ class _BackendHTTP:
 
     def recalcular_proyecto(self) -> dict:
         self._api._http().recalcular()
-        from backend.database.event_bus import ProyectoRecalculado
         return {}
 
     def reindexar_proyecto(self) -> None:
         self._api._http().reindexar()
-        from backend.database.event_bus import ProyectoRecalculado
 
     def rastrear_insumo(self, insumo_id: int) -> list[dict]:
         return self._api._http()._get(f"/rastrear/{insumo_id}")
@@ -1028,7 +1003,7 @@ class _BackendHTTP:
     def proyecto_guardar(self, campos: dict) -> None:
         # "proyectos" ya es una entidad registrada en crear_registry() —
         # el /actualizar genérico la acepta sin necesitar ruta propia.
-        self._api._http().actualizar("proyectos", self._api._pid, **campos)
+        self._api._http().actualizar("proyectos", self._api._pid, **campos, sesion_token=self._sesion_token)
 
     # ── VARIABLES DE FÓRMULA ─────────────────────────────────────────
     # Todas con endpoints dedicados: crear/actualizar necesitan la misma
@@ -1041,51 +1016,27 @@ class _BackendHTTP:
         return self._api._http()._get("/variables")
 
     def variables_crear(self, nombre: str, expresion: str, descripcion: str) -> int:
-        try:
-            r = self._api._http()._post("/variables", json={
-                "nombre": nombre, "expresion": expresion, "descripcion": descripcion,
-            })
-            return r["id"]
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 422:
-                raise ValueError(e.response.json().get("detail", str(e))) from e
-            raise
+        # Fase D: 422→ValueError lo traduce ApiCliente._post (R5).
+        r = self._api._http()._post("/variables", json={
+            "nombre": nombre, "expresion": expresion, "descripcion": descripcion,
+        })
+        return r["id"]
 
     def variables_actualizar(self, variable_id: int, campos: dict) -> None:
-        try:
-            self._api._http()._post(f"/variables/{variable_id}", json={"campos": campos})
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 422:
-                raise ValueError(e.response.json().get("detail", str(e))) from e
-            raise
+        self._api._http()._post(f"/variables/{variable_id}", json={"campos": campos})
 
     def variables_eliminar(self, variable_id: int) -> dict:
-        try:
-            return self._api._http()._post(f"/variables/{variable_id}/eliminar")
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 422:
-                raise ValueError(e.response.json().get("detail", str(e))) from e
-            raise
+        return self._api._http()._post(f"/variables/{variable_id}/eliminar")
 
     def variables_resueltas(self) -> dict:
         from decimal import Decimal
-        try:
-            crudo = self._api._http()._get("/variables/resueltas")
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 422:
-                raise ValueError(e.response.json().get("detail", str(e))) from e
-            raise
+        crudo = self._api._http()._get("/variables/resueltas")
         return {k: Decimal(v) for k, v in crudo.items()}
 
     def formula_evaluar(self, expr: str):
         from decimal import Decimal
-        try:
-            r = self._api._http()._post("/variables/evaluar", json={"expresion": expr})
-            return Decimal(r["resultado"])
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 422:
-                raise ValueError(e.response.json().get("detail", str(e))) from e
-            raise
+        r = self._api._http()._post("/variables/evaluar", json={"expresion": expr})
+        return Decimal(r["resultado"])
 
     # ── APU ──────────────────────────────────────────────────────────
 
@@ -1111,29 +1062,24 @@ class _BackendHTTP:
         return data.get("matriz_id"), data.get("descripcion", "")
 
     def apu_actualizar_operador(self, comp_id: int, operador: str) -> None:
-        from backend.database.event_bus import ProyectoRecalculado
         if operador not in ('*', '/'):
             raise ValueError("Operador debe ser '*' o '/'")
-        self._api._http().actualizar("apu_matrices", comp_id, operador=operador)
-        self._api._http().recalcular()
+        self._api._http()._post("/actualizar_y_recalcular", json={
+            "sesion_token": self._sesion_token,
+            "entidad": "apu_matrices", "registro_id": comp_id,
+            "campos": {"operador": operador}})
 
     def apu_agregar_componente(self, matriz_id: int, insumo_id: int,
                                 valor: float = 1.0, operador: str = "*") -> int:
-        from backend.database.event_bus import ProyectoRecalculado
-        from backend.database.repos import ApuMatricesRepo
-        orden = ApuMatricesRepo(self._api._conn).proximo_orden(matriz_id)
-        campos = {
+        # Fase B: orden + insert + recalc atómicos en servidor.
+        r = self._api._http()._post("/apu/agregar_componente", json={
+            "sesion_token": self._sesion_token,
             "matriz_id": matriz_id, "insumo_id": insumo_id,
-            "valor": valor, "operador": operador,
-            "precio": 0.0, "orden": orden, "formula": None,
-        }
-        nuevo_id = self._api._http().insertar("apu_matrices", **campos)
-        self._api._http().recalcular()
-        return nuevo_id
+            "valor": valor, "operador": operador})
+        return r["id"]
 
     def apu_actualizar_valor(self, comp_id: int, valor: float,
                               formula: str | None = None) -> None:
-        from backend.database.event_bus import ProyectoRecalculado
         if valor is None or valor < 0:
             raise ValueError("La cantidad no puede ser negativa")
         if formula is not None and formula.strip():
@@ -1152,13 +1098,15 @@ class _BackendHTTP:
         campos = {"valor": valor}
         if formula is not None:
             campos["formula"] = formula
-        self._api._http().actualizar("apu_matrices", comp_id, **campos)
-        self._api._http().recalcular()
+        self._api._http()._post("/actualizar_y_recalcular", json={
+            "sesion_token": self._sesion_token,
+            "entidad": "apu_matrices", "registro_id": comp_id, "campos": campos})
 
     def apu_reasignar_componente(self, comp_id: int, nuevo_insumo_id: int) -> None:
-        from backend.database.event_bus import ProyectoRecalculado
-        self._api._http().actualizar("apu_matrices", comp_id, insumo_id=nuevo_insumo_id)
-        self._api._http().recalcular()
+        self._api._http()._post("/actualizar_y_recalcular", json={
+            "sesion_token": self._sesion_token,
+            "entidad": "apu_matrices", "registro_id": comp_id,
+            "campos": {"insumo_id": nuevo_insumo_id}})
 
     def apu_actualizar_precio_componente(self, insumo_id: int, precio: float) -> None:
         self._api.insumo_actualizar_precio(insumo_id, precio)
@@ -1185,10 +1133,10 @@ class _BackendHTTP:
         campos = {"proyecto_id": self._api._pid, "nombre": nombre, "concepto_id": concepto_id}
         if unidad:
             campos["unidad"] = unidad
-        return self._api._http().insertar("generadores", **campos)
+        return self._api._http().insertar("generadores", **campos, sesion_token=self._sesion_token)
 
     def generador_actualizar_cad(self, generador_id: int, path: str | None) -> None:
-        self._api._http().actualizar("generadores", generador_id, cad_archivo_path=path)
+        self._api._http().actualizar("generadores", generador_id, cad_archivo_path=path, sesion_token=self._sesion_token)
 
     def generador_renglones(self, generador_id: int) -> list[dict]:
         return self._api._http()._get(f"/generadores/{generador_id}/renglones")
@@ -1227,7 +1175,7 @@ class _BackendHTTP:
         return self._api._http()._get("/indirectos", params=params)
 
     def indirectos_guardar(self, registro_id: int, campos: dict) -> None:
-        self._api._http().actualizar("indirectos", registro_id, **campos)
+        self._api._http().actualizar("indirectos", registro_id, **campos, sesion_token=self._sesion_token)
 
     def indirectos_insertar(self, campos: dict) -> int:
         # Misma inyección que _BackendLocal — sin esto, un indirecto
@@ -1236,10 +1184,10 @@ class _BackendHTTP:
         # el test de paridad local-vs-HTTP antes de dar esto por bueno).
         campos = dict(campos)
         campos.setdefault("proyecto_id", self._api._pid)
-        return self._api._http().insertar("indirectos", **campos)
+        return self._api._http().insertar("indirectos", **campos, sesion_token=self._sesion_token)
 
     def indirectos_eliminar(self, registro_id: int) -> None:
-        self._api._http().eliminar("indirectos", registro_id)
+        self._api._http().eliminar("indirectos", registro_id, sesion_token=self._sesion_token)
 
     def indirectos_calcular_totales(self) -> dict:
         return self._api._http()._post("/indirectos/calcular_totales")
@@ -1249,12 +1197,7 @@ class _BackendHTTP:
         return r["insertados"]
 
     def indirectos_aplicar_a_sobrecosto(self) -> dict:
-        try:
-            return self._api._http()._post("/indirectos/aplicar_a_sobrecosto")
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 422:
-                raise ValueError(e.response.json().get("detail", str(e))) from e
-            raise
+        return self._api._http()._post("/indirectos/aplicar_a_sobrecosto")
 
     # ── PRESUPUESTO ────────────────────────────────────────────────
 
@@ -1267,7 +1210,6 @@ class _BackendHTTP:
 
     def concepto_actualizar_cantidad(self, concepto_id: int, cantidad: float,
                                       formula: str | None = None) -> None:
-        from backend.database.event_bus import ProyectoRecalculado
         if cantidad < 0:
             raise ValueError("La cantidad no puede ser negativa")
         if formula is not None and formula.strip():
@@ -1282,14 +1224,15 @@ class _BackendHTTP:
         campos = {"cantidad": cantidad}
         if formula is not None:
             campos["formula"] = formula
-        self._api._http().actualizar("estructura_presupuesto", concepto_id, **campos)
-        self._api._http().recalcular()
+        self._api._http()._post("/actualizar_y_recalcular", json={
+            "sesion_token": self._sesion_token,
+            "entidad": "estructura_presupuesto", "registro_id": concepto_id, "campos": campos})
 
     def concepto_reasignar_insumo(self, concepto_id: int, nuevo_insumo_id: int) -> None:
-        from backend.database.event_bus import ProyectoRecalculado
-        self._api._http().actualizar("estructura_presupuesto", concepto_id,
-                                      insumo_id=nuevo_insumo_id)
-        self._api._http().recalcular()
+        self._api._http()._post("/actualizar_y_recalcular", json={
+            "sesion_token": self._sesion_token,
+            "entidad": "estructura_presupuesto", "registro_id": concepto_id,
+            "campos": {"insumo_id": nuevo_insumo_id}})
 
     def nodo_descripcion_actual(self, nodo_id: int) -> str:
         nodo = self._api._http().buscar("estructura_presupuesto", nodo_id)
@@ -1308,40 +1251,27 @@ class _BackendHTTP:
     def concepto_actualizar_unidad(self, nodo_id: int, unidad: str) -> None:
         nodo = self._api._http().buscar("estructura_presupuesto", nodo_id)
         if nodo and nodo.get("insumo_id"):
-            self._api._http().actualizar("insumos", nodo["insumo_id"], unidad=unidad)
-            from backend.database.event_bus import InsumoActualizado
-            registro = self._api._http().buscar("insumos", nodo["insumo_id"]) or {}
+            self._api._http().actualizar("insumos", nodo["insumo_id"], unidad=unidad, sesion_token=self._sesion_token)
     
     def agrupador_actualizar_descripcion(self, nodo_id: int, descripcion: str) -> None:
-        self._api._http().actualizar("estructura_presupuesto", nodo_id, descripcion=descripcion)
+        self._api._http().actualizar("estructura_presupuesto", nodo_id, descripcion=descripcion, sesion_token=self._sesion_token)
 
     def eliminar_nodo(self, nodo_id: int) -> None:
-        from backend.database.event_bus import ProyectoRecalculado
-        self._api._http().eliminar("estructura_presupuesto", nodo_id)
-        self._api._http().recalcular()
+        self._api._http()._post("/eliminar_y_recalcular", json={
+            "sesion_token": self._sesion_token,
+            "entidad": "estructura_presupuesto", "registro_id": nodo_id})
 
     def agregar_nodo(self, tipo: str, padre_id: int | None = None,
                       descripcion: str = "", insumo_id: int | None = None,
                       cantidad: float | None = None, orden: float | None = None,
                       antes_de: int | None = None, es_extra: bool = False) -> int:
-        from backend.database.event_bus import ProyectoRecalculado
-        if orden is None and antes_de is not None:
-            ref = self._api._http().buscar("estructura_presupuesto", antes_de)
-            if ref:
-                orden = ref["orden"] - 0.5
-        if orden is None:
-            r = self._api._http()._get("/proximo_orden", params={"padre_id": padre_id} if padre_id is not None else {})
-            orden = r["orden"]
-        nuevo_id = self._api._http().insertar("estructura_presupuesto", **{
-            "proyecto_id": self._api._pid, "padre_id": padre_id, "wbs": "",
-            "nivel": 0, "tipo": tipo, "descripcion": descripcion or "",
-            "orden": orden, "insumo_id": insumo_id, "cantidad": cantidad,
-            "total": 0.0, "es_extra": 1 if es_extra else 0,
-            "estado": 0, "activo": 1, "creado_por": 1,
-        })
-        self._api._http().reindexar()
-        self._api._http().recalcular()
-        return nuevo_id
+        # Fase B: orden + insert + reindex + recalc atómicos en servidor.
+        r = self._api._http()._post("/agregar_nodo", json={
+            "sesion_token": self._sesion_token,
+            "tipo": tipo, "padre_id": padre_id, "descripcion": descripcion or "",
+            "insumo_id": insumo_id, "cantidad": cantidad, "orden": orden,
+            "antes_de": antes_de, "es_extra": es_extra})
+        return r["id"]
 
     def todos_concepto_ids(self) -> list[int]:
         return self._api._http()._get("/todos_concepto_ids")
@@ -1369,13 +1299,13 @@ class _BackendHTTP:
         return self._api._http()._get("/familias")
 
     def familia_insertar(self, nombre: str) -> int:
-        return self._api._http().insertar("familias", nombre=nombre)
+        return self._api._http().insertar("familias", nombre=nombre, sesion_token=self._sesion_token)
 
     def subfamilias(self, familia_id: int) -> list[dict]:
         return self._api._http()._get(f"/subfamilias/{familia_id}")
 
     def subfamilia_insertar(self, familia_id: int, nombre: str) -> int:
-        return self._api._http().insertar("subfamilias", familia_id=familia_id, nombre=nombre)
+        return self._api._http().insertar("subfamilias", familia_id=familia_id, nombre=nombre, sesion_token=self._sesion_token)
 
     # ── INSUMOS (MUTACIÓN) ─────────────────────────────────────
 
@@ -1385,38 +1315,37 @@ class _BackendHTTP:
         if not descripcion:
             raise ValueError("La descripción no puede estar vacía")
         nuevo_hash = generar_hash(descripcion)
-        existente = self._api._http().insumo_por_hash(nuevo_hash)
+        existente = self.insumo_por_hash(nuevo_hash)
         if existente and existente["id"] != insumo_id:
             raise ValueError(
                 f"Ya existe un insumo con esa descripción: "
                 f"[{existente['id']}] {existente['descripcion']}"
             )
-        self._api._http().actualizar("insumos", insumo_id, descripcion=descripcion, hash=nuevo_hash)
-        from backend.database.event_bus import InsumoActualizado
-        registro = self._api._http().buscar("insumos", insumo_id) or {}
+        self._api._http().actualizar("insumos", insumo_id, descripcion=descripcion, hash=nuevo_hash, sesion_token=self._sesion_token)
 
     def insumo_actualizar_precio(self, insumo_id: int, precio: float, usuario_id: int = 1) -> None:
-        from backend.database.event_bus import ProyectoRecalculado
         if precio < 0:
             raise ValueError("El precio no puede ser negativo")
-        self._api._http().actualizar("insumos", insumo_id,
-            costo_mn=precio, costo_directo=precio)
-        self._api._http().recalcular()
+        self._api._http()._post("/actualizar_y_recalcular", json={
+            "sesion_token": self._sesion_token,
+            "entidad": "insumos", "registro_id": insumo_id,
+            "campos": {"costo_mn": precio, "costo_directo": precio}})
 
     def insumo_actualizar_precios(self, insumo_id: int, costo_mn: float, costo_me: float, usuario_id: int = 1) -> None:
-        from backend.database.event_bus import ProyectoRecalculado
         if costo_mn < 0 or costo_me < 0:
             raise ValueError("Los precios no pueden ser negativos")
-        self._api._http().actualizar("insumos", insumo_id,
-            costo_mn=costo_mn, costo_directo=costo_mn, costo_me=costo_me)
-        self._api._http().recalcular()
+        self._api._http()._post("/actualizar_y_recalcular", json={
+            "sesion_token": self._sesion_token,
+            "entidad": "insumos", "registro_id": insumo_id,
+            "campos": {"costo_mn": costo_mn, "costo_directo": costo_mn, "costo_me": costo_me}})
 
     def insumo_actualizar_campo(self, insumo_id: int, campo: str, valor, usuario_id: int = 1) -> None:
-        from backend.database.event_bus import InsumoActualizado, ProyectoRecalculado
-        self._api._http().actualizar("insumos", insumo_id, **{campo: valor})
-        registro = self._api._http().buscar("insumos", insumo_id) or {}
         if campo == "costo_final":
-            self._api._http().recalcular()
+            self._api._http()._post("/actualizar_y_recalcular", json={
+            "sesion_token": self._sesion_token,
+                "entidad": "insumos", "registro_id": insumo_id, "campos": {campo: valor}})
+        else:
+            self._api._http().actualizar("insumos", insumo_id, **{campo: valor}, sesion_token=self._sesion_token)
     
     def insumo_insertar(self, tipo_id: int, descripcion: str, descripcion_corta: str | None = None,
                          unidad: str | None = None, costo: float = 0.0, costo_me: float = 0.0,
@@ -1425,7 +1354,7 @@ class _BackendHTTP:
         from backend.database.core import generar_hash
         nuevo_hash = generar_hash(descripcion) if descripcion else None
         if nuevo_hash:
-            existente = self._api._http().insumo_por_hash(nuevo_hash)
+            existente = self.insumo_por_hash(nuevo_hash)
             if existente:
                 raise ValueError(
                     f"Ya existe un insumo con esa descripción: "
@@ -1441,15 +1370,15 @@ class _BackendHTTP:
             campos["familia_id"] = familia_id
         if subfamilia_id is not None:
             campos["subfamilia_id"] = subfamilia_id
-        return self._api._http().insertar("insumos", **campos)
+        return self._api._http().insertar("insumos", **campos, sesion_token=self._sesion_token)
 
     def insumo_por_id(self, insumo_id: int) -> dict | None:
         return self._api._http().buscar("insumos", insumo_id)
 
     def eliminar_insumo(self, insumo_id: int) -> None:
-        from backend.database.event_bus import ProyectoRecalculado
-        self._api._http().eliminar("insumos", insumo_id)
-        self._api._http().recalcular()
+        self._api._http()._post("/eliminar_y_recalcular", json={
+            "sesion_token": self._sesion_token,
+            "entidad": "insumos", "registro_id": insumo_id})
 
     # ── UNDO / SESIÓN ──────────────────────────────────────────
 
@@ -1462,10 +1391,42 @@ class _BackendHTTP:
         return r["ok"]
 
     def iniciar_sesion_undo(self) -> str | None:
-        return None
+        # Fase D: el servidor agrupa los writes con este token en una
+        # sola entrada de deshacer (igual que ds.iniciar_sesion en local).
+        r = self._api._http()._post("/sesion/iniciar", json={})
+        self._sesion_token = r.get("token")
+        return self._sesion_token
 
     def cerrar_sesion_undo(self) -> None:
-        return None
+        if self._sesion_token is not None:
+            try:
+                self._api._http()._post("/sesion/cerrar",
+                                        json={"token": self._sesion_token})
+            except Exception:
+                pass
+            self._sesion_token = None
+
+    # ── ADJUNTOS (Fase E: CAD remoto) ──────────────────────────
+    # Misma firma que local (sidecar dir): el mixin no bifurca.
+
+    def adjuntos_listar(self) -> list[str]:
+        return self._api._http()._get("/adjuntos")
+
+    def adjunto_guardar(self, filename: str, contenido: bytes) -> None:
+        import os
+        self._api._http().subir_archivo(
+            "/adjuntos/subir", os.path.basename(filename), contenido)
+
+    def adjunto_leer(self, filename: str) -> bytes | None:
+        import os
+        import httpx
+        try:
+            return self._api._http().descargar_archivo(
+                f"/adjuntos/{os.path.basename(filename)}")
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return None
+            raise
 
     # ── HELPERS LOCALES ────────────────────────────────────────
 
@@ -1474,30 +1435,14 @@ class _BackendHTTP:
         return float(nodo["cantidad"]) if nodo and nodo.get("cantidad") else 0.0
 
     def concepto_actualizar(self, concepto_id: int, **campos) -> None:
-        self._api._http().actualizar("estructura_presupuesto", concepto_id, **campos)
+        self._api._http().actualizar("estructura_presupuesto", concepto_id, **campos, sesion_token=self._sesion_token)
 
     def campo_valor(self, tabla: str, campo: str, registro_id: int) -> dict | None:
         # buscar es genérico para las 3 tablas; campo se ignora aquí (se lee registro completo)
         return self._api._http().buscar(tabla, registro_id)
 
     def unificar_matrices_apu(self) -> int:
-        # Misma excepción que _BackendLocal: operación de mantenimiento local (ver docstring en api.py)
-        from backend.database.repos import ApuMatricesRepo
-        from backend.database.event_bus import ProyectoRecalculado
-        repo = ApuMatricesRepo(self._api._conn)
-        candidatos = repo.conceptos_con_insumo_compuesto(self._api._pid)
-        migrados = 0
-        with self._api._ds.transaccion():
-            for row in candidatos:
-                cid = row["cid"]
-                neg = -row["insumo_id"]
-                if repo.contar_por_matriz(cid) == 0:
-                    continue
-                if repo.contar_por_matriz(neg) == 0:
-                    repo.redirigir_matriz(origen=cid, destino=neg)
-                else:
-                    repo.eliminar_matriz(cid)
-                migrados += 1
-        if migrados:
-            self._api._ds.emitir(ProyectoRecalculado(self._api._pid))
-        return migrados
+        # Lógica única en DataService (Fase A) — el endpoint es transporte.
+        # El servidor además la corre solo al cargar el proyecto.
+        r = self._api._http()._post("/unificar_matrices")
+        return r["migrados"]

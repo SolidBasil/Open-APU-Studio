@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Open APU Studio — Test Web Client</title>
+<style>
+body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; padding: 1rem; }
+button { padding: 0.5rem 1rem; margin: 0.25rem; cursor: pointer; }
+input, select { padding: 0.3rem; margin: 0.25rem; }
+#log { background: #1e1e1e; color: #d4d4d4; padding: 1rem; height: 300px; overflow-y: auto; font-family: monospace; white-space: pre-wrap; border-radius: 4px; }
+#tablaWrap { max-height: 400px; overflow: auto; border: 1px solid #ccc; border-radius: 4px; margin-top: 0.5rem; }
+#tabla { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+#tabla th, #tabla td { border: 1px solid #ddd; padding: 4px 8px; text-align: left; white-space: nowrap; }
+#tabla thead th { background: #203244; color: #E8EDF2; position: sticky; top: 0; }
+#tabla tbody tr:nth-child(even) { background: #f2f5f8; }
+.status-ok { color: #4ec9b0; } .status-err { color: #f44747; } .status-ws { color: #9cdcfe; }
+</style>
+</head>
+<body>
+<h1>Open APU Studio — Web Test Client</h1>
+<p>Demuestra separación UI ↔ Servidor (FastAPI + WS). El servidor es el <strong>único</strong> que toca la BD.</p>
+
+<div>
+<label>Obra: <select id="project" onchange="cambiarProyecto()">
+<option value="test_web">test_web (vacía)</option>
+<option value="AMAZONA_CATALOGO_corregido">AMAZONA (94 nodos)</option>
+<option value="CHANGAN">CHANGAN (62 nodos)</option>
+<option value="D60JALISCOT">D60JALISCOT (281 nodos)</option>
+</select></label>
+<button onclick="connectWS()">Conectar WS</button>
+<button onclick="disconnectWS()">Desconectar WS</button>
+<span id="wsStatus" class="status-err">Desconectado</span>
+</div>
+<hr>
+<div>
+<h3>Operaciones HTTP</h3>
+<select id="entity">
+<option value="insumos">insumos</option>
+<option value="arbol">arbol</option>
+<option value="familias">familias</option>
+<option value="subfamilias">subfamilias</option>
+</select>
+<button onclick="listar()">Listar</button>
+<button onclick="resumen()">Resumen obra</button>
+<button onclick="crear()">Crear</button>
+<button onclick="actualizar()">Actualizar</button>
+<button onclick="eliminar()">Eliminar</button>
+<button onclick="recalcular()">Recalcular</button>
+<hr>
+<h3>WebSocket</h3>
+<button onclick="enviarPing()">Ping WS</button>
+</div>
+<hr>
+<h3>Visor tabla <span id="tablaInfo" style="font-weight:normal;font-size:0.85rem"></span></h3>
+<div id="tablaWrap"><table id="tabla"><thead></thead><tbody></tbody></table></div>
+<hr>
+<div id="log"></div>
+
+<script>
+const BASE = "http://localhost:8000";
+const WS_BASE = "ws://localhost:8000";
+let ws = null;
+
+function proyecto() { return document.getElementById("project").value; }
+function cambiarProyecto() {
+  disconnectWS();
+  document.getElementById("log").innerHTML = "";
+  log("Obra activa: " + proyecto());
+  connectWS();
+}
+
+function log(msg, cls="") {
+  const el = document.getElementById("log");
+  const line = document.createElement("div");
+  line.className = cls;
+  line.textContent = "[" + new Date().toLocaleTimeString() + "] " + msg;
+  el.prepend(line);
+}
+
+function setWSStatus(connected) {
+  const el = document.getElementById("wsStatus");
+  el.textContent = connected ? "Conectado" : "Desconectado";
+  el.className = connected ? "status-ok" : "status-err";
+}
+
+async function api(path, opts={}) {
+  try {
+    const r = await fetch(BASE + "/proyectos/" + proyecto() + path, {
+      method: opts.method || "GET",
+      headers: {"Content-Type": "application/json"},
+      body: opts.body ? JSON.stringify(opts.body) : undefined
+    });
+    const data = await r.json();
+    log("HTTP " + (opts.method||"GET") + " " + path + " → " + r.status, r.ok ? "status-ok" : "status-err");
+    return data;
+  } catch(e) { log("Error HTTP: " + e, "status-err"); }
+}
+
+function connectWS() {
+  if (ws) return;
+  ws = new WebSocket(WS_BASE + "/proyectos/" + proyecto() + "/ws");
+  ws.onopen = () => { setWSStatus(true); log("WS conectado", "status-ws"); };
+  ws.onmessage = e => { log("WS ← " + e.data, "status-ws"); };
+  ws.onclose = () => { setWSStatus(false); log("WS cerrado", "status-ws"); ws = null; };
+  ws.onerror = e => { log("WS error", "status-err"); };
+}
+
+function disconnectWS() { if (ws) { ws.close(); ws = null; } }
+
+const COLUMNAS = {
+  insumos: ["id", "clave_opus", "descripcion", "unidad", "costo_directo", "costo_final", "tipo_nombre"],
+  arbol: ["wbs", "tipo", "descripcion", "unidad", "cantidad", "total"],
+  familias: ["id", "nombre", "activo"],
+  subfamilias: ["id", "familia_id", "nombre", "activo"],
+};
+
+function aplanar(arbol, filas = [], nivel = 0) {
+  for (const n of arbol) {
+    filas.push({
+      wbs: n.wbs || "", tipo: n.tipo || "",
+      descripcion: "  ".repeat(nivel) + (n.descripcion || ""),
+      unidad: n.unidad || "", cantidad: n.cantidad ?? "", total: n.total ?? "",
+    });
+    aplanar(n.hijos || [], filas, nivel + 1);
+  }
+  return filas;
+}
+
+function renderTabla(entidad, filas) {
+  const thead = document.querySelector("#tabla thead");
+  const tbody = document.querySelector("#tabla tbody");
+  thead.innerHTML = ""; tbody.innerHTML = "";
+  document.getElementById("tablaInfo").textContent = `— ${entidad}: ${filas.length} filas`;
+  if (!filas.length) return;
+  const cols = COLUMNAS[entidad] || Object.keys(filas[0]);
+  const trh = document.createElement("tr");
+  for (const c of cols) { const th = document.createElement("th"); th.textContent = c; trh.appendChild(th); }
+  thead.appendChild(trh);
+  for (const f of filas) {
+    const tr = document.createElement("tr");
+    for (const c of cols) {
+      const td = document.createElement("td");
+      const v = f[c];
+      td.textContent = (v === null || v === undefined) ? "" : (typeof v === "number" ? Math.round(v * 100) / 100 : v);
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+}
+
+async function listar() {
+  const e = document.getElementById("entity").value;
+  const data = await api("/" + e);
+  if (!data) return;
+  const filas = e === "arbol" ? aplanar(data) : (Array.isArray(data) ? data : [data]);
+  log(`Lista ${e}: ${filas.length} registros.`);
+  renderTabla(e, filas);
+}
+
+function contarNodos(arbol) {
+  let n = 0;
+  for (const x of arbol) { n += 1 + contarNodos(x.hijos || []); }
+  return n;
+}
+
+async function resumen() {
+  const arbol = await api("/arbol");
+  const insumos = await api("/insumos");
+  if (!arbol || !insumos) return;
+  const total = arbol.reduce((s, n) => s + (n.total || 0), 0);
+  log(`Obra ${proyecto()}: ${arbol.length} raíces, ${contarNodos(arbol)} nodos, ` +
+      `${insumos.length} insumos, total $${total.toFixed(2)}`, "status-ok");
+}
+
+async function crear() {
+  const e = document.getElementById("entity").value;
+  const body = {entidad: e, campos: {proyecto_id: 1, descripcion: "WebTest", unidad: "kg", tipo_id: 1, costo_mn: 10, costo_directo: 10, costo_final: 10, activo: 1}};
+  await api("/insertar", {method:"POST", body});
+}
+
+async function actualizar() {
+  const id = prompt("ID a actualizar:");
+  if (!id) return;
+  const e = document.getElementById("entity").value;
+  await api("/actualizar", {method:"POST", body:{entidad: e, registro_id: parseInt(id), campos: {descripcion: "Actualizado Web"}}});
+}
+
+async function eliminar() {
+  const id = prompt("ID a eliminar:");
+  if (!id) return;
+  const e = document.getElementById("entity").value;
+  await api("/eliminar", {method:"POST", body:{entidad: e, registro_id: parseInt(id)}});
+}
+
+async function recalcular() { await api("/recalcular", {method:"POST"}); }
+
+function enviarPing() { if (ws) ws.send(JSON.stringify({tipo: "ping"})); }
+
+// Auto-connect on load
+connectWS();
+</script>
+</body>
+</html>

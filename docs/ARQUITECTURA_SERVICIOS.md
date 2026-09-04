@@ -1,17 +1,24 @@
 # Arquitectura de servicios — Protocolo de acceso local ↔ HTTP
 
-Actualizado: 2026-08-31 05:00 (hora local)
+Actualizado: 2026-09-03 17:35 (hora local)
 
 Este documento define el **protocolo normativo** de la capa de acceso de Open APU
 Studio: cómo conviven la fachada `Api`, los backends local/HTTP, el cliente HTTP y
 el servidor, y **el orden exacto** para terminar la migración local→HTTP sin
 duplicar más lógica.
 
-> **Estado al 2026-08-31:** Fase 0 (ToqueApiBackend Protocol, 66 métodos) ✓,
-> Fase 2 (api.py dispatcher puro, 67 delegaciones, 5 `if _use_http:` infraestructura) ✓,
-> Fase 3 (ApiCliente transporte puro, 7 públicos vs 41) ✓,
+> **Estado al 2026-09-03:** Fase 0 (ToqueApiBackend Protocol, 73 métodos) ✓,
+> Fase 2 (api.py dispatcher puro, 74 delegaciones, 1 `if _use_http:` infraestructura) ✓,
+> Fase 3 (ApiCliente transporte puro, 9 públicos vs 41) ✓,
 > regla cardinal SQL corregida (NodoRepo.con_formula_por_proyecto) ✓,
 > `assets/icons8` 329→116 SVGs ✓. Fase 4 (WS `ProyectoRecalculado` específico) ✓ 2026-08-31 — `server/servidor.py` 17× `{"evento":"cambio"}` → `{"evento":"ProyectoRecalculado"}`. Pendiente: Fase 1 (quitar `ds.emitir` duplicado en `_BackendHTTP` — ahora desbloqueada, opcional) y Fase 5 limpieza.
+>
+> **Fase A (cliente remoto sin BD local) ✓ 2026-09-03** — `DataService.unificar_matrices_apu()` (lógica única R1); endpoints `GET /apu/proximo_orden` + `POST /unificar_matrices` (rutas fijas antes de `/apu/{matriz_id}`); run-once al cargar proyecto en `_obtener_servicios`; `_BackendHTTP` con 0 toques a `self._api._conn`. Corregida regresión Fase 3 (`insumo_insertar`/`insumo_actualizar_descripcion` llamaban al eliminado `ApiCliente.insumo_por_hash` → ahora `self.insumo_por_hash`).
+>
+> **Fase B (endpoints compuestos atómicos) ✓ 2026-09-03** — `POST /actualizar_y_recalcular` + `/eliminar_y_recalcular` (reusan `ActualizarRequest`/`EliminarRequest`), `/agregar_nodo` y `/apu/agregar_componente` (vía nuevos `DataService.agregar_nodo`/`apu_agregar_componente`, única implementación R1; `_BackendLocal` delega).
+>
+> **Fase C (broadcast genérico + refresco remoto) ✓ 2026-09-03** — `lifespan` captura el loop; `_obtener_servicios` suscribe reenvío de TODAS las subclases de `Evento` (cubre actuales y futuros); `_sanitizar_json` (hallazgo: `cambios` como `set` reventaba `send_json` y el broadcast dropeaba la conexión); eliminados 8 manuales que duplicaban un `ds.emit` idéntico (conservados los 18 sin equivalente: sin ellos se perdería el refresh y/o cambiaría invalidación SRV-08); `_on_ws_evento` += Generador/Variable/Indirecto; `TablaGenerador` con `EVENTOS_SUSCRITOS` + handler con filtro por `generador_id` (Explosion queda snapshot manual: es reporte, no vista de trabajo). E2E 2 clientes: 3 eventos específicos, sin duplicados, conexión viva. `_BackendHTTP`: 1 RPC por write + helper `_post_dominio` (422→`ValueError`, R5); quitado `recalcular()` redundante en `factores_sobrecosto_guardar` (el endpoint ya recalcula) e imports muertos Fase 1. Hallazgo: `/eliminar` en `apu_matrices` falla (`no such column: activo`) — preexistente en `DataService.eliminar`, idéntico en genérico y compuesto.
+> **Fase D + 3 bugs raíz multiusuario ✓ 2026-09-03** — `422→ValueError` centralizado en `ApiCliente._post/_get`; sesiones undo en red (`/sesion/iniciar|/cerrar`, token en writes, `DataService.actualizar/insertar/eliminar(sesion=)`); E2E agrupado+deshacer+rehacer verificado en archivo. Bugs encontrados por el E2E: (1) **el servidor nunca commiteaba** — sin `commit` en request-path + isolation legacy, todo vivía en una txn implícita abierta (lecturas propias OK, archivo rancio, `database is locked` externo, pérdida total al reiniciar); fix: `Database.transaction()` con contador de profundidad — solo el nivel externo commitea/rollbackea; (2) **`deshacer` revertía en orden cronológico** — [1→5,5→9] terminaba en 5; ahora `reversed()` (rehacer sigue cronológico); (3) **`invalidar_sesiones_usuario` con selector invertido** — decía “OTROS” pero borraba `WHERE usuario_id = ?` (el actor); cada recalc vaciaba TODO el historial y el siguiente deshacer/rehacer daba False. Lección de testing: verificar siempre a nivel archivo (`PRAGMA data_version`, lecturas directas), no solo vía API del servidor; y matar procesos rancios antes de probar (puerto ocupado = código viejo).
 
 ---
 
@@ -289,3 +296,5 @@ operación de dominio.
 - Fórmulas y variables (Decimal por la red): `docs/planes/PLAN_FORMULAS_VARIABLES.md`
 - Reglas de código (imports, código muerto, stubs): `docs/GUIA_CODIGO.md`
 - Estructura y regla cardinal: `AGENTS.md`
+
+> **Fase E (CAD remoto) ✓ 2026-09-03** — `GET /adjuntos`, `POST /adjuntos/subir` (multipart, tope 50 MB, sanitiza `..`/rutas), `GET /adjuntos/{filename}` en servidor; `ApiCliente.subir_archivo/descargar_archivo` (transporte genérico R9); `adjuntos_listar/guardar/leer` en AMBOS backends (local = sidecar dir directo) + 3 métodos en `Api` → el mixin usa una sola vía sin `if _use_http` (protocolo 73, cliente 9). E2E DXF real 2.8 MB: roundtrip idéntico + `parse_dxf` válido (164 layers). Hallazgo: faltaba `python-multipart` en venv y requirements (FastAPI lo exige para `UploadFile`; el servidor ni arrancaba).

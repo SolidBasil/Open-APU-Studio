@@ -687,6 +687,23 @@ class Api:
         return self._backend.unificar_matrices_apu()
 
     # =========================================================================
+    # ADJUNTOS (Fase E: CAD remoto — misma firma en ambos modos)
+    # =========================================================================
+
+    def adjuntos_listar(self) -> list[str]:
+        """Nombres de archivos en el sidecar `{proyecto}_adjuntos/`."""
+        return self._backend.adjuntos_listar()
+
+    def adjunto_guardar(self, filename: str, contenido: bytes) -> None:
+        """Guarda bytes como adjunto del proyecto (local: sidecar dir,
+        remoto: upload HTTP). Solo el basename (sin rutas)."""
+        return self._backend.adjunto_guardar(filename, contenido)
+
+    def adjunto_leer(self, filename: str) -> bytes | None:
+        """Lee un adjunto como bytes, o None si no existe."""
+        return self._backend.adjunto_leer(filename)
+
+    # =========================================================================
     # GENERADORES DE OBRA
     # =========================================================================
 

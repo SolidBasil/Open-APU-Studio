@@ -17,11 +17,21 @@ SRV-02: El cliente siempre habla HTTP — este endpoint es el backend.
 from __future__ import annotations
 
 import argparse
+import asyncio
+import os
 import socket
 import sys
 import threading
+from contextlib import asynccontextmanager
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+# Bootstrap sys.path: permite ejecutar tanto `python -m server.servidor`
+# (raíz ya en sys.path) como `python server/servidor.py` por ruta directa
+# (solo server/ queda en sys.path y `backend` no se resuelve).
+_raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _raiz not in sys.path:
+    sys.path.insert(0, _raiz)
+
+from fastapi import BackgroundTasks, FastAPI, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 # ponytail: imports del backend — el server ES backend, no frontend
@@ -41,7 +51,31 @@ from backend.database.exceptions import (
 
 # ── App FastAPI ────────────────────────────────────────────────────
 
-app = FastAPI(title="Open APU Studio — Server")
+_loop_principal: asyncio.AbstractEventLoop | None = None
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """Captura el loop principal (Fase C): los endpoints corren en un
+    thread pool sin loop activo, y el suscriptor de broadcast necesita
+    agendar send_json en el loop del servidor vía run_coroutine_threadsafe."""
+    global _loop_principal
+    _loop_principal = asyncio.get_running_loop()
+    yield
+
+
+app = FastAPI(title="Open APU Studio — Server", lifespan=_lifespan)
+
+# CORS permisivo: el cliente web de prueba (tests/test_web.html) se abre
+# como file:// y el navegador bloquea fetch() sin Access-Control-Allow-Origin.
+# Es servidor local de prueba — en producción se restringiría el origen.
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ── WebSocket: ConnectionManager (SRV-05) ─────────────────────────
@@ -76,6 +110,28 @@ class ConnectionManager:
 ws_manager = ConnectionManager()
 
 
+def _sanitizar_json(valor):
+    """Hace un valor JSON-seguro para send_json (Fase C).
+
+    Hallazgo al suscribir el broadcast genérico: ConceptoActualizado
+    lleva `cambios` como set de Python y json.dumps revienta — y el
+    broadcast marca la conexión como muerta y la dropea en silencio.
+    set→lista ordenada (si comparable), resto desconocido→str.
+    """
+    if isinstance(valor, dict):
+        return {k: _sanitizar_json(v) for k, v in valor.items()}
+    if isinstance(valor, (list, tuple)):
+        return [_sanitizar_json(v) for v in valor]
+    if isinstance(valor, (set, frozenset)):
+        try:
+            return sorted(valor)
+        except TypeError:
+            return list(valor)
+    if isinstance(valor, (str, int, float, bool)) or valor is None:
+        return valor
+    return str(valor)
+
+
 def _serializar_evento(evento) -> dict:
     """Convierte un Evento a dict plano para enviar por WebSocket."""
     from dataclasses import asdict
@@ -84,7 +140,7 @@ def _serializar_evento(evento) -> dict:
         data = asdict(evento)
     except TypeError:
         data = {"proyecto_id": getattr(evento, "proyecto_id", None)}
-    return {"evento": tipo, "data": data}
+    return {"evento": tipo, "data": _sanitizar_json(data)}
 
 
 from starlette.responses import JSONResponse
@@ -123,17 +179,44 @@ class ActualizarRequest(BaseModel):
     registro_id: int
     campos: dict
     usuario_id: int = 1
+    sesion_token: str | None = None  # Fase D: agrupar undo en red
 
 
 class InsertarRequest(BaseModel):
     entidad: str
     campos: dict
     usuario_id: int = 1
+    sesion_token: str | None = None  # Fase D
 
 
 class EliminarRequest(BaseModel):
     entidad: str
     registro_id: int
+    usuario_id: int = 1
+    sesion_token: str | None = None  # Fase D
+
+
+class SesionCerrarRequest(BaseModel):
+    token: str
+
+
+class AgregarNodoRequest(BaseModel):
+    tipo: str  # "capitulo" | "concepto"
+    padre_id: int | None = None
+    descripcion: str = ""
+    insumo_id: int | None = None
+    cantidad: float | None = None
+    orden: float | None = None
+    antes_de: int | None = None
+    es_extra: bool = False
+    usuario_id: int = 1
+
+
+class ApuAgregarComponenteRequest(BaseModel):
+    matriz_id: int
+    insumo_id: int
+    valor: float = 1.0
+    operador: str = "*"
     usuario_id: int = 1
 
 
@@ -228,6 +311,10 @@ def _obtener_servicios(nombre: str) -> dict:
         servicios = {
             "db": db, "ds": ds, "event_bus": event_bus, "registry": registry,
             "lock": threading.Lock(),
+            # Fase D: tokens de sesión undo por cliente (iniciar/cerrar).
+            # DataService es compartido: sin esto, los writes de un cliente
+            # caerían en la sesión de otro (o en uuid sueltos).
+            "sesiones": set(),
         }
         _proyectos[nombre] = servicios
 
@@ -236,15 +323,101 @@ def _obtener_servicios(nombre: str) -> dict:
         from backend.database.repos.historial import HistorialRepo
 
         def _srv08_handler(evento):
-            h_repo = HistorialRepo(db.conn)
-            h_repo.invalidar_sesiones_usuario(evento.usuario_id)
+            # Con transacción propia: este DELETE corría en una txn
+            # implícita que nadie commiteaba (el bus no abre transacciones)
+            # y vedaba a escritores externos con "database is locked"
+            # para siempre. Con el fix de commit en nivel externo de
+            # Database.transaction(), aquí queda commiteado al salir.
+            with db.transaction():
+                h_repo = HistorialRepo(db.conn)
+                h_repo.invalidar_sesiones_usuario(evento.usuario_id)
 
         event_bus.suscribir(ProyectoRecalculado, _srv08_handler)
+
+        # Fase C: broadcast genérico de eventos semánticos. DataService ya
+        # emite InsumoActualizado/ConceptoActualizado/ApuComponenteActualizado/
+        # GeneradorActualizado/NodoInsertado/NodoEliminado/etc. en este mismo
+        # bus — antes morían en silencio (solo _srv08 los veía). Ahora se
+        # serializan y se agendan en el loop principal: cubre eventos
+        # actuales y futuros sin tocar cada endpoint. Los broadcasts
+        # manuales que duplicaban un ds.emit idéntico se eliminaron; los
+        # que no tienen ds.emit equivalente se conservan tal cual.
+        import backend.database.event_bus as _eb_modulo
+        from backend.database.event_bus import Evento as _EventoBase
+
+        def _reenviar(nombre_proyecto: str, evento) -> None:
+            loop = _loop_principal
+            if loop is None or loop.is_closed():
+                return
+            try:
+                mensaje = _serializar_evento(evento)
+            except Exception:
+                return
+            try:
+                fut = asyncio.run_coroutine_threadsafe(
+                    ws_manager.broadcast(nombre_proyecto, mensaje), loop)
+            except RuntimeError:
+                # loop cerrado durante teardown (tests, shutdown) — no hay
+                # a quién avisar; sin esto la corrutina huérfana genera
+                # RuntimeWarning y el EventBus imprime traceback por ruido.
+                return
+
+            def _tragar(f):
+                try:
+                    f.exception()
+                except Exception:
+                    pass
+
+            fut.add_done_callback(_tragar)
+
+        for _cls in vars(_eb_modulo).values():
+            if (isinstance(_cls, type) and issubclass(_cls, _EventoBase)
+                    and _cls is not _EventoBase):
+                event_bus.suscribir(_cls, lambda e, n=nombre: _reenviar(n, e))
+
+        # Fase A: migración de mantenimiento una sola vez al cargar el
+        # proyecto (igual que la apertura local corre unificar_matrices_apu
+        # en _wire_servicios). Barata si no hay nada que migrar (migrados=0,
+        # sin emit). Con el lock del proyecto: la carga ocurre bajo
+        # _registro_lock y ningún endpoint usa este proyecto aún.
+        with servicios["lock"]:
+            ds.unificar_matrices_apu(1)
 
         return servicios
 
 
 # ── Endpoints de escritura ─────────────────────────────────────────
+
+
+def _sesion_valida(svc: dict, token: str | None) -> str | None:
+    """Devuelve el token si el proyecto lo conoce, None si no (Fase D).
+
+    Tolerante a propósito: token rancio (p. ej. servidor reiniciado) cae
+    a uuid fresco por write — se pierde el agrupado, no la operación.
+    """
+    if token and token in svc.get("sesiones", set()):
+        return token
+    return None
+
+
+@app.post("/proyectos/{nombre}/sesion/iniciar")
+def sesion_iniciar(nombre: str):
+    """Fase D: abre sesión undo para el cliente (agrupa sus writes)."""
+    import uuid
+    svc = _obtener_servicios(nombre)
+    token = str(uuid.uuid4())
+    with svc["lock"]:
+        svc["sesiones"].add(token)
+    return {"token": token}
+
+
+@app.post("/proyectos/{nombre}/sesion/cerrar")
+def sesion_cerrar(nombre: str, req: SesionCerrarRequest):
+    """Fase D: cierra la sesión (los tokens viejos se descartan)."""
+    svc = _obtener_servicios(nombre)
+    with svc["lock"]:
+        svc["sesiones"].discard(req.token)
+    return {"ok": True}
 
 
 @app.post("/proyectos/{nombre}/actualizar")
@@ -254,7 +427,7 @@ def actualizar(nombre: str, req: ActualizarRequest, bt: BackgroundTasks):
     try:
         with svc["lock"]:
             svc["ds"].actualizar(req.entidad, req.registro_id,
-                                 usuario_id=req.usuario_id, **req.campos)
+                                 usuario_id=req.usuario_id, sesion=_sesion_valida(svc, req.sesion_token), **req.campos)
     except (ValidationError, RepositoryError) as e:
         raise HTTPException(status_code=422 if isinstance(e, ValidationError) else 500,
                             detail=str(e))
@@ -275,7 +448,7 @@ def insertar(nombre: str, req: InsertarRequest, bt: BackgroundTasks):
     try:
         with svc["lock"]:
             nuevo_id = svc["ds"].insertar(req.entidad, usuario_id=req.usuario_id,
-                                           **req.campos)
+                                           sesion=_sesion_valida(svc, req.sesion_token), **req.campos)
     except (ValidationError, RepositoryError) as e:
         raise HTTPException(status_code=422 if isinstance(e, ValidationError) else 500,
                             detail=str(e))
@@ -295,7 +468,8 @@ def eliminar(nombre: str, req: EliminarRequest, bt: BackgroundTasks):
     svc = _obtener_servicios(nombre)
     try:
         with svc["lock"]:
-            svc["ds"].eliminar(req.entidad, req.registro_id, usuario_id=req.usuario_id)
+            svc["ds"].eliminar(req.entidad, req.registro_id, usuario_id=req.usuario_id,
+                               sesion=_sesion_valida(svc, req.sesion_token))
     except RepositoryError as e:
         raise HTTPException(status_code=500, detail=str(e))
     bt.add_task(ws_manager.broadcast, nombre, {"evento": "ProyectoRecalculado", "data": {"proyecto_id": 1, "usuario_id": 1}})
@@ -305,6 +479,63 @@ def eliminar(nombre: str, req: EliminarRequest, bt: BackgroundTasks):
         except Exception:
             pass
     return {"ok": True}
+
+
+@app.post("/proyectos/{nombre}/actualizar_y_recalcular")
+def actualizar_y_recalcular(nombre: str, req: ActualizarRequest, bt: BackgroundTasks):
+    """Fase B: actualizar + recalc atómicos bajo un solo lock (evita que
+    ediciones concurrentes se intercalen entre el write y el recálculo,
+    como pasaba con 2 RPC separados). Reutiliza ActualizarRequest."""
+    svc = _obtener_servicios(nombre)
+    try:
+        with svc["lock"]:
+            with svc["db"].transaction():
+                svc["ds"].actualizar(req.entidad, req.registro_id,
+                                     usuario_id=req.usuario_id, sesion=_sesion_valida(svc, req.sesion_token), **req.campos)
+                RecalculoRepo(svc["db"].conn).recalcular_proyecto(1)
+    except (ValidationError, RepositoryError) as e:
+        raise HTTPException(status_code=422 if isinstance(e, ValidationError) else 500,
+                            detail=str(e))
+    # Fase C: ds.actualizar ya emite el evento de entidad (InsumoActualizado,
+    # ConceptoActualizado...) vía suscriptor; aquí solo falta el recalc que
+    # ds no emite (lo hace RecalculoRepo directo).
+    bt.add_task(ws_manager.broadcast, nombre, {"evento": "ProyectoRecalculado", "data": {"proyecto_id": 1, "usuario_id": 1}})
+    return {"ok": True}
+
+
+@app.post("/proyectos/{nombre}/eliminar_y_recalcular")
+def eliminar_y_recalcular(nombre: str, req: EliminarRequest, bt: BackgroundTasks):
+    """Fase B: eliminar + recalc atómicos. Reutiliza EliminarRequest."""
+    svc = _obtener_servicios(nombre)
+    try:
+        with svc["lock"]:
+            with svc["db"].transaction():
+                svc["ds"].eliminar(req.entidad, req.registro_id, usuario_id=req.usuario_id,
+                                   sesion=_sesion_valida(svc, req.sesion_token))
+                RecalculoRepo(svc["db"].conn).recalcular_proyecto(1)
+    except RepositoryError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    # Fase C: ds.eliminar ya emite NodoEliminado vía suscriptor; aquí solo
+    # falta el recalc que ds no emite.
+    bt.add_task(ws_manager.broadcast, nombre, {"evento": "ProyectoRecalculado", "data": {"proyecto_id": 1, "usuario_id": 1}})
+    return {"ok": True}
+
+
+@app.post("/proyectos/{nombre}/agregar_nodo")
+def agregar_nodo(nombre: str, req: AgregarNodoRequest, bt: BackgroundTasks):
+    """Fase B: orden + insert + reindex + recalc atómicos vía
+    DataService.agregar_nodo (única implementación R1)."""
+    svc = _obtener_servicios(nombre)
+    try:
+        with svc["lock"]:
+            nuevo_id = svc["ds"].agregar_nodo(
+                1, req.tipo, req.padre_id, req.descripcion, req.insumo_id,
+                req.cantidad, req.orden, req.antes_de, req.es_extra)
+    except (ValidationError, RepositoryError) as e:
+        raise HTTPException(status_code=422 if isinstance(e, ValidationError) else 500,
+                            detail=str(e))
+    # Fase C: ds.agregar_nodo ya emite ProyectoRecalculado -> suscriptor broadcastea.
+    return {"ok": True, "id": nuevo_id}
 
 
 @app.post("/proyectos/{nombre}/recalcular")
@@ -507,7 +738,8 @@ def generador_renglon_guardar(nombre: str, generador_id: int, req: RenglonReques
     except (ValidationError, RepositoryError) as e:
         raise HTTPException(status_code=422 if isinstance(e, ValidationError) else 500,
                             detail=str(e))
-    bt.add_task(ws_manager.broadcast, nombre, {"evento": "ProyectoRecalculado", "data": {"proyecto_id": 1, "usuario_id": 1}})
+    # Fase C: ds ya emite GeneradorActualizado + ConceptoActualizado +
+    # ProyectoRecalculado -> el suscriptor los broadcastea (sin duplicado).
     return {"ok": True, "renglon_id": renglon_id}
 
 
@@ -516,7 +748,7 @@ def generador_renglon_eliminar(nombre: str, renglon_id: int, bt: BackgroundTasks
     svc = _obtener_servicios(nombre)
     with svc["lock"]:
         svc["ds"].eliminar_renglon_generador(renglon_id)
-    bt.add_task(ws_manager.broadcast, nombre, {"evento": "ProyectoRecalculado", "data": {"proyecto_id": 1, "usuario_id": 1}})
+    # Fase C: ds ya emite los 3 eventos -> suscriptor broadcastea.
     return {"ok": True}
 
 
@@ -527,8 +759,8 @@ def generador_mover_renglones(nombre: str, req: MoverRenglonesRequest, bt: Backg
         ok = svc["ds"].mover_renglones_generador(
             req.ids, req.nuevo_generador_id, req.antes_de_id, req.copiar
         )
-    if ok:
-        bt.add_task(ws_manager.broadcast, nombre, {"evento": "ProyectoRecalculado", "data": {"proyecto_id": 1, "usuario_id": 1}})
+    # Fase C: ds emite GeneradorActualizado + ConceptoActualizado +
+    # ProyectoRecalculado solo en éxito (mismo `if ok`) -> sin duplicado.
     return {"ok": ok}
 
 
@@ -542,8 +774,7 @@ def deshacer(nombre: str, req: UndoRequest, bt: BackgroundTasks):
     svc = _obtener_servicios(nombre)
     with svc["lock"]:
         ok = svc["ds"].deshacer(usuario_id=req.usuario_id)
-    if ok:
-        bt.add_task(ws_manager.broadcast, nombre, {"evento": "ProyectoRecalculado", "data": {"proyecto_id": 1, "usuario_id": 1}})
+    # Fase C: ds emite ProyectoRecalculado solo en éxito -> sin duplicado.
     return {"ok": ok}
 
 
@@ -553,8 +784,7 @@ def rehacer(nombre: str, req: UndoRequest, bt: BackgroundTasks):
     svc = _obtener_servicios(nombre)
     with svc["lock"]:
         ok = svc["ds"].rehacer(usuario_id=req.usuario_id)
-    if ok:
-        bt.add_task(ws_manager.broadcast, nombre, {"evento": "ProyectoRecalculado", "data": {"proyecto_id": 1, "usuario_id": 1}})
+    # Fase C: ds emite ProyectoRecalculado solo en éxito -> sin duplicado.
     return {"ok": ok}
 
 
@@ -579,6 +809,100 @@ def insumos(nombre: str, tipo: str | None = None):
     with svc["lock"]:
         repo = InsumoRepo(svc["db"].conn)
         return repo.por_tipo(1, tipo) if tipo else repo.todos(1)
+
+
+@app.get("/proyectos/{nombre}/apu/proximo_orden")
+def apu_proximo_orden(nombre: str, matriz_id: int):
+    """Siguiente `orden` libre en una matriz APU (Fase A: evita que el
+    cliente HTTP lea la BD local para calcularlo).
+
+    NOTA: registrada ANTES de /apu/{matriz_id} — si fuera después,
+    esa ruta parametrizada capturaría "proximo_orden" como matriz_id.
+    """
+    svc = _obtener_servicios(nombre)
+    with svc["lock"]:
+        return {"orden": ApuMatricesRepo(svc["db"].conn).proximo_orden(matriz_id)}
+
+
+@app.post("/proyectos/{nombre}/apu/agregar_componente")
+def apu_agregar_componente(nombre: str, req: ApuAgregarComponenteRequest, bt: BackgroundTasks):
+    """Fase B: orden + insert + recalc atómicos vía
+    DataService.apu_agregar_componente (única implementación R1)."""
+    svc = _obtener_servicios(nombre)
+    try:
+        with svc["lock"]:
+            nuevo_id = svc["ds"].apu_agregar_componente(
+                req.matriz_id, req.insumo_id, req.valor, req.operador,
+                proyecto_id=1, usuario_id=req.usuario_id)
+    except (ValidationError, RepositoryError) as e:
+        raise HTTPException(status_code=422 if isinstance(e, ValidationError) else 500,
+                            detail=str(e))
+    # Fase C: ds ya emite ProyectoRecalculado -> suscriptor broadcastea.
+    return {"ok": True, "id": nuevo_id}
+
+
+@app.post("/proyectos/{nombre}/unificar_matrices")
+def unificar_matrices(nombre: str, bt: BackgroundTasks):
+    """Migración de mantenimiento: una sola matriz por APU (Fase A).
+
+    Lógica única en DataService.unificar_matrices_apu — el endpoint es
+    solo transporte. También corre una vez al cargar el proyecto en
+    _obtener_servicios (igual que la apertura local).
+    """
+    svc = _obtener_servicios(nombre)
+    with svc["lock"]:
+        migrados = svc["ds"].unificar_matrices_apu(1)
+    # Fase C: ds emite ProyectoRecalculado solo si migró -> sin duplicado.
+    return {"migrados": migrados}
+
+
+# ── Adjuntos (Fase E: CAD remoto) ────────────────────────────────────
+# Los DXF viven en sidecar `{proyecto}_adjuntos/` (ver mixin generador).
+# En remoto el cliente no tiene ese path: sube/descarga bytes por HTTP
+# y el visor parsea en memoria. Sin tracking en BD (igual que en local).
+
+_ADJUNTOS_MAX_BYTES = 50 * 1024 * 1024
+
+
+def _adjuntos_dir(nombre: str):
+    d = Rutas.proyectos() / f"{nombre}_adjuntos"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _nombre_adjunto_seguro(filename: str | None) -> str:
+    base = os.path.basename(filename or "")
+    if not base or base in (".", ".."):
+        raise HTTPException(status_code=422, detail="Nombre de archivo inválido")
+    return base
+
+
+@app.get("/proyectos/{nombre}/adjuntos")
+def adjuntos_listar(nombre: str):
+    _obtener_servicios(nombre)  # 404 si no existe el proyecto
+    d = _adjuntos_dir(nombre)
+    return sorted(p.name for p in d.iterdir() if p.is_file())
+
+
+@app.post("/proyectos/{nombre}/adjuntos/subir")
+def adjunto_subir(nombre: str, archivo: UploadFile):
+    _obtener_servicios(nombre)
+    fname = _nombre_adjunto_seguro(archivo.filename)
+    contenido = archivo.file.read()
+    if len(contenido) > _ADJUNTOS_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Archivo excede 50 MB")
+    (_adjuntos_dir(nombre) / fname).write_bytes(contenido)
+    return {"ok": True, "nombre": fname, "bytes": len(contenido)}
+
+
+@app.get("/proyectos/{nombre}/adjuntos/{filename}")
+def adjunto_descargar(nombre: str, filename: str):
+    from fastapi.responses import FileResponse
+    _obtener_servicios(nombre)
+    ruta = _adjuntos_dir(nombre) / _nombre_adjunto_seguro(filename)
+    if not ruta.is_file():
+        raise HTTPException(status_code=404, detail="Adjunto no encontrado")
+    return FileResponse(str(ruta), filename=ruta.name)
 
 
 @app.get("/proyectos/{nombre}/apu/{matriz_id}")
@@ -753,10 +1077,7 @@ def variables_eliminar(nombre: str, variable_id: int, bt: BackgroundTasks):
                         ds.actualizar("variables_formula", v["id"], expresion=nueva_expr)
                         afectadas["variables"].append(v["nombre"])
 
-                conceptos = conn.execute(
-                    "SELECT id, formula FROM estructura_presupuesto "
-                    "WHERE proyecto_id = 1 AND formula IS NOT NULL AND formula != '' AND activo = 1"
-                ).fetchall()
+                conceptos = NodoRepo(conn).con_formula_por_proyecto(1)
                 for row in conceptos:
                     if not _referencia(row["formula"]):
                         continue

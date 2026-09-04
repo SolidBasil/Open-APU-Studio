@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QHeaderView, QAbstractItemView
 
 from frontend.ventana.widgets.base import TreeTableWidget, EMPTY_ROLE
 from frontend.ventana.iconos import icono
+from backend.database.event_bus import GeneradorActualizado, ProyectoRecalculado
 
 # Medidas CAD del renglón (una entrada por celda — Veces/Largo/Ancho/Alto),
 # cacheadas en el propio item (col 0, cubre toda la fila) para poder
@@ -83,6 +84,15 @@ class TablaGenerador(TreeTableWidget):
 
     _HEADER_KEY = "generador_renglones_header_state"
     _REORDER_ENABLED = True
+
+    # Fase C: refresco remoto — otro cliente tocó generadores (o cualquier
+    # recalc que afecte cantidad_total). Sin esto, el panel solo se
+    # refrescaba tras writes propios del mixin. El overlay CAD lo refresca
+    # el mixin en su propio poblar; aquí solo filas.
+    EVENTOS_SUSCRITOS = {
+        GeneradorActualizado: '_on_generador_actualizado',
+        ProyectoRecalculado: '_on_generador_actualizado',
+    }
 
     def __init__(self, parent=None, generador_id: int | None = None):
         super().__init__(
@@ -197,6 +207,27 @@ class TablaGenerador(TreeTableWidget):
                 it = self.topLevelItem(i)
                 if it.data(0, Qt.ItemDataRole.UserRole) in sel_ids:
                     it.setSelected(True)
+
+    def _on_generador_actualizado(self, evento) -> None:
+        """Refresco remoto (Fase C): otro cliente tocó generadores o hubo
+        un recalc que pudo cambiar cantidad_total.
+
+        Filtra por generador_id cuando el evento lo trae (GeneradorActualizado);
+        ProyectoRecalculado es grueso y siempre repuebla. poblar() preserva
+        selección y bloquea señales — pero un editor abierto se pierde,
+        igual que en TablaArbol ante recalcs remotos. El overlay CAD lo
+        refresca el mixin en su siguiente poblar propio.
+        """
+        gid = getattr(evento, "generador_id", None)
+        if gid is not None and gid != self._generador_id:
+            return
+        api = getattr(self, "_api", None)
+        if api is None or self._generador_id is None:
+            return
+        try:
+            self.poblar(api.generador_renglones(self._generador_id))
+        except Exception:
+            pass
 
     _NOMBRE_TIPO_CAD = {
         "linea": "Línea", "polilinea": "Polilínea", "area": "Área",

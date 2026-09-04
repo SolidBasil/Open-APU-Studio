@@ -114,10 +114,15 @@ class HistorialRepo(RepoBase):
         """SRV-08: Borra el historial de OTROS usuarios cuando un usuario
         hace un recálculo que invalida sus cambios pendientes.
 
+        OJO: es `!=`, no `=` — con `=` borraba el historial del PROPIO
+        actor (y como aún no hay identidad real, todo es usuario 1: cada
+        recalc vía servidor vaciaba TODO el historial y el siguiente
+        deshacer/rehacer devolvía False aunque acabara de capturarse).
+
         Devuelve el número de registros eliminados.
         """
         self._cursor.execute(
-            "DELETE FROM historial WHERE usuario_id = ?", (usuario_id,)
+            "DELETE FROM historial WHERE usuario_id != ?", (usuario_id,)
         )
         return self._cursor.rowcount
 

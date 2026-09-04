@@ -417,6 +417,13 @@ class GeneradorMixin:
             lambda campos, c=container: self._on_renglon_nuevo_tab(c, campos))
         layout.addWidget(tabla, 1)
         container._tabla_generador = tabla
+        # Fase C: refresco remoto vía EventBus (GeneradorActualizado /
+        # ProyectoRecalculado). La desconexión al cerrar la pestaña ya
+        # existe (_cerrar_generador_tab via duck-typing hasattr).
+        _bus = getattr(self, "_event_bus", None)
+        _api = getattr(self, "_api", None)
+        if _bus is not None and _api is not None:
+            tabla.conectar_eventos(_bus, _api)
 
         return w
 

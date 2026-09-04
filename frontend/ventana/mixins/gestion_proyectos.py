@@ -49,7 +49,8 @@ class GestionProyectosMixin:
         from backend.database.event_bus import (
             InsumoActualizado, ConceptoActualizado, ApuComponenteActualizado,
             FactoresSobrecostoActualizados, NodoInsertado, NodoEliminado,
-            ProyectoRecalculado,
+            ProyectoRecalculado, GeneradorActualizado,
+            VariableFormulaActualizada, IndirectoActualizado,
         )
         _map = {
             "InsumoActualizado": lambda d: InsumoActualizado(
@@ -69,6 +70,15 @@ class GestionProyectosMixin:
                 d.get("nodo_id", 0), d.get("tipo", "")),
             "ProyectoRecalculado": lambda d: ProyectoRecalculado(
                 d.get("proyecto_id", 0), d.get("usuario_id", 1)),
+            # Fase C: el servidor ya broadcastea estos 3 vía suscriptor
+            # genérico (antes morían en silencio en el bus del servidor).
+            "GeneradorActualizado": lambda d: GeneradorActualizado(
+                d.get("generador_id", 0), d.get("conceptos_ids", [])),
+            "VariableFormulaActualizada": lambda d: VariableFormulaActualizada(
+                d.get("variable_id", 0), d.get("cambios", {}),
+                d.get("registro", {})),
+            "IndirectoActualizado": lambda d: IndirectoActualizado(
+                d.get("proyecto_id", 0)),
         }
         ctor = _map.get(nombre_evento)
         if ctor and self._event_bus:

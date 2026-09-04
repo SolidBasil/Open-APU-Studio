@@ -30,6 +30,7 @@ import logging
 import sqlite3
 import shutil
 import sys
+import threading
 from pathlib import Path
 
 if getattr(sys, "frozen", False):
@@ -216,6 +217,10 @@ class Database:
         """Database vacía o que abre conexión si se pasa db_path."""
         self._conn    = None
         self._db_path = None
+        # Profundidad de transaction() anidados (ver _TransactionContext):
+        # solo el nivel externo commitea/rollbackea de verdad.
+        self._tx_depth = 0
+        self._tx_lock  = threading.Lock()
         if db_path:
             self._abrir(db_path)
 
@@ -480,30 +485,58 @@ class Database:
     def transaction(self):
         """Context manager: abre transacción, commitea al salir, rollback si falla.
 
+        Soporta anidado (los writes de DataService abren su propio nivel
+        dentro del nivel del caller): los niveles internos usan SAVEPOINT y
+        solo el nivel EXTERNO commitea (o hace rollback total si falla).
+        Sin esto, el servidor HTTP —que nunca llama a conn.commit()
+        directo— acumulaba todo en una transacción implícita abierta:
+        sus lecturas veían los writes pero el archivo no, otros procesos
+        recibían "database is locked" y al reiniciar se perdía todo.
+
         Uso:
             with db.transaction():
                 repo.update(id, campos)
                 registro = repo.buscar(id)
-            # ← COMMIT aquí. Si excepción → ROLLBACK.
+            # ← COMMIT aquí (solo si es el nivel externo). Si excepción → ROLLBACK.
         """
-        return _TransactionContext(self._conn)
+        return _TransactionContext(self)
 
 
 # ── Context manager de transacciones ──────────────────────────────
 
 class _TransactionContext:
-    """Context manager para transacciones SQLite. Commitea al salir, rollback si falla."""
+    """Context manager para transacciones SQLite (anidables).
 
-    def __init__(self, conn: sqlite3.Connection):
-        self._conn = conn
+    Cada nivel abre un SAVEPOINT (mismo nombre en todos los niveles —
+    SQLite los apila y RELEASE/ROLLBACK TO siempre resuelven al más
+    reciente). Solo el nivel externo toca la transacción implícita:
+    COMMIT al salir limpio, ROLLBACK total si hubo excepción.
+    """
+
+    def __init__(self, db: "Database"):
+        self._db   = db
+        self._conn = db.conn
 
     def __enter__(self):
+        with self._db._tx_lock:
+            self._db._tx_depth += 1
         self._conn.execute("SAVEPOINT _sp_data_service")
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type is not None:
-            self._conn.execute("ROLLBACK TO SAVEPOINT _sp_data_service")
-        else:
-            self._conn.execute("RELEASE SAVEPOINT _sp_data_service")
+        try:
+            if exc_type is not None:
+                self._conn.execute("ROLLBACK TO SAVEPOINT _sp_data_service")
+                self._conn.execute("RELEASE SAVEPOINT _sp_data_service")
+            else:
+                self._conn.execute("RELEASE SAVEPOINT _sp_data_service")
+        finally:
+            with self._db._tx_lock:
+                self._db._tx_depth -= 1
+                externo = self._db._tx_depth == 0
+            if externo:
+                if exc_type is not None:
+                    self._conn.rollback()
+                elif self._conn.in_transaction:
+                    self._conn.commit()
         return False  # No suprime excepciones

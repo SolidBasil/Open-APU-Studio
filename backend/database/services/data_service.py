@@ -95,7 +95,7 @@ class DataService:
 
     def actualizar(self, entidad: str, registro_id: int,
                    usuario_id: int = 1, limpiar_redo: bool = True,
-                   **campos: Any) -> None:
+                   sesion: str | None = None, **campos: Any) -> None:
         """Actualiza campos de un registro y emite evento post-commit.
 
         SRV-09: captura valor_anterior de cada campo modificado en
@@ -122,7 +122,7 @@ class DataService:
                 # SRV-10: nueva escritura invalida el redo stack
                 if limpiar_redo:
                     h_repo.limpiar_deshachadas(usuario_id)
-                sesion = self._sesion or str(uuid.uuid4())
+                sesion = sesion or self._sesion or str(uuid.uuid4())
                 for campo, nuevo_valor in campos.items():
                     viejo = h_repo.valor_campo(entidad, registro_id, campo)
                     if str(viejo) != str(nuevo_valor):
@@ -143,7 +143,8 @@ class DataService:
     # ── Insertar ────────────────────────────────────────────────────
 
     def insertar(self, entidad: str, usuario_id: int = 1,
-                 limpiar_redo: bool = True, **campos: Any) -> int:
+                 limpiar_redo: bool = True, sesion: str | None = None,
+                 **campos: Any) -> int:
         """Inserta un registro, captura historial de creación (SRV-09/10)
         y emite evento post-commit.
 
@@ -175,7 +176,7 @@ class DataService:
                 h_repo = HistorialRepo(self._db.conn)
                 if limpiar_redo:
                     h_repo.limpiar_deshachadas(usuario_id)
-                sesion = self._sesion or str(uuid.uuid4())
+                sesion = sesion or self._sesion or str(uuid.uuid4())
                 registro_id = repo.insert(campos)
                 h_repo.capturar_creado(entidad, registro_id,
                                         usuario_id=usuario_id, sesion=sesion)
@@ -188,7 +189,8 @@ class DataService:
     # ── Eliminar ────────────────────────────────────────────────────
 
     def eliminar(self, entidad: str, registro_id: int,
-                 usuario_id: int = 1, limpiar_redo: bool = True) -> None:
+                 usuario_id: int = 1, limpiar_redo: bool = True,
+                 sesion: str | None = None) -> None:
         """Elimina (soft-delete) un registro y emite evento post-commit.
 
         SRV-09: captura en historial el valor anterior del campo 'activo'
@@ -213,7 +215,7 @@ class DataService:
                 h_repo = HistorialRepo(self._db.conn)
                 if limpiar_redo:
                     h_repo.limpiar_deshachadas(usuario_id)
-                sesion = self._sesion or str(uuid.uuid4())
+                sesion = sesion or self._sesion or str(uuid.uuid4())
 
                 try:
                     viejo = h_repo.valor_campo(entidad, registro_id, "activo")
@@ -334,7 +336,7 @@ class DataService:
                 pid = 1  # fallback
 
         with self._db.transaction():
-            for c in cambios:
+            for c in reversed(cambios):
                 repo = self._registry.obtener(c["tabla"])
                 if c["campo"] == CAMPO_CREADO:
                     # Esta fila se creó en esta sesión (ver
@@ -352,6 +354,10 @@ class DataService:
                             f"DELETE FROM {c['tabla']} WHERE id = ?", [c["registro_id"]]
                         )
                     continue
+                # Se itera en orden INVERSO al de captura: deshacer [1→5,
+                # 5→9] debe terminar en 1, no en 5 (bug: en orden
+                # cronológico, revertir 1→5 y luego 5→9 deja cantidad=5).
+                # Rehacer sí va cronológico (re-aplica valores finales).
                 valor = c["valor_anterior"]
                 # OJO: `valor is None` puede significar "el valor anterior
                 # legítimo era NULL" (ej. generadores.concepto_id sin
@@ -840,3 +846,99 @@ class DataService:
             pid = (registro or {}).get("proyecto_id") or (cambios or {}).get("proyecto_id")
             return tipo(proyecto_id=pid)
         return tipo(id, cambios, registro)
+
+    def unificar_matrices_apu(self, proyecto_id: int) -> int:
+        """Una sola matriz por APU (migración de mantenimiento).
+
+        La importación OPUS creaba DOS matrices para el mismo desglose:
+        concepto (matriz_id positivo) + insumo compuesto (matriz_id
+        negativo). Redirige componentes a la matriz del compuesto y borra
+        la duplicada. Devuelve conceptos migrados.
+
+        Vive aquí (R1) para que local, servidor y apertura de proyecto
+        compartan la única implementación — antes estaba duplicada en
+        _BackendLocal/_BackendHTTP.
+        """
+        from backend.database.repos import ApuMatricesRepo
+
+        repo = ApuMatricesRepo(self._db.conn)
+        candidatos = repo.conceptos_con_insumo_compuesto(proyecto_id)
+        migrados = 0
+        with self.transaccion():
+            for row in candidatos:
+                cid = row["cid"]
+                neg = -row["insumo_id"]
+                if repo.contar_por_matriz(cid) == 0:
+                    continue
+                if repo.contar_por_matriz(neg) == 0:
+                    repo.redirigir_matriz(origen=cid, destino=neg)
+                else:
+                    repo.eliminar_matriz(cid)
+                migrados += 1
+        if migrados:
+            self._event_bus.emit(ProyectoRecalculado(proyecto_id))
+        return migrados
+
+    def agregar_nodo(self, proyecto_id: int, tipo: str, padre_id: int | None = None,
+                     descripcion: str = "", insumo_id: int | None = None,
+                     cantidad: float | None = None, orden: float | None = None,
+                     antes_de: int | None = None, es_extra: bool = False) -> int:
+        """Inserta un nodo en el presupuesto y recalcula (Fase B: movido
+        desde _BackendLocal para que el endpoint /agregar_nodo use la
+        única implementación — transacción + reindex + recalc atómicos).
+
+        Semántica preservada: inserción directa vía repo (sin historial),
+        orden explícito o resuelto (antes_de / proximo_orden).
+        """
+        from backend.database.repos import NodoRepo, RecalculoRepo
+
+        repo = NodoRepo(self._db.conn)
+        if orden is None and antes_de is not None:
+            ref = repo.buscar(antes_de)
+            if ref:
+                orden = ref["orden"] - 0.5
+        if orden is None:
+            orden = repo.proximo_orden(proyecto_id, padre_id)
+        with self.transaccion():
+            nuevo_id = repo.insert({
+                "proyecto_id": proyecto_id,
+                "padre_id":    padre_id,
+                "wbs":         "",
+                "nivel":       0,
+                "tipo":        tipo,
+                "descripcion": descripcion or "",
+                "orden":       orden,
+                "insumo_id":   insumo_id,
+                "cantidad":    cantidad,
+                "total":       0.0,
+                "es_extra":    1 if es_extra else 0,
+                "estado":      0,
+                "activo":      1,
+                "creado_por":  1,
+            })
+            repo.reindexar(proyecto_id)
+            RecalculoRepo(self._db.conn).recalcular_proyecto(proyecto_id)
+        self._event_bus.emit(ProyectoRecalculado(proyecto_id))
+        return nuevo_id
+
+    def apu_agregar_componente(self, matriz_id: int, insumo_id: int,
+                               valor: float = 1.0, operador: str = "*",
+                               proyecto_id: int = 1, usuario_id: int = 1) -> int:
+        """Inserta un componente en una matriz APU y recalcula (Fase B:
+        movido desde _BackendLocal — orden + insert + recalc atómicos para
+        el endpoint /apu/agregar_componente). Pasa por insertar() (con
+        historial, deshacible con Ctrl+Z).
+        """
+        from backend.database.repos import ApuMatricesRepo, RecalculoRepo
+
+        orden = ApuMatricesRepo(self._db.conn).proximo_orden(matriz_id)
+        campos = {
+            "matriz_id": matriz_id, "insumo_id": insumo_id,
+            "valor": valor, "operador": operador,
+            "precio": 0.0, "orden": orden, "formula": None,
+        }
+        with self.transaccion():
+            nuevo_id = self.insertar("apu_matrices", usuario_id=usuario_id, **campos)
+            RecalculoRepo(self._db.conn).recalcular_proyecto(proyecto_id)
+        self._event_bus.emit(ProyectoRecalculado(proyecto_id))
+        return nuevo_id
