@@ -1,5 +1,4 @@
 """Pytest para insumos — migrado de smoke_insumos (solo local)."""
-from decimal import Decimal
 
 
 def test_insumos_crud(api):
@@ -28,3 +27,18 @@ def test_insumos_crud(api):
     # eliminar
     api.eliminar_insumo(id1)
     assert api.insumo_por_id(id1) is None
+
+def test_insumos_con_matrices_equivale_filtro_viejo(api):
+    id_simple = api.insumo_insertar(tipo_id=1, descripcion="Simple X", unidad="kg", costo=5)
+    id_comp = api.insumo_insertar(
+        tipo_id=1, descripcion="Compuesto X", unidad="m3", costo=0, es_compuesto=1)
+    nuevo = api.insumos_con_matrices()
+    ids_nuevo = {i["id"] for i in nuevo}
+    assert id_comp in ids_nuevo
+    assert id_simple not in ids_nuevo
+    # misma semántica que el patrón viejo (fetch + filtro Python)
+    ids_viejo = api.insumo_ids_con_apu()
+    esperado = [i for i in api.insumos() if i.get("id") in ids_viejo]
+    assert [i["id"] for i in nuevo] == [i["id"] for i in esperado]
+    # con filtro de tipo inexistente no trae nada en ambos
+    assert api.insumos_con_matrices("no_existe") == []

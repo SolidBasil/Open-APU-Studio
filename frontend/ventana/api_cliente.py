@@ -82,29 +82,34 @@ class ApiCliente:
         raise ValueError(f"buscar() no soporta entidad '{entidad}'")
 
     def actualizar(self, entidad: str, registro_id: int,
-                     sesion_token: str | None = None, **campos: Any) -> None:
+                     sesion_token: str | None = None,
+                     usuario_id: int = 1, **campos: Any) -> None:
         self._post("/actualizar", json={
             "entidad": entidad,
             "registro_id": registro_id,
             "campos": campos,
             "sesion_token": sesion_token,
+            "usuario_id": usuario_id,
         })
 
     def insertar(self, entidad: str, sesion_token: str | None = None,
-                 **campos: Any) -> int:
+                 usuario_id: int = 1, **campos: Any) -> int:
         r = self._post("/insertar", json={
             "entidad": entidad,
             "campos": campos,
             "sesion_token": sesion_token,
+            "usuario_id": usuario_id,
         })
         return r["id"]
 
     def eliminar(self, entidad: str, registro_id: int,
-                 sesion_token: str | None = None) -> None:
+                 sesion_token: str | None = None,
+                 usuario_id: int = 1) -> None:
         self._post("/eliminar", json={
             "entidad": entidad,
             "registro_id": registro_id,
             "sesion_token": sesion_token,
+            "usuario_id": usuario_id,
         })
 
     def recalcular(self) -> None:

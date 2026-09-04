@@ -1,6 +1,5 @@
 """Pytest para fallback DXF — migrado de smoke_cad_dxf_fallback (Hallazgo 13)."""
 import os
-import tempfile
 from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")

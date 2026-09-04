@@ -5,7 +5,6 @@ a un proyecto .db de Open APU Studio (presupuesto + generadores, sin matrices).
 import sys
 from pathlib import Path
 import sqlite3
-from collections import OrderedDict
 
 try:
     import openpyxl

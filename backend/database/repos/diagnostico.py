@@ -4,6 +4,24 @@ Todas las queries de depuración que antes vivían en handlers.py.
 """
 from .base import RepoBase
 
+# Alias de unidades a su forma estándar (el mapa completo se construye
+# con _unidades_mapa()). Definido una sola vez a nivel módulo — antes
+# estaba copiado idéntico en unidades_no_estandar() y unidades_case().
+_ALIASES = {
+    "m2": "m²", "m³": "m³", "m3": "m³",
+    "jgo": "juego",
+    "lt": "L", "l": "L",
+    "hor": "hr", "hr": "hr",
+}
+
+
+def _unidades_mapa():
+    """Mapa unidad minúscula → forma estándar (UNIDADES + ALIASES)."""
+    from frontend.ventana.widgets.base import UNIDADES
+    mapa = {u.lower(): u for u in UNIDADES}
+    mapa.update(_ALIASES)
+    return mapa
+
 
 class DiagnosticoRepo(RepoBase):
     """Consultas de diagnóstico del catálogo e integridad del presupuesto."""
@@ -90,14 +108,7 @@ class DiagnosticoRepo(RepoBase):
     def unidades_no_estandar(self, proyecto_id):
         """Insumos con unidad no estándar que NO se corrigen por case/alias."""
         from frontend.ventana.widgets.base import UNIDADES
-        ALIASES = {
-            "m2": "m²", "m³": "m³", "m3": "m³",
-            "jgo": "juego",
-            "lt": "L", "l": "L",
-            "hor": "hr", "hr": "hr",
-        }
-        mapa = {u.lower(): u for u in UNIDADES}
-        mapa.update(ALIASES)
+        mapa = _unidades_mapa()
         placeholders = ",".join("?" * len(UNIDADES))
         filas = self._lista(f"""
             SELECT i.id, i.clave_opus AS clave, i.descripcion, i.tipo_id, i.unidad
@@ -111,15 +122,7 @@ class DiagnosticoRepo(RepoBase):
 
     def unidades_case(self, proyecto_id):
         """Insumos cuya unidad es un alias (case o abreviatura) de una estándar."""
-        from frontend.ventana.widgets.base import UNIDADES
-        ALIASES = {
-            "m2": "m²", "m³": "m³", "m3": "m³",
-            "jgo": "juego",
-            "lt": "L", "l": "L",
-            "hor": "hr", "hr": "hr",
-        }
-        mapa = {u.lower(): u for u in UNIDADES}
-        mapa.update(ALIASES)
+        mapa = _unidades_mapa()
         filas = self._lista("""
             SELECT i.id, i.clave_opus AS clave, i.descripcion, i.tipo_id, i.unidad
             FROM insumos i
@@ -188,30 +191,6 @@ class DiagnosticoRepo(RepoBase):
         )
         # ponytail: commit removido — el repo no commitea, lo hace el servicio
 
-    def nodos_huerfanos(self, proyecto_id):
-        """Nodos del presupuesto cuyo padre_id apunta a un id que no existe."""
-        return self._lista("""
-            SELECT id, CAST(id AS TEXT) AS clave, descripcion, NULL AS tipo_id
-            FROM estructura_presupuesto n
-            WHERE n.proyecto_id = ? AND n.activo = 1
-              AND n.padre_id IS NOT NULL
-              AND n.padre_id NOT IN (
-                  SELECT id FROM estructura_presupuesto WHERE activo = 1
-              )
-        """, [proyecto_id])
-
-    def totales_desincronizados(self, proyecto_id):
-        """Capítulos cuyo total no coincide (±$1) con la suma de sus hijos directos."""
-        return self._lista("""
-            SELECT id, CAST(id AS TEXT) AS clave, descripcion, NULL AS tipo_id
-            FROM estructura_presupuesto n
-            WHERE n.proyecto_id = ? AND n.tipo = 'capitulo' AND n.activo = 1
-              AND ABS(n.total - (
-                  SELECT COALESCE(SUM(COALESCE(total, 0)), 0)
-                  FROM estructura_presupuesto WHERE padre_id = n.id AND activo = 1
-              )) > 1.0
-        """, [proyecto_id])
-
     def componentes_cantidad_cero(self, proyecto_id):
         """Componentes APU con valor = 0 (cantidad cero)."""
         return self._lista("""
@@ -241,46 +220,3 @@ class DiagnosticoRepo(RepoBase):
             WHERE i.proyecto_id = ? AND i.activo = 1
             ORDER BY am.matriz_id, am.insumo_id, am.orden
         """, [proyecto_id])
-
-    def resumen_integridad(self, proyecto_id) -> dict:
-        """Reporte agregado de integridad del proyecto. Migrado desde
-        core.validar() (Fase 4, ver ARQUITECTURA_SERVICIOS.md).
-
-        Returns:
-            {
-                "total_nodos":          int,
-                "total_conceptos":      int,
-                "conceptos_sin_apu":    int,
-                "totales_ok":           bool,
-                "advertencias":         list[str],
-            }
-        """
-        total_nodos = self._uno("""
-            SELECT COUNT(*) AS n FROM estructura_presupuesto
-            WHERE proyecto_id = ? AND activo = 1
-        """, [proyecto_id])["n"]
-        total_conceptos = self._uno("""
-            SELECT COUNT(*) AS n FROM estructura_presupuesto
-            WHERE proyecto_id = ? AND tipo = 'concepto' AND activo = 1
-        """, [proyecto_id])["n"]
-
-        sin_apu    = len(self.conceptos_sin_apu(proyecto_id))
-        huerfanos  = len(self.nodos_huerfanos(proyecto_id))
-        desincron  = self.totales_desincronizados(proyecto_id)
-        totales_ok = len(desincron) == 0
-
-        advertencias = []
-        if sin_apu:
-            advertencias.append(f"{sin_apu} conceptos sin componentes APU")
-        if huerfanos:
-            advertencias.append(f"{huerfanos} nodos con padre_id inválido")
-        if not totales_ok:
-            advertencias.append(f"{len(desincron)} capítulos con totales desincronizados")
-
-        return {
-            "total_nodos":       total_nodos,
-            "total_conceptos":   total_conceptos,
-            "conceptos_sin_apu": sin_apu,
-            "totales_ok":        totales_ok,
-            "advertencias":      advertencias,
-        }

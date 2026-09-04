@@ -30,17 +30,15 @@ construye (a diferencia de explosión, que tiene dos builders distintos
 compartiendo el mismo widget).
 """
 
-from PySide6.QtCore import Qt, QTimer, Signal, QPoint
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import QComboBox, QDialog, QHeaderView, QMessageBox, QAbstractItemView
-from PySide6.QtGui import QColor
 
-from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef, UNIDADES, FORMULA_ROLE, EMPTY_ROLE
+from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef, UNIDADES, FORMULA_ROLE, EMPTY_ROLE, blocked_signals
 from backend.database.event_bus import (
     ApuComponenteActualizado, InsumoActualizado, ProyectoRecalculado,
 )
 from frontend.ventana.iconos import icono
 from frontend.ventana.tipos_insumo import COLOR as _COLOR_TIPO
-from frontend.ventana.colores import ACCENT
 
 _TIPO_ID_ROLE = Qt.ItemDataRole.UserRole + 2
 
@@ -188,8 +186,7 @@ class TablaApuDetalle(TreeTableWidget):
         titulo = self._descripcion or f"Matriz #{self._matriz_id}"
         self.resumen_actualizado.emit(f"<b>{titulo}</b> — Total: ${total:,.2f}")
 
-        self.blockSignals(True)
-        try:
+        with blocked_signals(self):
             self.clear()
             if resultado:
                 for r in resultado["detalle"]:
@@ -216,8 +213,6 @@ class TablaApuDetalle(TreeTableWidget):
                     row_item.setData(0, _TIPO_ID_ROLE, r.get("tipo_id"))
                     row_item.setData(5, Qt.ItemDataRole.UserRole, r.get("id"))
                     row_item.setData(6, FORMULA_ROLE, r.get("formula") or "")
-        finally:
-            self.blockSignals(False)
 
         # Emit tipos detected for filter bar
         tipos_ids: set[int] = set()
@@ -560,14 +555,13 @@ class TablaApuDetalle(TreeTableWidget):
                 QMessageBox.warning(self.window(), "Fórmula inválida", str(e))
                 tw = item.treeWidget()
                 if tw:
-                    tw.blockSignals(True)
-                    row = self._api.campo_valor("apu_matrices", "valor", comp_id)
-                    old = (row or {}).get("valor")
-                    if old is not None:
-                        txt = f"{old:,.8f}".rstrip("0").rstrip(".")
-                        item.setText(6, txt)
-                    item.setData(6, FORMULA_ROLE, texto)
-                    tw.blockSignals(False)
+                    with blocked_signals(tw):
+                        row = self._api.campo_valor("apu_matrices", "valor", comp_id)
+                        old = (row or {}).get("valor")
+                        if old is not None:
+                            txt = f"{old:,.8f}".rstrip("0").rstrip(".")
+                            item.setText(6, txt)
+                        item.setData(6, FORMULA_ROLE, texto)
                     QTimer.singleShot(0, lambda t=tw, i=item, c=column: t.editItem(i, c))
             return
 
@@ -636,17 +630,16 @@ class TablaApuDetalle(TreeTableWidget):
         tw = item.treeWidget()
         if not tw:
             return
-        tw.blockSignals(True)
-        row = self._api.campo_valor(tabla, campo, reg_id)
-        if row:
-            val = row[campo]
-            if val is None:
-                txt = ""
-            elif isinstance(val, str):
-                txt = val
-            elif "$" in fmt:
-                txt = f"${val:,.2f}"
-            else:
-                txt = f"{val:,.8f}".rstrip("0").rstrip(".")
-            item.setText(column, txt)
-        tw.blockSignals(False)
+        with blocked_signals(tw):
+            row = self._api.campo_valor(tabla, campo, reg_id)
+            if row:
+                val = row[campo]
+                if val is None:
+                    txt = ""
+                elif isinstance(val, str):
+                    txt = val
+                elif "$" in fmt:
+                    txt = f"${val:,.2f}"
+                else:
+                    txt = f"{val:,.8f}".rstrip("0").rstrip(".")
+                item.setText(column, txt)

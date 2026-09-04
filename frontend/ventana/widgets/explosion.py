@@ -13,14 +13,14 @@ no de cantidad x costo_final. Por eso sus columnas Cantidad y P.U. muestran —.
 """
 
 from PySide6.QtCore    import Qt, QSize
-from PySide6.QtGui     import QFont, QColor, QBrush, QPalette, QKeySequence
+from PySide6.QtGui     import QFont, QColor, QBrush, QPalette
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
     QCheckBox, QPushButton, QMenu,
     QLabel, QWidget, QHeaderView, QFrame,
 )
 
-from frontend.ventana.widgets.base import TreeTableWidget
+from frontend.ventana.widgets.base import TreeTableWidget, crear_footer_dialogo, _menu_icon
 from frontend.ventana.iconos import icono
 
 
@@ -335,27 +335,10 @@ class DialogoExplosion(QDialog):
         col.addStretch()
         return col
 
-    def _build_footer(self) -> QWidget:
-        """Pie del diálogo: botones Cancelar + Calcular."""
-        w = QWidget()
-        hbox = QHBoxLayout(w)
-        hbox.setContentsMargins(0, 4, 0, 0)
-        hbox.addStretch()
-
-        btn_cancel = QPushButton("Cancelar")
-        btn_cancel.setMinimumWidth(90)
-        btn_cancel.clicked.connect(self.reject)
-
-        btn_ok = QPushButton("Calcular")
-        btn_ok.setObjectName("btnPrimario")
-        btn_ok.setMinimumWidth(110)
-        btn_ok.setDefault(True)
-        btn_ok.clicked.connect(self._on_accept)
-
-        hbox.addWidget(btn_cancel)
-        hbox.addSpacing(8)
-        hbox.addWidget(btn_ok)
-        return w
+    def _build_footer(self):
+        """Pie del diálogo: botones Cancelar + Calcular (footer estándar)."""
+        return crear_footer_dialogo(self, texto_guardar="Calcular",
+                                    on_guardar=self._on_accept)
 
     # -- Lógica ----------------------------------------------------
 
@@ -576,22 +559,12 @@ class PestañaExplosion(QWidget):
 
     def _on_context_menu(self, pos, on_rastrear):
         """Menú contextual -> Copiar/Cortar/Pegar + Rastrear uso para el insumo bajo el cursor."""
-        from frontend.ventana.widgets.base import _menu_icon
         item = self._tabla.itemAt(pos)
         if not item:
             return
         self._tabla.setCurrentItem(item)
         menu = QMenu(self)
-        copy_act = menu.addAction(_menu_icon("clipboard"), "Copiar")
-        copy_act.setShortcut(QKeySequence.StandardKey.Copy)
-        copy_act.triggered.connect(self._tabla._copy)
-        cut_act = menu.addAction(_menu_icon("scissors"), "Cortar")
-        cut_act.setShortcut(QKeySequence.StandardKey.Cut)
-        cut_act.triggered.connect(self._tabla._cut)
-        paste_act = menu.addAction(_menu_icon("file-text"), "Pegar")
-        paste_act.setShortcut(QKeySequence.StandardKey.Paste)
-        paste_act.triggered.connect(self._tabla._paste)
-        menu.addSeparator()
+        self._tabla._add_clipboard_actions(menu)
         insumo_id = item.data(0, Qt.ItemDataRole.UserRole)
         if insumo_id:
             act = menu.addAction(_menu_icon("search"), "Rastrear uso")

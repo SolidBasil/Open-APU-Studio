@@ -933,7 +933,7 @@ class ToolbarMixin:
         self._search_input.setVisible(not self._search_input.isVisible())
 
     def _on_filtro_menu(self):
-        from PySide6.QtWidgets import QDialog, QMessageBox
+        from PySide6.QtWidgets import QDialog
         from frontend.ventana.widgets.filtros import FilterDialog
         t = self._get_active_table()
         if not t:

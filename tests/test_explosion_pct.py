@@ -3,7 +3,7 @@ import sqlite3
 
 import pytest
 
-from backend.database.repos.explosion import ExplosionRepo, _parse_unidad_pct, _PCT_TIPO_DESTINO
+from backend.database.repos.explosion import ExplosionRepo, _parse_unidad_pct
 
 
 def test_pct_concepto_resuelve_subcontrato():

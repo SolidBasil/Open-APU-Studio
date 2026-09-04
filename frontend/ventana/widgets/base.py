@@ -39,23 +39,38 @@ UNIDADES = [
 
 from PySide6.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QAbstractItemView,
-    QHeaderView, QApplication, QStyledItemDelegate, QMenu, QStyle,
+    QHeaderView, QApplication, QStyledItemDelegate, QMenu,
     QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QCheckBox,
     QLabel, QGroupBox, QScrollArea, QWidget, QDialogButtonBox,
     QFrame, QPushButton, QTabWidget, QTabBar, QToolButton, QRubberBand,
 )
 from PySide6.QtCore import (Qt, QByteArray, QPoint, QRect, QTimer, QMimeData,
-                            QItemSelectionModel, QSize)
-from PySide6.QtGui import QBrush, QColor, QKeySequence, QPainter, QPen, QDrag, QPixmap, QFont, QIcon, QShortcut
+                            QItemSelectionModel)
+from PySide6.QtGui import QBrush, QColor, QKeySequence, QPainter, QPen, QDrag, QPixmap, QFont, QShortcut
 
-import re
-from dataclasses import dataclass
-from backend.database.db import Config
+from contextlib import contextmanager
+
+
+@contextmanager
+def blocked_signals(*widgets):
+    """Bloquea señales de los widgets dados, restaurando siempre.
+
+    Reemplaza los pares manuales `w.blockSignals(True)` … `w.blockSignals(False)`
+    (y los `try/finally` equivalentes): si el cuerpo lanza, las señales se
+    restauran igual — antes quedaban bloqueadas para siempre y la tabla
+    dejaba de responder sin ningún error visible.
+    """
+    for w in widgets:
+        w.blockSignals(True)
+    try:
+        yield
+    finally:
+        for w in widgets:
+            w.blockSignals(False)
 
 
 # ── Catálogo de columnas (favoritas / personalizar) ───────────────
 
-import re
 from dataclasses import dataclass
 from enum import Enum
 from backend.database.db import Config
@@ -2272,17 +2287,7 @@ class TreeTableWidget(QTreeWidget):
             self.setCurrentItem(item, col,
                 QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
         menu = QMenu(self)
-        copy_act = menu.addAction(_menu_icon("clipboard"), "Copiar")
-        copy_act.setShortcut(QKeySequence.StandardKey.Copy)
-        copy_act.triggered.connect(self._copy)
-        if self._editable_cols_for(item):
-            cut_act = menu.addAction(_menu_icon("scissors"), "Cortar")
-            cut_act.setShortcut(QKeySequence.StandardKey.Cut)
-            cut_act.triggered.connect(self._cut)
-            paste_act = menu.addAction(_menu_icon("file-text"), "Pegar")
-            paste_act.setShortcut(QKeySequence.StandardKey.Paste)
-            paste_act.triggered.connect(self._paste)
-        menu.addSeparator()
+        self._add_clipboard_actions(menu, con_corte=bool(self._editable_cols_for(item)))
         sel_act = menu.addAction(_menu_icon("check-square"), "Seleccionar todo")
         sel_act.setShortcut(QKeySequence.StandardKey.SelectAll)
         sel_act.triggered.connect(self.selectAll)
@@ -2296,6 +2301,27 @@ class TreeTableWidget(QTreeWidget):
     def _context_menu_actions(self, menu: QMenu):
         """Hook: subclases agregan acciones extra al menú contextual."""
         pass
+
+    def _add_clipboard_actions(self, menu: QMenu, *, con_corte: bool = True):
+        """Agrega Copiar/Cortar/Pegar (con iconos y atajos estándar) más un
+        separador final. Antes se reconstruía a mano en base.py, rastreo.py
+        y explosion.py — mismo bloque copiado (ver 3.5 de la guía de deuda).
+
+        El método debe llamarse sobre la tabla que provee _copy/_cut/_paste
+        (por eso se auto-pasa): en rastreo.py y explosion.py el menú lo
+        construye un contenedor externo pero las acciones operan sobre la
+        TreeTableWidget interna."""
+        copy_act = menu.addAction(_menu_icon("clipboard"), "Copiar")
+        copy_act.setShortcut(QKeySequence.StandardKey.Copy)
+        copy_act.triggered.connect(self._copy)
+        if con_corte:
+            cut_act = menu.addAction(_menu_icon("scissors"), "Cortar")
+            cut_act.setShortcut(QKeySequence.StandardKey.Cut)
+            cut_act.triggered.connect(self._cut)
+            paste_act = menu.addAction(_menu_icon("file-text"), "Pegar")
+            paste_act.setShortcut(QKeySequence.StandardKey.Paste)
+            paste_act.triggered.connect(self._paste)
+        menu.addSeparator()
 
     def _on_item_clicked(self, item, column):
         """Handler estándar de itemClicked (conectado en __init__): si el

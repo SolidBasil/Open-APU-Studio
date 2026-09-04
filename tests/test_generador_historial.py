@@ -62,3 +62,29 @@ def test_mover_renglon_control(db_tmp):
         "SELECT generador_id FROM generador_renglones WHERE id=?", [renglon2]
     ).fetchone()["generador_id"] == gen_b
     assert ds.deshacer(usuario_id=1, proyecto_id=1)
+
+
+def test_vinculacion_generador_ui_presente():
+    """Regresión 1.2: los handlers de vincular/desvincular deben existir
+    en el mixin (estático, igual que test_rastreo_menu_icon_no_nameerror)."""
+    from frontend.ventana.mixins.generador import GeneradorMixin
+
+    for metodo in (
+        "_on_generador_asignar_concepto",
+        "_on_generador_desvincular",
+        "_confirmar_cambio_cantidad",
+        "_actualizar_identidad_generador",
+    ):
+        assert hasattr(GeneradorMixin, metodo), f"falta {metodo}"
+
+
+def test_dialogo_seleccionar_concepto_vacio():
+    """Un presupuesto sin conceptos no debe abrir el diálogo modal."""
+    import sys
+    from PySide6.QtWidgets import QApplication
+    from frontend.ventana.widgets.dialogs import DialogoSeleccionarConcepto
+
+    QApplication.instance() or QApplication(sys.argv)
+    dlg = DialogoSeleccionarConcepto([], None)
+    assert dlg.elegir() is None
+    dlg.deleteLater()

@@ -25,7 +25,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import Qt
 
 from backend.database.db import Database
 from backend.database.event_bus import EventBus
@@ -33,7 +32,7 @@ from backend.database.services.repository_registry import crear_registry
 from backend.database.services.data_service import DataService
 from frontend.ventana.api import Api
 from frontend.ventana.mixins.apu import ApuMixin
-from frontend.ventana.widgets.arbol import TablaArbol, ID_ROLE, INSUMO_ROLE
+from frontend.ventana.widgets.arbol import TablaArbol, INSUMO_ROLE
 
 
 class _FakeWindow(ApuMixin):

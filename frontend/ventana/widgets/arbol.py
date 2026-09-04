@@ -8,11 +8,11 @@ Uso:
 """
 
 from PySide6.QtCore import Qt, Signal, QPoint, QMimeData, QTimer
-from PySide6.QtGui import QColor, QBrush, QMouseEvent, QDrag, QPainter, QFont, QPixmap, QPen, QKeySequence
+from PySide6.QtGui import QColor, QBrush, QDrag, QPainter, QFont, QPixmap, QPen, QKeySequence
 
 from PySide6.QtWidgets import QHeaderView, QAbstractItemView, QLineEdit, QCompleter
 
-from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef, ColType, UNIDADES, FORMULA_ROLE, EMPTY_ROLE, COPY_ROLE, _menu_icon
+from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef, ColType, UNIDADES, FORMULA_ROLE, EMPTY_ROLE, COPY_ROLE, _menu_icon, blocked_signals
 
 
 # ── Icono desde tipo_id (Lucide SVG) ─────────────────────────────
@@ -1010,8 +1010,7 @@ class TablaArbol(TreeTableWidget):
             item = self._buscar_item_por_id(evento.concepto_id)
             if item is None:
                 return
-            self.blockSignals(True)
-            try:
+            with blocked_signals(self):
                 registro = evento.registro or {}
                 if "descripcion" in evento.cambios:
                     item.setText(4, registro.get("descripcion", "") or "")
@@ -1025,8 +1024,6 @@ class TablaArbol(TreeTableWidget):
                 if "estado" in evento.cambios:
                     item.setText(9, ESTADO_NOMBRE.get(registro.get("estado"), ""))
                     self._set_icono_estado(item, registro)
-            finally:
-                self.blockSignals(False)
         except Exception as e:
             print(f"[eventbus] _on_concepto_actualizado: {type(e).__name__}: {e}")
 
@@ -1088,19 +1085,16 @@ class TablaArbol(TreeTableWidget):
             }
             ids_expandidos = set()
             self._collect_expanded_ids(self.invisibleRootItem(), ids_expandidos)
-            texto_busqueda = self.window()._search_input.text() if (
-                hasattr(self.window(), '_search_input')
-                and hasattr(self.window(), '_on_search')
+            win = self.window()
+            texto_busqueda = win._search_input.text() if (
+                win is not None and hasattr(win, '_search_input')
             ) else None
 
             def _refrescar_seguro():
                 try:
-                    self.blockSignals(True)
-                    try:
+                    with blocked_signals(self):
                         nodos = self._api.presupuesto_arbol(extra=self._extra)
                         self.poblar(nodos)
-                    finally:
-                        self.blockSignals(False)
                     self._restore_expansion(self.invisibleRootItem(), ids_expandidos)
                     self.verticalScrollBar().setValue(scroll_y)
                     if id_actual is not None:
@@ -1113,7 +1107,7 @@ class TablaArbol(TreeTableWidget):
                             if item is not None:
                                 item.setSelected(True)
                     if texto_busqueda is not None:
-                        self.window()._on_search(texto_busqueda)
+                        self.filter_rows(texto_busqueda)
                 except Exception as e:
                     print(f"[eventbus] _refrescar_seguro: {type(e).__name__}: {e}")
 

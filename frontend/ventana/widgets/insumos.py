@@ -17,7 +17,7 @@ Uso:
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QHeaderView
-from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef, ColType, UNIDADES, EMPTY_ROLE, _menu_icon
+from frontend.ventana.widgets.base import TreeTableWidget, ColumnaDef, ColType, UNIDADES, EMPTY_ROLE, _menu_icon, blocked_signals
 from backend.database.event_bus import (
     InsumoActualizado, NodoInsertado, NodoEliminado, ProyectoRecalculado,
 )
@@ -411,14 +411,11 @@ class TablaInsumos(TreeTableWidget):
                         self.takeTopLevelItem(idx)
                     return
                 tiene_sub_apu = bool(registro.get("es_compuesto"))
-                self.blockSignals(True)
-                try:
+                with blocked_signals(self):
                     for c, val in enumerate(self._valores_fila(registro, tiene_sub_apu)):
                         item.setText(c, val)
                     self._set_tipo_icon(item, registro)
                     item.setIcon(1, icono("combine", 16) if tiene_sub_apu else QIcon())
-                finally:
-                    self.blockSignals(False)
             elif self._coincide_filtro(registro):
                 tiene_sub_apu = bool(registro.get("es_compuesto"))
                 row_item = self.add_row(self._valores_fila(registro, tiene_sub_apu), editable=True)
@@ -493,8 +490,7 @@ class TablaInsumos(TreeTableWidget):
             current = self.currentItem()
             id_actual = current.data(0, Qt.ItemDataRole.UserRole) if current else None
 
-            self.blockSignals(True)
-            try:
+            with blocked_signals(self):
                 tipo = getattr(self, '_insumos_tipo', None)
                 ids = self._api.insumo_ids_con_apu()
                 if getattr(self, '_insumos_matrices', False):
@@ -502,8 +498,6 @@ class TablaInsumos(TreeTableWidget):
                 else:
                     insumos = self._api.insumos(tipo)
                 self.poblar(insumos, ids)
-            finally:
-                self.blockSignals(False)
 
             self.verticalScrollBar().setValue(scroll_y)
             if id_actual is not None:
@@ -515,7 +509,7 @@ class TablaInsumos(TreeTableWidget):
                     QTimer.singleShot(0, lambda: self.verticalScrollBar().setValue(scroll_y))
 
             win = self.window()
-            if hasattr(win, '_search_input') and hasattr(win, '_on_search'):
-                win._on_search(win._search_input.text())
+            if win is not None and hasattr(win, '_search_input'):
+                self.filter_rows(win._search_input.text())
         except Exception as e:
             print(f"[eventbus] _on_proyecto_recalculado: {type(e).__name__}: {e}")

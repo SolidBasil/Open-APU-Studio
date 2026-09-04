@@ -8,6 +8,7 @@ Se mezcla en VentanaPrincipal via herencia múltiple.
 
 from PySide6.QtCore import Qt, QSize, QTimer
 from frontend.ventana.colores import TEXT
+from frontend.ventana.widgets.base import blocked_signals
 
 
 class ApuMixin:
@@ -218,11 +219,10 @@ class ApuMixin:
                 QMessageBox.warning(self, "Fórmula inválida", str(e))
                 tree = item.treeWidget()
                 if tree:
-                    tree.blockSignals(True)
-                    nodo = self._api.campo_valor("estructura_presupuesto", "cantidad", nodo_id)
-                    item.setText(6, _num((nodo or {}).get("cantidad")))
-                    item.setData(6, FORMULA_ROLE, texto)
-                    tree.blockSignals(False)
+                    with blocked_signals(tree):
+                        nodo = self._api.campo_valor("estructura_presupuesto", "cantidad", nodo_id)
+                        item.setText(6, _num((nodo or {}).get("cantidad")))
+                        item.setData(6, FORMULA_ROLE, texto)
                     QTimer.singleShot(0, lambda t=tree, i=item, c=column: t.editItem(i, c))
 
         elif column == 4:
@@ -243,9 +243,8 @@ class ApuMixin:
                 except ValueError as e:
                     QMessageBox.warning(self, "Descripción duplicada", str(e))
                     tree = item.treeWidget()
-                    tree.blockSignals(True)
-                    item.setText(column, self._api.nodo_descripcion_actual(nodo_id))
-                    tree.blockSignals(False)
+                    with blocked_signals(tree):
+                        item.setText(column, self._api.nodo_descripcion_actual(nodo_id))
 
         elif column == 3:
             if tipo != "Concepto":
@@ -263,15 +262,14 @@ class ApuMixin:
                                         f"No existe insumo con hash '{hash_val}'")
                     tree = item.treeWidget()
                     if tree:
-                        tree.blockSignals(True)
-                        nodo = self._api.campo_valor("estructura_presupuesto", "id", nodo_id)
-                        orig_id = (nodo or {}).get("insumo_id")
-                        if orig_id:
-                            orig = self._api.campo_valor("insumos", "id", orig_id)
-                            item.setText(3, (orig or {}).get("clave_opus", ""))
-                        else:
-                            item.setText(3, "")
-                        tree.blockSignals(False)
+                        with blocked_signals(tree):
+                            nodo = self._api.campo_valor("estructura_presupuesto", "id", nodo_id)
+                            orig_id = (nodo or {}).get("insumo_id")
+                            if orig_id:
+                                orig = self._api.campo_valor("insumos", "id", orig_id)
+                                item.setText(3, (orig or {}).get("clave_opus", ""))
+                            else:
+                                item.setText(3, "")
                     return
                 insumo_id = ins.get("id")
             if insumo_id:

@@ -54,6 +54,26 @@ class InsumoRepo(RepoBase):
                      COALESCE(i.descripcion, i.descripcion_corta) COLLATE NOCASE
         """, [proyecto_id, tipo_clave])
 
+    def con_matrices(self, proyecto_id, tipo_clave: str | None = None):
+        """Insumos compuestos (con APU propio), mismo shape y orden que
+        todos()/por_tipo() pero filtrado en SQL.
+
+        Reemplaza el patrón viejo de traer el catálogo completo + filtrar
+        ids en Python (2 queries + N dicts desperdiciados por llamada).
+        """
+        if tipo_clave:
+            return self._lista(self._SQL + """
+                WHERE i.proyecto_id = ? AND t.clave = ? AND i.activo = 1
+                  AND i.es_compuesto = 1
+                ORDER BY i.es_compuesto,
+                         COALESCE(i.descripcion, i.descripcion_corta) COLLATE NOCASE
+            """, [proyecto_id, tipo_clave])
+        return self._lista(self._SQL + """
+            WHERE i.proyecto_id = ? AND i.activo = 1 AND i.es_compuesto = 1
+            ORDER BY t.orden, i.es_compuesto,
+                     COALESCE(i.descripcion, i.descripcion_corta) COLLATE NOCASE
+        """, [proyecto_id])
+
     def buscar(self, insumo_id):
         """Busca un insumo por su ID."""
         return self._uno(self._SQL + """

@@ -10,6 +10,16 @@ _RESUMEN_DEFAULT = {
     "fletes": 0.0, "trabajos": 0.0, "costo_directo": 0.0,
 }
 
+# Todas las matrices del proyecto en una sola forma canónica
+# (positivas = conceptos del árbol, negativas = insumos compuestos).
+# Antes este UNION ALL estaba copiado en _sincronizar_precios_componentes
+# y en _recalcular_resumenes con distinta forma (con/sin alias).
+_MATRICES_PROYECTO = """
+    SELECT id AS matriz_id FROM estructura_presupuesto WHERE proyecto_id = ? AND activo = 1
+    UNION ALL
+    SELECT -id AS matriz_id FROM insumos WHERE proyecto_id = ? AND es_compuesto = 1 AND activo = 1
+"""
+
 
 class RecalculoRepo(RepoBase):
     """Recalcula en cascada todo el presupuesto de un proyecto:
@@ -139,16 +149,12 @@ class RecalculoRepo(RepoBase):
         del catálogo, es un % del subtotal del tipo que indica el sufijo
         (MO, MA, EQ…). Su `precio` no debe sobreescribirse.
         """
-        cur.execute("""
+        cur.execute(f"""
             UPDATE apu_matrices
             SET precio = (SELECT i.costo_directo * COALESCE(i.factor_fsr, 1.0)
                           FROM insumos i WHERE i.id = apu_matrices.insumo_id),
                 modificado_en = datetime('now')
-            WHERE matriz_id IN (
-                SELECT id  FROM estructura_presupuesto WHERE proyecto_id = ? AND activo = 1
-                UNION ALL
-                SELECT -id FROM insumos WHERE proyecto_id = ? AND es_compuesto = 1 AND activo = 1
-            )
+            WHERE matriz_id IN (SELECT matriz_id FROM ({_MATRICES_PROYECTO}))
             AND insumo_id NOT IN (
                 SELECT id FROM insumos
                 WHERE proyecto_id = ? AND unidad LIKE '(%'
@@ -169,11 +175,7 @@ class RecalculoRepo(RepoBase):
             ph = "SELECT ? AS matriz_id"
             params: list = [filtro_matriz]
         else:
-            ph = """
-                SELECT id AS matriz_id FROM estructura_presupuesto WHERE proyecto_id = ? AND activo = 1
-                UNION ALL
-                SELECT -id AS matriz_id FROM insumos WHERE proyecto_id = ? AND es_compuesto = 1 AND activo = 1
-            """
+            ph = _MATRICES_PROYECTO
             params = [proyecto_id, proyecto_id]
 
         cur.execute(f"""

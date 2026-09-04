@@ -1,6 +1,5 @@
 """Pytest para presupuesto — migrado de smoke_presupuesto (solo local)."""
 import pytest
-from decimal import Decimal
 
 
 def test_presupuesto_arbol_y_conceptos(api):

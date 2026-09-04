@@ -42,7 +42,7 @@ from backend.database.services.data_service import DataService
 from backend.database.repos import (
     InsumoRepo, NodoRepo, ApuMatricesRepo, FactoresSobrecostoRepo, FamiliaRepo, SubfamiliaRepo,
     RecalculoRepo, ExplosionRepo, IndirectoRepo, PLANTILLA_CAMPO, PLANTILLA_OFICINA,
-    VariableFormulaRepo,
+    VariableFormulaRepo, ProyectoRepo,
 )
 from backend.database.repos.generador import GeneradorRepo
 from backend.database.exceptions import (
@@ -248,6 +248,11 @@ class MoverRenglonesRequest(BaseModel):
     nuevo_generador_id: int
     antes_de_id: int | None = None
     copiar: bool = False
+
+
+class ReasignarGeneradorRequest(BaseModel):
+    concepto_id: int | None = None
+    usuario_id: int = 1
 
 
 class VariableCrearRequest(BaseModel):
@@ -764,6 +769,26 @@ def generador_mover_renglones(nombre: str, req: MoverRenglonesRequest, bt: Backg
     return {"ok": ok}
 
 
+@app.post("/proyectos/{nombre}/generadores/{generador_id}/reasignar")
+def generador_reasignar(nombre: str, generador_id: int, req: ReasignarGeneradorRequest,
+                        bt: BackgroundTasks):
+    """Mueve un generador a otro concepto (o lo desvincula con None).
+    Necesita ruta propia: reasignar_generador() recalcula ambos conceptos
+    y captura historial — no es un CRUD de una fila."""
+    svc = _obtener_servicios(nombre)
+    try:
+        with svc["lock"]:
+            svc["ds"].reasignar_generador(
+                generador_id, req.concepto_id, usuario_id=req.usuario_id
+            )
+    except (ValidationError, RepositoryError) as e:
+        raise HTTPException(status_code=422 if isinstance(e, ValidationError) else 500,
+                            detail=str(e))
+    # Fase C: ds ya emite GeneradorActualizado + ConceptoActualizado +
+    # ProyectoRecalculado -> el suscriptor los broadcastea (sin duplicado).
+    return {"ok": True}
+
+
 class UndoRequest(BaseModel):
     usuario_id: int = 1
 
@@ -809,6 +834,15 @@ def insumos(nombre: str, tipo: str | None = None):
     with svc["lock"]:
         repo = InsumoRepo(svc["db"].conn)
         return repo.por_tipo(1, tipo) if tipo else repo.todos(1)
+
+
+@app.get("/proyectos/{nombre}/insumos_con_matrices")
+def insumos_con_matrices(nombre: str, tipo: str | None = None):
+    """Compuestos con APU, filtrado en SQL (evita traer el catálogo
+    completo + filtrar ids en Python)."""
+    svc = _obtener_servicios(nombre)
+    with svc["lock"]:
+        return InsumoRepo(svc["db"].conn).con_matrices(1, tipo)
 
 
 @app.get("/proyectos/{nombre}/apu/proximo_orden")
@@ -1278,6 +1312,48 @@ def buscar_insumo_hash(nombre: str, req: DescripcionRequest):
     svc = _obtener_servicios(nombre)
     with svc["lock"]:
         return InsumoRepo(svc["db"].conn).buscar_por_hash(h, 1)
+
+
+@app.get("/proyectos/{nombre}/proyecto")
+def proyecto_leer(nombre: str):
+    """Lee los campos del proyecto (Fase A+: evita que el cliente remoto
+    lea el placeholder local vía ProyectoRepo directo)."""
+    svc = _obtener_servicios(nombre)
+    with svc["lock"]:
+        reg = ProyectoRepo(svc["db"].conn).buscar(1)
+        return dict(reg) if reg else {}
+
+
+@app.get("/proyectos/{nombre}/estadisticas")
+def estadisticas(nombre: str):
+    """Conteos del proyecto para el diálogo de información."""
+    from backend.database.repos.diagnostico import DiagnosticoRepo
+    svc = _obtener_servicios(nombre)
+    with svc["lock"]:
+        return DiagnosticoRepo(svc["db"].conn).estadisticas(1)
+
+
+@app.post("/proyectos/{nombre}/descargar")
+def descargar_proyecto(nombre: str):
+    """Libera los recursos del proyecto en el servidor.
+
+    Cierra la conexión SQLite y elimina la entrada del caché — sin esto,
+    cada proyecto abierto quedaba con su conexión abierta para siempre
+    (fuga lenta de descriptores/memoria en servidores de larga vida).
+    Idempotente: si no está cargado, no hace nada. El orden de locks
+    (_registro_lock → lock del proyecto) iguala al de la creación.
+    """
+    with _registro_lock:
+        svc = _proyectos.get(nombre)
+        if svc is None:
+            return {"ok": True, "estaba_cargado": False}
+        with svc["lock"]:
+            try:
+                svc["db"].close()
+            except Exception:
+                pass
+            _proyectos.pop(nombre, None)
+    return {"ok": True, "estaba_cargado": True}
 
 
 # ── WebSocket (SRV-05) ────────────────────────────────────────────

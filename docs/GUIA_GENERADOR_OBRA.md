@@ -1,6 +1,6 @@
 # Guía: Generadores de obra (con captura de medidas desde CAD)
 
-Actualizado: 2026-08-31 04:55 (hora local)
+Actualizado: 2026-09-04 16:35 (hora local)
 
 ## 1. Qué es esto y por qué se hace
 
@@ -163,6 +163,32 @@ servicios = validar → transacción → repo → commit → evento):
       propagar `total` (cantidad × precio) hacia los capítulos padres.
 3. Después del commit se emiten los eventos correspondientes (regla del
    proyecto: eventos solo después de commit exitoso).
+
+### 4.1 Vincular / desvincular un generador (UI)
+
+Flujo 4c (reasignar a otro concepto) ya está cableado a la interfaz
+(2026-09-04, deuda 1.2):
+
+- Botón **"Vincular"** en el panel de renglones de cada generador, con dos
+  acciones en su menú:
+  - **"Asignar a concepto…"** → abre `DialogoSeleccionarConcepto` (búsqueda
+    + lista de conceptos del presupuesto) y llama a
+    `Api.generador_reasignar(gen_id, concepto_id)`. Si el concepto destino
+    ya tiene `cantidad != 0`, pide confirmación mostrando el valor actual
+    y el nuevo (la reasignación la sobreescribe sumando el aporte del
+    generador).
+  - **"Desvincular (Extraordinario)"** → `Api.generador_reasignar(gen_id, None)`,
+    con la misma confirmación si el concepto pierde cantidad.
+- Tras la operación se refrescan el nombre mostrado y el título de la
+  pestaña (pasa a `wbs — descripción` o `Extraordinario N (sin concepto)`).
+  El árbol de presupuesto se repuebla solo vía `ProyectoRecalculado`.
+- Vía de red: `_BackendHTTP.generador_reasignar` → `POST
+  /proyectos/{nombre}/generadores/{generador_id}/reasignar` (cuerpo
+  `{"concepto_id": ..., "usuario_id": N}`); el servidor delega en
+  `DataService.reasignar_generador`, que recalcula ambos conceptos, captura
+  historial (Ctrl+Z deshace la reasignación completa) y emite
+  `GeneradorActualizado`/`ConceptoActualizado`/`ProyectoRecalculado` — el
+  suscriptor WS los broadcastea, sin duplicado.
 
 ---
 

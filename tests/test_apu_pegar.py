@@ -29,7 +29,6 @@ def qapp():
 
 @pytest.fixture()
 def montaje(qapp, api, db_tmp):
-    from backend.database.db import Database
     db, _ = db_tmp
     cur = db.conn.cursor()
     insumo_a = api.insumo_insertar(

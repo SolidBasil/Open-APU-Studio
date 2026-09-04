@@ -37,13 +37,13 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QMessageBox, QHeaderView, QFileDialog, QStackedWidget,
-    QSplitter, QComboBox,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+    QHeaderView, QFileDialog, QStackedWidget,
+    QSplitter, QComboBox, QPushButton, QMessageBox, QMenu,
 )
 
 from frontend.ventana.widgets.generador import TablaGenerador, medidas_efectivas
-from frontend.ventana.widgets.base import EMPTY_ROLE, TabWidgetCerrable
+from frontend.ventana.widgets.base import TabWidgetCerrable
 from frontend.ventana.cad.visor import VisorCadWidget, CadTool
 
 
@@ -261,8 +261,10 @@ class GeneradorMixin:
         container = QWidget()
         container._es_generador_tab = True
         container._generador_id = generador_id
+        container._concepto_id = gen.get("concepto_id")
         container._nombre_base = nombre or gen.get("nombre") or f"Generador #{generador_id}"
         container._unidad_activa = gen.get("unidad") or ""
+        container._medido_total = 0.0
         container._cad_entities_raw = []
         container._cad_layers = []
         container._cad_undo_state = empty_undo_state()
@@ -401,6 +403,20 @@ class GeneradorMixin:
         header = QHBoxLayout()
         header.addWidget(QLabel("Renglones"))
         header.addStretch()
+        btn_vincular = QPushButton("Vincular")
+        btn_vincular.setToolTip(
+            "Vincular este generador a un concepto del presupuesto, "
+            "o desvincularlo (Extraordinario)."
+        )
+        menu = QMenu(btn_vincular)
+        act_asignar = menu.addAction("Asignar a concepto…")
+        act_desvincular = menu.addAction("Desvincular (Extraordinario)")
+        act_asignar.triggered.connect(
+            lambda _checked=False, c=container: self._on_generador_asignar_concepto(c))
+        act_desvincular.triggered.connect(
+            lambda _checked=False, c=container: self._on_generador_desvincular(c))
+        btn_vincular.setMenu(menu)
+        header.addWidget(btn_vincular)
         layout.addLayout(header)
 
         tabla = TablaGenerador(generador_id=container._generador_id)
@@ -433,7 +449,96 @@ class GeneradorMixin:
         base = container._nombre_base
         unidad = container._unidad_activa or ""
         sufijo = f" {unidad}" if unidad else ""
+        container._medido_total = total or 0.0
         container._concepto_lbl.setText(f"{base}  —  Medido: {total:,.2f}{sufijo}")
+
+    # ── Vincular / desvincular generador ↔ concepto ──────────────
+
+    def _on_generador_asignar_concepto(self, container) -> None:
+        """Mueve este generador a otro concepto (selector + confirmación
+        si el destino ya tiene cantidad). La operación real es
+        Api.generador_reasignar: recalcula ambos conceptos y queda
+        deshacible con Ctrl+Z."""
+        api = self._api
+        if not api:
+            return
+        gen_id = container._generador_id
+        actual = container._concepto_id
+        conceptos = api.conceptos_planos()
+        items = []
+        for c in conceptos:
+            desc = (api.nodo_descripcion_actual(c["id"]) or "").strip()
+            wbs = (c.get("wbs") or "").strip()
+            label = f"{wbs} — {desc}" if wbs else desc
+            items.append((c["id"], label))
+        if not items:
+            QMessageBox.information(
+                self, "Asignar a concepto",
+                "El presupuesto no tiene conceptos.")
+            return
+        from frontend.ventana.widgets.dialogs import DialogoSeleccionarConcepto
+        dlg = DialogoSeleccionarConcepto(items, self)
+        elegido = dlg.elegir()
+        if elegido is None or elegido == actual:
+            return
+        if not self._confirmar_cambio_cantidad(api, gen_id, elegido, direccion="asignar"):
+            return
+        api.generador_reasignar(gen_id, elegido)
+        container._concepto_id = elegido
+        self._actualizar_identidad_generador(container)
+
+    def _on_generador_desvincular(self, container) -> None:
+        """Convierte este generador en 'Extraordinario' (sin concepto)."""
+        api = self._api
+        if not api:
+            return
+        if container._concepto_id is None:
+            return
+        gen_id = container._generador_id
+        if not self._confirmar_cambio_cantidad(
+                api, gen_id, container._concepto_id, direccion="desvincular"):
+            return
+        api.generador_reasignar(gen_id, None)
+        container._concepto_id = None
+        self._actualizar_identidad_generador(container)
+
+    def _confirmar_cambio_cantidad(self, api, gen_id: int, concepto_id: int,
+                                   direccion: str) -> bool:
+        """Muestra confirmación si la (des)vinculación cambiaría la
+        cantidad del concepto afectado. Devuelve True si se puede seguir."""
+        actual = float(api.concepto_cantidad(concepto_id) or 0)
+        if actual == 0:
+            return True
+        total_gen = float((api.generador_por_id(gen_id) or {}).get("cantidad_total") or 0)
+        nueva = actual + total_gen if direccion == "asignar" else max(actual - total_gen, 0.0)
+        if abs(nueva - actual) < 1e-9:
+            return True
+        verbo = ("Al vincular este generador" if direccion == "asignar"
+                 else "Al desvincular este generador")
+        res = QMessageBox.question(
+            self, "Confirmar cambio de cantidad",
+            f"El concepto ya tiene una cantidad de {actual:,.2f}.\n"
+            f"{verbo}, su cantidad cambiará a {nueva:,.2f}.\n\n¿Continuar?",
+        )
+        return res == QMessageBox.StandardButton.Yes
+
+    def _actualizar_identidad_generador(self, container) -> None:
+        """Refresca el nombre mostrado y el título de la pestaña tras
+        vincular/desvincular el generador (el árbol ya se refresca solo
+        vía ProyectoRecalculado)."""
+        api = self._api
+        if container._concepto_id is not None:
+            desc = (api.nodo_descripcion_actual(container._concepto_id) or "").strip()
+            wbs = api.campo_valor("estructura_presupuesto", "wbs", container._concepto_id) or {}
+            wbs_txt = (wbs.get("wbs") or "").strip()
+            container._nombre_base = f"{wbs_txt} — {desc}" if wbs_txt else desc
+        else:
+            n = 1 + len(api.generadores_por_concepto(None))
+            container._nombre_base = f"Extraordinario {n} (sin concepto)"
+        idx = self._tabs_generadores.indexOf(container)
+        if idx >= 0:
+            self._tabs_generadores.setTabText(idx, container._nombre_base)
+        self._actualizar_encabezado_generador(container, container._medido_total)
 
     # ── Handlers de renglones (por pestaña) ──────────────────────────
 

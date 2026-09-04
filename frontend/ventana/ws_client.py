@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 
 from PySide6.QtCore import QThread, Signal
 
@@ -62,8 +61,21 @@ class WebSocketClient(QThread):
                 if self._stop:
                     break
                 log.debug("WS desconectado: %s — reconectando en %.0fs", e, backoff)
-                time.sleep(backoff)
+                self._dormir_interrumpible(backoff)
                 backoff = min(backoff * 2, 30.0)
+
+    def _dormir_interrumpible(self, segundos: float) -> None:
+        """Sleep en tramos cortos para que detener() despierte rápido.
+
+        Sin esto, un detener() durante el backoff (hasta 30s) dejaba el
+        hilo vivo emitiendo señales a una ventana ya cerrada u otro
+        proyecto (zombi), y al salir de la app Qt advertía por destruir
+        un QThread en ejecución.
+        """
+        import time as _time
+        fin = _time.monotonic() + segundos
+        while not self._stop and _time.monotonic() < fin:
+            _time.sleep(min(0.2, fin - _time.monotonic()))
 
     def detener(self):
         self._stop = True

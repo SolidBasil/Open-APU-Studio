@@ -14,7 +14,8 @@ Todo lo que antes vivía aquí y sí hacía SQL se movió a los repos:
     build_budget_tree() → NodoRepo.arbol()
     get_proyecto()      → ProyectoRepo.buscar()
     get_apu()           → ApuMatricesRepo.con_detalle()
-    validar()           → DiagnosticoRepo.resumen_integridad()
+    validar()           → se eliminó junto con DiagnosticoRepo.resumen_integridad()/
+                          nodos_huerfanos()/totales_desincronizados() (sin llamadores)
     count_nodes(), count_concepts(), total_obra() → sin uso en ningún
         lugar del proyecto; se eliminaron en vez de migrarse (código muerto).
 """

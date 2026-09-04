@@ -26,7 +26,7 @@ import sqlite3
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from backend.database.repos.explosion import ExplosionRepo, _parse_unidad_pct, _PCT_TIPO_DESTINO
+from backend.database.repos.explosion import ExplosionRepo, _parse_unidad_pct
 
 
 def main():

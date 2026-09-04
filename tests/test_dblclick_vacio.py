@@ -49,6 +49,23 @@ def test_sidebar_clicks_vacio():
     w._on_sidebar_double_click(None, 0)  # no debe lanzar
 
 
+def test_rastreo_menu_icon_no_nameerror():
+    """Regresión: `_on_rastrear_context_menu`/`PestañaExplosion._on_context_menu`
+    usaban `_menu_icon` sin importarlo -> NameError al abrir el menú contextual.
+    Fix 2026-09-04: explosion.py lo importa a nivel módulo; rastreo.py lo
+    importa dentro del método (local) para no alterar el grafo de imports
+    (tiraba la carrera de teardown Qt de test_filtro_local.py:52)."""
+    import inspect
+    import frontend.ventana.widgets.explosion as explosion_mod
+    from frontend.ventana.widgets.base import _menu_icon
+    from frontend.ventana.mixins.rastreo import RastreoMixin
+
+    assert explosion_mod._menu_icon is _menu_icon
+    src = inspect.getsource(RastreoMixin._on_rastrear_context_menu)
+    assert "_menu_icon" in src
+    assert "from frontend.ventana.widgets.base import _menu_icon" in src
+
+
 def test_tabla_apu_dblclick_vacio(qapp):
     from frontend.ventana.widgets.apu import TablaApuDetalle
     t = TablaApuDetalle(1, "x")

@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from decimal import Decimal
     from backend.database.services.data_service import DataService
+    from frontend.ventana.api_backends import ToqueApiBackend
 
 
 # =============================================================================
@@ -95,6 +96,30 @@ class Api:
         """Backend activo. Es una property (no un valor fijo) porque
         _use_http puede promoverse a True a medio uso — ver _http()."""
         return self._backend_http if self._use_http else self._backend_local
+
+    def descargar_proyecto(self) -> bool:
+        """Pide liberar los recursos del proyecto (servidor: cierra su
+        conexión; local: no-op). Para llamar al cerrar proyecto."""
+        return self._backend.descargar_proyecto()
+
+    def estadisticas_proyecto(self) -> dict:
+        """Conteos del proyecto (nodos, conceptos, insumos, matrices) para
+        el diálogo de información."""
+        return self._backend.estadisticas_proyecto()
+
+    def cerrar(self) -> None:
+        """Libera recursos de red (pool httpx del cliente HTTP, si hay).
+
+        Idempotente: llamar dos veces no falla. Llamar al cerrar proyecto
+        o antes de reemplazar este Api en _wire_servicios — si no, cada
+        ciclo abrir/cerrar en modo HTTP fuga un pool de conexiones.
+        """
+        cliente, self._cliente = self._cliente, None
+        if cliente is not None:
+            try:
+                cliente.close()
+            except Exception:
+                pass
 
     def proyecto_actual_id(self) -> int:
         """Devuelve el ID del proyecto activo."""
@@ -351,8 +376,7 @@ class Api:
 
     def insumos_con_matrices(self, tipo_clave: str | None = None) -> list[dict]:
         """Como insumos() pero filtra solo los que aparecen en al menos un APU."""
-        ids = self.insumo_ids_con_apu()
-        return [i for i in self.insumos(tipo_clave) if i.get("id") in ids]
+        return self._backend.insumos_con_matrices(tipo_clave)
 
     def insumo_por_hash(self, hash_val: str) -> dict | None:
         """Busca un insumo por su hash dentro del proyecto activo."""
@@ -516,9 +540,7 @@ class Api:
 
     def proyecto_leer(self) -> dict:
         """Devuelve todos los campos editables del proyecto actual."""
-        from backend.database.repos import ProyectoRepo
-        reg = ProyectoRepo(self._conn).buscar(self._pid)
-        return dict(reg) if reg else {}
+        return self._backend.proyecto_leer()
 
     def proyecto_guardar(self, campos: dict) -> None:
         """Persiste los campos editados del proyecto.
@@ -742,6 +764,14 @@ class Api:
         o reordena si nuevo_generador_id es el mismo — ver drag and drop
         de TablaGenerador (widgets/generador.py)."""
         return self._backend.generador_mover_renglones(ids, nuevo_generador_id, antes_de_id, copiar)
+
+    def generador_reasignar(self, generador_id: int,
+                            nuevo_concepto_id: int | None,
+                            usuario_id: int = 1) -> None:
+        """Mueve un generador a otro concepto (None = desvincular,
+        'Extraordinario'). Recalcula el concepto viejo y el nuevo y lo
+        registra como una sola operación de Ctrl+Z (deshacible)."""
+        self._backend.generador_reasignar(generador_id, nuevo_concepto_id, usuario_id)
 
     def concepto_cantidad(self, concepto_id: int) -> float:
         return self._backend.concepto_cantidad(concepto_id)

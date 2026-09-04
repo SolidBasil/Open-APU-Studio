@@ -9,7 +9,6 @@ Actualizado: 2026-07-19 (hora local)
 """
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QKeySequence
 
 
 class RastreoMixin:
@@ -125,16 +124,7 @@ class RastreoMixin:
             return
         tabla.setCurrentItem(item)
         menu = QMenu(self)
-        copy_act = menu.addAction(_menu_icon("clipboard"), "Copiar")
-        copy_act.setShortcut(QKeySequence.StandardKey.Copy)
-        copy_act.triggered.connect(tabla._copy)
-        cut_act = menu.addAction(_menu_icon("scissors"), "Cortar")
-        cut_act.setShortcut(QKeySequence.StandardKey.Cut)
-        cut_act.triggered.connect(tabla._cut)
-        paste_act = menu.addAction(_menu_icon("file-text"), "Pegar")
-        paste_act.setShortcut(QKeySequence.StandardKey.Paste)
-        paste_act.triggered.connect(tabla._paste)
-        menu.addSeparator()
+        tabla._add_clipboard_actions(menu)
         matriz_id = item.data(0, Qt.ItemDataRole.UserRole)
         es_compuesto = item.data(0, Qt.ItemDataRole.UserRole + 1)
         if es_compuesto is not None:

@@ -9,7 +9,7 @@ Hereda TreeTableWidget — mismo patrón que TablaApuDetalle.
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QHeaderView, QAbstractItemView
 
-from frontend.ventana.widgets.base import TreeTableWidget, EMPTY_ROLE
+from frontend.ventana.widgets.base import TreeTableWidget, EMPTY_ROLE, blocked_signals
 from frontend.ventana.iconos import icono
 from backend.database.event_bus import GeneradorActualizado, ProyectoRecalculado
 
@@ -168,8 +168,7 @@ class TablaGenerador(TreeTableWidget):
             sel_renglon_id = cur_item.data(0, Qt.ItemDataRole.UserRole)
         col = self.currentColumn()
 
-        self.blockSignals(True)
-        try:
+        with blocked_signals(self):
             self.clear()
             self._renglon_ids.clear()
             for rn in renglones:
@@ -188,8 +187,6 @@ class TablaGenerador(TreeTableWidget):
                 self._renglon_ids[item_id] = rid
                 item.setData(0, Qt.ItemDataRole.UserRole, rid)
                 self._marcar_origen_cad(item, rn)
-        finally:
-            self.blockSignals(False)
 
         total = sum(rn.get("subtotal", 0) or 0 for rn in renglones)
         self.total_actualizado.emit(total)
@@ -446,9 +443,8 @@ class TablaGenerador(TreeTableWidget):
         if actual is None:
             return
         val = actual.get(campo)
-        self.blockSignals(True)
-        item.setText(column, "" if val is None else f"{val:.4f}")
-        self.blockSignals(False)
+        with blocked_signals(self):
+            item.setText(column, "" if val is None else f"{val:.4f}")
 
     def _on_fila_vacia_editada(self, item, column):
         """Escribir cualquier dato en la fila vacía final agrega un
@@ -574,9 +570,8 @@ class TablaGenerador(TreeTableWidget):
             # reusa la misma señal/handler que ya usa la edición inline
             # normal (renglon_editado -> _on_renglon_editado_tab), solo
             # que aquí el dict de campos trae también los de auditoría.
-            self.blockSignals(True)
-            item.setText(col, texto)
-            self.blockSignals(False)
+            with blocked_signals(self):
+                item.setText(col, texto)
             self.renglon_editado.emit(renglon_id, campos)
         else:
             item.setText(col, texto)  # dispara itemChanged → _on_item_changed → persiste

@@ -1,6 +1,6 @@
 # Duplicación y deuda técnica — Auditoría completa
 
-Actualizado: 2026-08-31 04:55 (hora local)
+Actualizado: 2026-09-04 16:05 (hora local)
 
 ---
 
@@ -19,6 +19,11 @@ Eliminado: 2026-07-11 — todos unificados en `frontend/ventana/tipos_insumo.py`
 | 1.7 | **SISTEMA_PREFIJOS regex** (hardcoded emoji list) | `base.py:182` — debe coincidir con TIPO_ICONO manualmente | ~~Derivar de TIPO_ICONO automáticamente~~ ✅ derivado de `ICONO` | **P2** |
 
 ## 2. Patrones de código duplicados
+
+> Nota 2026-09-04: las rutas `handlers/__init__.py`, `apu/` y `handlers/` ya no
+> existen (ahora `mixins/navegacion.py`, `mixins/`). Los números de línea son de
+> la auditoría original; el contenido de cada hallazgo sigue vigente donde no
+> se marque ✅.
 
 | # | Qué | Dónde | Fix | Prioridad |
 |---|-----|-------|-----|-----------|
@@ -67,7 +72,7 @@ Eliminado: 2026-07-11 — todos eliminados excepto 4.17 (usuario_id en Api).
 | 4.14 | **`ApuMatricesRepo.buscar()`** — wrapper trivial `return super().buscar()` | `repos/apu.py:22` | ~~Eliminar~~ ✅ | **P2** |
 | 4.15 | **`FactoresSobrecostoRepo.buscar()`** — wrapper trivial `return super().buscar()` | `repos/proyecto.py:59` | ~~Eliminar~~ ✅ | **P2** |
 | 4.16 | **`NodoRepo.actualizar_cantidad(usuario_id)`** — param nunca usado | `repos/presupuesto.py:353` | ~~Quitar param~~ ✅ | **P2** |
-| 4.17 | **`usuario_id` ignorado** en 5 métodos de Api que no lo forwardanean a DataService | `api.py:658,696,720,746,800` | Pendiente | **P2** |
+| 4.17 | **`usuario_id` ignorado** en 5 métodos de Api que no lo forwardanean a DataService | `api.py` (sigue con 14 menciones) | **Resuelto 2026-09-04** (deuda 1.1 de GUIA_DEUDA_TECNICA): el sistema es multiusuario, forward conectado en los 5 métodos de insumos (local + HTTP) + test de regresión. Queda el detalle menor de `eliminar_insumo`. | **P2** |
 | 4.18 | **Import duplicado `Qt`** | `dialogs.py:13` + `dialogs.py:21` | ~~Eliminar~~ ✅ | **P2** |
 | 4.19 | **`ConflictError`** importado con noqa, nunca usado | `data_service.py:26` | ~~Eliminar~~ ✅ | **P2** |
 | 4.20 | **`generar_hash`** re-exportado desde `base.py`, nadie lo importa de ahí | `repos/base.py:19` | ~~Eliminar~~ ✅ | **P2** |
@@ -108,7 +113,10 @@ Eliminado: 2026-07-11 — todos eliminados excepto 4.17 (usuario_id en Api).
   construir, no basura — requiere decisión): `api.py` (6 métodos de
   gestión de generadores), `data_service.py` (`iniciar_sesion`/
   `cerrar_sesion` ligados a SRV-09, `reasignar_generador`),
-  `DiagnosticoRepo.estadisticas()`/`resumen_integridad()`, `ConflictError`.
+  `ConflictError`.
+  > Nota 2026-09-04: `DiagnosticoRepo.estadisticas()` ya no está en esta
+  > lista — se cableó al diálogo de información (ver §8) y
+  > `resumen_integridad()` se eliminó (huérfano).
 - **Subsistema huérfano identificado** (¿conservar como WIP o eliminar?):
   `toolbar_estructural.py` (682 líneas, nunca mezclado en `VentanaPrincipal`,
   fork copy-paste de `mixins/toolbar.py`), `widgets/sidebar_estructura.py`,
@@ -122,15 +130,15 @@ Eliminado: 2026-07-11 — todos eliminados excepto 4.17 (usuario_id en Api).
 - **Pasos redundantes eliminados**: `api.py` — `concepto_reasignar_insumo()`
   y `eliminar_nodo()` llamaban `recalcular_desde()` inmediatamente
   sobreescrito por `recalcular_proyecto()`.
-- **Migración `Api` a backends** (completada 2026-08-31): patrón
-  `ToqueApiBackend` (Protocol, 66 métodos) reemplaza el `if
-  self._use_http` por método. `api.py` es dispatcher puro (67
-  delegaciones, 5 `if` infraestructura). Ver
+- **Migración `Api` a backends** (completada 2026-09-03, ver §9-§10):
+  patrón `ToqueApiBackend` (Protocol, **73 métodos**) reemplaza el `if
+  self._use_http` por método. `api.py` es dispatcher puro (**74**
+  delegaciones, **1 `if`** infraestructura). Ver
   `frontend/ventana/api_backends.py` y `docs/ARQUITECTURA_SERVICIOS.md`
-  Fases 0-3. `ApiCliente` 41→7 públicos (transporte puro). Secciones
-  migradas: TODAS (PRESUPUESTO, APU, EXPLOSIÓN, CATÁLOGOS, INSUMOS,
-  VARIABLES, GENERADORES, INDIRECTOS, UNDO). Pendiente solo Fase 1
-  (eventos duplicados en `_BackendHTTP`, bloqueada hasta WS semántico Fase 4).
+  Fases 0-5 + A-E. `ApiCliente` 41→**9** públicos (transporte puro +
+  archivos). Fases 1 y 4 (eventos/WS) completadas; `ConflictError`:
+  resuelto (clase eliminada, ver §8 — la mención en §7 como "pendiente
+  de decisión" quedó obsoleta).
 - **`tests/smoke_api_backends.py`** + `smoke_presupuesto_http.py` (local),
   `smoke_variables_eliminar.py`, etc.: cubren backends contra BD real.
 
@@ -158,8 +166,8 @@ real sin terminar de conectar. Decisión: documentar, no tocar todavía:**
 |---|---|---|
 | `DataService.iniciar_sesion()`/`cerrar_sesion()` (SRV-09) | `data_service.py:62-69` | `self._sesion` SÍ se lee en `actualizar()`/`eliminar()` (línea 102, 173) — como nadie llama `iniciar_sesion()`, cada edición cae al fallback `or str(uuid.uuid4())` y genera su propia sesión en vez de agruparse. El undo campo-por-campo funciona bien; falta conectar el agrupado de operaciones batch en un solo Ctrl+Z. |
 | `DataService.reasignar_generador()` | `data_service.py:476` | Método completo y correcto (reasigna generador a otro concepto + recalcula ambos). Cero llamadores en la UI — parece una acción pensada (¿arrastrar generador a otro capítulo?) nunca cableada a un botón/menú. |
-| `DiagnosticoRepo.estadisticas()` | `diagnostico.py:136` | Su docstring dice "para el diálogo de información" — pero `_on_info_proyecto()` en `diag_dialogs.py` no la llama ni tiene conteos propios. El diálogo de info del proyecto hoy no muestra estadísticas. |
-| `DiagnosticoRepo.resumen_integridad()` | `diagnostico.py:245` | `core.py` documenta su propia migración: "`validar()` → `DiagnosticoRepo.resumen_integridad()`" (Fase 4, ver ARQUITECTURA_SERVICIOS.md). El punto que debía llamarla en su nueva ubicación nunca se actualizó. |
+| `DiagnosticoRepo.estadisticas()` | `diagnostico.py` | **Resuelto 2026-09-04:** cableado al tab "General" del diálogo de información vía `Api.estadisticas_proyecto()` (protocolo+bk local/HTTP+endpoint `GET /estadisticas`). El diálogo muestra nodos/conceptos/insumos/componentes APU. |
+| `DiagnosticoRepo.resumen_integridad()` | ~~`diagnostico.py:245`~~ | **Eliminado 2026-09-04:** sin llamadores; `nodos_huerfanos()` (bug cross-proyecto en su subconsulta) y `totales_desincronizados()` se eliminaron con él. `core.py` docstring corregido. |
 
 Si se retoma alguno de estos, no hace falta re-auditar — la tabla de
 arriba ya tiene el motivo y la línea exacta donde conectar cada uno.
@@ -196,3 +204,58 @@ funciona por edición individual).
 - `frontend/ventana/iconos.py:268` stub duplicado `_colored_icon` eliminado.
 
 **Pendiente:** Fase 1 (quitar `ds.emitir` duplicado en `_BackendHTTP`, bloqueada hasta Fase 4 WS semántico) y Fase 4-5 (WS semántico + limpieza docs). Ver `docs/ARQUITECTURA_SERVICIOS.md` §6.
+
+## 10. Sesiones 2026-09-03/04 — Fases A-E, bugs raíz y suite pytest
+
+**Fase A (cliente remoto sin BD local):** `DataService.unificar_matrices_apu()`
+(lógica única R1); endpoints `GET /apu/proximo_orden` + `POST
+/unificar_matrices`; run-once al cargar proyecto; `_BackendHTTP` con 0
+toques a `self._api._conn`. Corregida regresión Fase 3
+(`ApiCliente.insumo_por_hash` eliminado pero aún invocado desde
+`insumo_insertar`/`insumo_actualizar_descripcion`).
+
+**Fase B (endpoints compuestos atómicos):** `POST /actualizar_y_recalcular`,
+`/eliminar_y_recalcular`, `/agregar_nodo`, `/apu/agregar_componente`
+(vía nuevos `DataService.agregar_nodo`/`apu_agregar_componente`);
+`_BackendHTTP` 1 RPC por write + helper `_post_dominio` (luego eliminado
+al centralizar en `ApiCliente`, Fase D); quitado `recalcular()` redundante
+en factores. Hallazgo lateral: `/eliminar` en `apu_matrices` falla (`no
+such column: activo`) — preexistente en `DataService.eliminar`.
+
+**Fase C (broadcast genérico + refresco remoto):** `lifespan` + suscriptor
+de todas las subclases de `Evento`; `_sanitizar_json` (un `set` en
+`cambios` reventaba `send_json` y dropeaba la conexión); 8 manuales
+duplicados eliminados (18 conservados a propósito); `_on_ws_evento` +=
+3 tipos; `TablaGenerador` suscrita (Explosion queda snapshot manual).
+E2E 2 clientes OK.
+
+**Fase D (errores + sesiones undo) y 3 bugs raíz** (todos encontrados por
+E2E a nivel archivo, no vía API):
+1. **Servidor nunca commiteaba** — fix: contador de profundidad en
+   `Database.transaction()`, solo el nivel externo commitea/rollbackea.
+2. **`deshacer` en orden cronológico** — ahora `reversed()` (rehacer intacto).
+3. **`invalidar_sesiones_usuario` invertido** — `=` en vez de `!=`, vaciaba
+   todo el historial en cada recalc.
+
+**Fase E (CAD remoto):** `GET /adjuntos`, `POST /adjuntos/subir`
+(multipart, 50 MB, sanitiza nombres), `GET /adjuntos/{filename}`;
+`ApiCliente.subir/descargar_archivo` + `adjunto_*` en ambos backends + `Api`
+(protocolo 73). E2E DXF real 2.8 MB roundtrip idéntico. Faltaba
+`python-multipart` en venv y requirements.
+
+**Suite pytest (98 tests, 34 archivos):** los 29 `smoke_*.py` migrados a
+`test_*.py` (+7 nuevos de contrato/flujo: dispatcher, apu, explosion,
+insumos, presupuesto, variables, web); `conftest.py` (fixtures
+`db_tmp`/`api`/`servidor_http`), `pytest.ini`, `requirements.txt` +=
+`pytest`, `fastapi`, `uvicorn`, `python-multipart`. Varios smokes estaban
+bit-rotos y se arreglaron al migrar (`cad_dxf_fallback`). `tests/test_web.html`
+(cliente web manual: HTTP+WS, tabla, selector de obra, resumen).
+
+**Fixes de robustness en el camino:** `server/servidor.py` bootstrap
+`sys.path` (ejecución por ruta directa), CORS permisivo para `file://`,
+guard `is_closed()` en reenvío WS, 6 handlers de doble-clic con `item is
+None` + `test_dblclick_vacio.py`.
+
+**Diferido explícito** (no test de funcionamiento): identidad
+(`usuario_id`), locks pesimistas, TLS, multiproyecto, autodescubrimiento,
+catch-up WS, auto-refresh Explosion.

@@ -52,9 +52,22 @@ def _ejercitar_generadores(api) -> dict:
     api.generador_renglon_eliminar(r1)
     assert r1 not in {r["id"] for r in api.generador_renglones(gen_a)}
 
+    # Reasignar generador entre conceptos (deuda 1.2): el concepto
+    # destino pasa a sumar, y al desvincular vuelve al valor anterior.
+    gen_c = api.generador_crear(nombre="Cielo", concepto_id=None, unidad="m2")
+    api.generador_renglon_guardar(gen_c, veces=2, largo=3, ancho=4, alto=1)
+    cantidad_antes = float(api.concepto_cantidad(1) or 0)
+    api.generador_reasignar(gen_c, 1)
+    assert abs(float(api.concepto_cantidad(1) or 0) - (cantidad_antes + 24.0)) < 0.001
+    assert api.generador_por_id(gen_c)["concepto_id"] == 1
+    api.generador_reasignar(gen_c, None)
+    assert abs(float(api.concepto_cantidad(1) or 0) - cantidad_antes) < 0.001
+    assert api.generador_por_id(gen_c)["concepto_id"] is None
+
     return {
         "cantidad_total_a": round(float(api.generador_por_id(gen_a)["cantidad_total"]), 4),
         "cantidad_total_b": round(float(api.generador_por_id(gen_b)["cantidad_total"]), 4),
+        "cantidad_final_concepto_a": round(float(api.concepto_cantidad(1) or 0), 4),
     }
 
 

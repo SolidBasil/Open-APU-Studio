@@ -6,7 +6,6 @@ from backend.database.event_bus import EventBus
 
 
 def _montar(api, db_tmp):
-    from backend.database.db import Database
     db, _ = db_tmp
     cur = db.conn.cursor()
     cur.execute("""

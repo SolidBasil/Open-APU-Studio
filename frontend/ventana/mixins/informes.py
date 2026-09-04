@@ -31,7 +31,6 @@ class InformesMixin:
         ids_seleccionados con contenido  → solo esos capítulos/conceptos
         (ver backend/exportar/informe_pdf/latex.py::filtrar_por_seleccion).
         """
-        from PySide6.QtWidgets import QMessageBox, QApplication
         from PySide6.QtGui import QDesktopServices
         from PySide6.QtCore import QUrl
         from backend.exportar.informe_pdf.latex import ReportePresupuesto, compilar_pdf

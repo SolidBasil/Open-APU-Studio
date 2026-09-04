@@ -74,7 +74,7 @@ class ExplosionMixin:
         """
         from PySide6.QtWidgets import (
             QWidget, QVBoxLayout, QLabel, QAbstractItemView,
-            QHeaderView, QMessageBox, QTreeWidgetItem, QTreeWidget,
+            QHeaderView, QTreeWidgetItem, QTreeWidget,
         )
         from PySide6.QtGui import QBrush, QColor, QFont, QPen
         from PySide6.QtCore import Qt

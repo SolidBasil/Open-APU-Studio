@@ -72,7 +72,7 @@ class DiagDialogsMixin:
         self._sb.showMessage("Numeración (1, 1.1, 1.2…) recalculada", 4000)
 
     def _on_depurar_catalogos(self):
-        from PySide6.QtWidgets import QMessageBox, QWidget, QVBoxLayout, QLabel, QAbstractItemView, QHeaderView
+        from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QAbstractItemView, QHeaderView
         from PySide6.QtCore import Qt
         from frontend.ventana.widgets.base import TreeTableWidget
         from backend.database.repos.diagnostico import DiagnosticoRepo
@@ -308,7 +308,7 @@ class DiagDialogsMixin:
         dlg.exec()
 
     def _on_homologar_hash(self):
-        from PySide6.QtWidgets import QMessageBox, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget, QTableWidgetItem, QAbstractItemView
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget, QTableWidgetItem, QAbstractItemView
         from PySide6.QtCore import Qt
         from backend.database.repos.diagnostico import DiagnosticoRepo
 
@@ -582,6 +582,14 @@ class DiagDialogsMixin:
         lbl_total = QLabel(f"<b>${float(datos.get('total_obra') or 0):,.2f}</b>")
         lbl_total.setTextFormat(Qt.TextFormat.RichText)
         form.addRow("Total obra:", lbl_total)
+        try:
+            est = self._api.estadisticas_proyecto()
+            form.addRow("Nodos:", QLabel(f"{est.get('n_nodos', 0):,}"))
+            form.addRow("Conceptos:", QLabel(f"{est.get('n_conceptos', 0):,}"))
+            form.addRow("Insumos:", QLabel(f"{est.get('n_insumos', 0):,}"))
+            form.addRow("Componentes APU:", QLabel(f"{est.get('n_matrices', 0):,}"))
+        except Exception as e:
+            print(f"[info_proyecto] estadisticas: {type(e).__name__}: {e}")
         stack.addWidget(page)
 
         # ── Tab: Cliente ─────────────────────────────────────────

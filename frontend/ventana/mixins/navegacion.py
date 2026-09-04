@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 from frontend.ventana.mixins.paneles import INSUMOS_TITLES
 from frontend.ventana.iconos import icono
 from frontend.ventana.ui_utils import confirmar
+from frontend.ventana.widgets.base import blocked_signals
 
 
 class _PaletaInput(QLineEdit):
@@ -497,7 +498,6 @@ class HandlersMixin:
     # ── Adjuntar / Ver adjuntos ───────────────────────────────────────────
 
     def _on_adjuntar_archivo(self):
-        from PySide6.QtWidgets import QMessageBox
         from backend.database.db import Rutas
         import shutil
 
@@ -518,7 +518,7 @@ class HandlersMixin:
 
     def _on_ver_adjuntos(self):
         from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, \
-            QPushButton, QListWidget, QListWidgetItem, QMessageBox
+            QPushButton, QListWidget, QListWidgetItem
         from PySide6.QtGui import QDesktopServices
         from PySide6.QtCore import QUrl
         from backend.database.db import Rutas
@@ -1328,52 +1328,50 @@ class HandlersMixin:
 
         def _recargar_tabla():
             nonlocal datos
-            tabla.blockSignals(True)
-            datos = self._api.indirectos_lista(tipo)
-            tabla.setRowCount(len(datos))
-            for i, reg in enumerate(datos):
-                tabla.setItem(i, 0, QTableWidgetItem(reg.get("categoria") or ""))
-                tabla.setItem(i, 1, QTableWidgetItem(reg.get("concepto") or ""))
-                tabla.setItem(i, 2, QTableWidgetItem(str(reg.get("periodo_dias") or 0)))
-                tabla.setItem(i, 3, QTableWidgetItem(str(reg.get("importe") or 0)))
-                tabla.setItem(i, 4, QTableWidgetItem(str(reg.get("pct_participacion") or 100)))
-                tabla.setItem(i, 5, QTableWidgetItem(f"{reg.get('total') or 0:.2f}"))
-                id_item = QTableWidgetItem()
-                id_item.setData(Qt.ItemDataRole.UserRole, reg["id"])
-                tabla.setItem(i, len(COLUMNAS), id_item)
-            tabla.blockSignals(False)
+            with blocked_signals(tabla):
+                datos = self._api.indirectos_lista(tipo)
+                tabla.setRowCount(len(datos))
+                for i, reg in enumerate(datos):
+                    tabla.setItem(i, 0, QTableWidgetItem(reg.get("categoria") or ""))
+                    tabla.setItem(i, 1, QTableWidgetItem(reg.get("concepto") or ""))
+                    tabla.setItem(i, 2, QTableWidgetItem(str(reg.get("periodo_dias") or 0)))
+                    tabla.setItem(i, 3, QTableWidgetItem(str(reg.get("importe") or 0)))
+                    tabla.setItem(i, 4, QTableWidgetItem(str(reg.get("pct_participacion") or 100)))
+                    tabla.setItem(i, 5, QTableWidgetItem(f"{reg.get('total') or 0:.2f}"))
+                    id_item = QTableWidgetItem()
+                    id_item.setData(Qt.ItemDataRole.UserRole, reg["id"])
+                    tabla.setItem(i, len(COLUMNAS), id_item)
 
         def guardar():
-            tabla.blockSignals(True)
-            # Guardar duración de obra al proyecto
-            nueva_duracion = int(spin_dias.value())
-            self._api.proyecto_guardar({"duracion_obra_dias": nueva_duracion})
-            for fila in range(tabla.rowCount()):
-                id_item = tabla.item(fila, len(COLUMNAS))
-                reg_id = id_item.data(Qt.ItemDataRole.UserRole) if id_item else None
-                campos = {
-                    "categoria": (tabla.item(fila, 0).text() if tabla.item(fila, 0) else ""),
-                    "concepto": (tabla.item(fila, 1).text() if tabla.item(fila, 1) else ""),
-                    "periodo_dias": float(tabla.item(fila, 2).text() or 0) if tabla.item(fila, 2) else 0,
-                    "importe": float(tabla.item(fila, 3).text() or 0) if tabla.item(fila, 3) else 0,
-                    "pct_participacion": float(tabla.item(fila, 4).text() or 100) if tabla.item(fila, 4) else 100,
-                }
-                if reg_id is not None:
-                    self._api.indirectos_guardar(reg_id, campos)
-                else:
-                    campos["tipo"] = tipo
-                    campos["orden"] = fila
-                    campos["total"] = 0.0
-                    campos["activo"] = 1
-                    self._api.indirectos_insertar(campos)
-            resultado_totales = self._api.indirectos_calcular_totales()
-            # Ya no hace falta un commit manual aquí: tanto
-            # proyecto_guardar() (duración de obra) como los métodos de
-            # indirectos pasan por DataService, que comitea su propia
-            # transacción en cada llamada (ver N1 del seguimiento —
-            # proyecto_guardar() se corrigió para dejar de escribir
-            # directo vía ProyectoRepo sin pasar por DataService).
-            tabla.blockSignals(False)
+            with blocked_signals(tabla):
+                # Guardar duración de obra al proyecto
+                nueva_duracion = int(spin_dias.value())
+                self._api.proyecto_guardar({"duracion_obra_dias": nueva_duracion})
+                for fila in range(tabla.rowCount()):
+                    id_item = tabla.item(fila, len(COLUMNAS))
+                    reg_id = id_item.data(Qt.ItemDataRole.UserRole) if id_item else None
+                    campos = {
+                        "categoria": (tabla.item(fila, 0).text() if tabla.item(fila, 0) else ""),
+                        "concepto": (tabla.item(fila, 1).text() if tabla.item(fila, 1) else ""),
+                        "periodo_dias": float(tabla.item(fila, 2).text() or 0) if tabla.item(fila, 2) else 0,
+                        "importe": float(tabla.item(fila, 3).text() or 0) if tabla.item(fila, 3) else 0,
+                        "pct_participacion": float(tabla.item(fila, 4).text() or 100) if tabla.item(fila, 4) else 100,
+                    }
+                    if reg_id is not None:
+                        self._api.indirectos_guardar(reg_id, campos)
+                    else:
+                        campos["tipo"] = tipo
+                        campos["orden"] = fila
+                        campos["total"] = 0.0
+                        campos["activo"] = 1
+                        self._api.indirectos_insertar(campos)
+                resultado_totales = self._api.indirectos_calcular_totales()
+                # Ya no hace falta un commit manual aquí: tanto
+                # proyecto_guardar() (duración de obra) como los métodos de
+                # indirectos pasan por DataService, que comitea su propia
+                # transacción en cada llamada (ver N1 del seguimiento —
+                # proyecto_guardar() se corrigió para dejar de escribir
+                # directo vía ProyectoRepo sin pasar por DataService).
             dlg.accept()
             afectados = resultado_totales.get("afectados_por_duracion_faltante") or []
             if afectados:
@@ -1513,19 +1511,18 @@ class HandlersMixin:
                 resueltas = {}
                 error_txt = str(e)
 
-            tabla.blockSignals(True)
-            for fila in range(tabla.rowCount()):
-                nombre, _, _ = _fila_valores(fila)
-                if error_txt:
-                    texto = "—"
-                elif nombre in resueltas:
-                    texto = f"{resueltas[nombre]:g}"
-                else:
-                    texto = "?"
-                item = QTableWidgetItem(texto)
-                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                tabla.setItem(fila, 2, item)
-            tabla.blockSignals(False)
+            with blocked_signals(tabla):
+                for fila in range(tabla.rowCount()):
+                    nombre, _, _ = _fila_valores(fila)
+                    if error_txt:
+                        texto = "—"
+                    elif nombre in resueltas:
+                        texto = f"{resueltas[nombre]:g}"
+                    else:
+                        texto = "?"
+                    item = QTableWidgetItem(texto)
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                    tabla.setItem(fila, 2, item)
 
             if error_txt:
                 lbl_error.setText(error_txt)
@@ -1573,17 +1570,16 @@ class HandlersMixin:
         def agregar_fila():
             fila = tabla.rowCount()
             tabla.insertRow(fila)
-            tabla.blockSignals(True)
-            tabla.setItem(fila, 0, QTableWidgetItem(""))
-            tabla.setItem(fila, 1, QTableWidgetItem(""))
-            valor_item = QTableWidgetItem("")
-            valor_item.setFlags(valor_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            tabla.setItem(fila, 2, valor_item)
-            tabla.setItem(fila, 3, QTableWidgetItem(""))
-            id_item = QTableWidgetItem()
-            id_item.setData(Qt.ItemDataRole.UserRole, None)
-            tabla.setItem(fila, len(COLUMNAS), id_item)
-            tabla.blockSignals(False)
+            with blocked_signals(tabla):
+                tabla.setItem(fila, 0, QTableWidgetItem(""))
+                tabla.setItem(fila, 1, QTableWidgetItem(""))
+                valor_item = QTableWidgetItem("")
+                valor_item.setFlags(valor_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                tabla.setItem(fila, 2, valor_item)
+                tabla.setItem(fila, 3, QTableWidgetItem(""))
+                id_item = QTableWidgetItem()
+                id_item.setData(Qt.ItemDataRole.UserRole, None)
+                tabla.setItem(fila, len(COLUMNAS), id_item)
             tabla.setCurrentCell(fila, 0)
             tabla.editItem(tabla.item(fila, 0))
 

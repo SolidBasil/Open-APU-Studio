@@ -41,7 +41,9 @@ class GestionProyectosMixin:
         client = getattr(self, "_ws_client", None)
         if client is not None:
             client.detener()
-            client.wait(3000)
+            # 8s cubre recv(timeout=5) + Iteración en curso; con el sleep
+            # interrumpible el caso típico termina en <0.5s.
+            client.wait(8000)
             self._ws_client = None
 
     def _on_ws_evento(self, nombre_evento: str, data: dict):
@@ -144,6 +146,10 @@ class GestionProyectosMixin:
         from backend.database.services.data_service import DataService
         from frontend.ventana.api import Api
 
+        anterior = getattr(self, "_api", None)
+        if anterior is not None:
+            anterior.cerrar()
+
         self._event_bus = EventBus()
         registry = crear_registry(db)
         self._registry = registry
@@ -179,7 +185,7 @@ class GestionProyectosMixin:
 
     def _on_abrir_proyecto(self):
         """Selecciona y abre un proyecto .db existente."""
-        from PySide6.QtWidgets import QDialog, QMessageBox
+        from PySide6.QtWidgets import QDialog
         from backend.database.db import Database, Rutas
         from frontend.ventana.widgets.dialogs import ProjectDialog
 
@@ -238,6 +244,9 @@ class GestionProyectosMixin:
         self._db.close()
         self._stop_server()
         self._db = None
+        if self._api is not None:
+            self._api.descargar_proyecto()
+            self._api.cerrar()
         self._api = None
         self._data_service = None
         self._registry = None

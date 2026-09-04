@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QFont, QShortcut, QKeySequence
 
 from frontend.ventana.iconos import icono
-from frontend.ventana.widgets.base import TabWidgetCerrable
+from frontend.ventana.widgets.base import TabWidgetCerrable, blocked_signals
 from frontend.ventana.tipos_insumo import COLOR as _COLOR_TIPO
 from frontend.ventana.colores import TEXT, ACCENT, PURPURA
 
@@ -509,9 +509,8 @@ class PanelesMixin:
                 QMessageBox.warning(self, "Descripción duplicada", str(e))
                 actual = self._api.insumo_por_id(insumo_id) or {}
                 tabla = item.treeWidget()
-                tabla.blockSignals(True)
-                item.setText(column, actual.get("descripcion", "") or "")
-                tabla.blockSignals(False)
+                with blocked_signals(tabla):
+                    item.setText(column, actual.get("descripcion", "") or "")
         elif column == 2:
             self._api.insumo_actualizar_campo(insumo_id, "unidad", item.text(column))
         elif column == 3:
@@ -529,11 +528,10 @@ class PanelesMixin:
                                      "Escribe un número (ej. 350.00 o $1,250.50).")
                 tabla = item.treeWidget()
                 if tabla:
-                    tabla.blockSignals(True)
-                    actual = self._api.insumo_por_id(insumo_id) or {}
-                    costo = actual.get("costo_mn")
-                    item.setText(column, f"${costo:,.2f}" if costo is not None else "")
-                    tabla.blockSignals(False)
+                    with blocked_signals(tabla):
+                        actual = self._api.insumo_por_id(insumo_id) or {}
+                        costo = actual.get("costo_mn")
+                        item.setText(column, f"${costo:,.2f}" if costo is not None else "")
                 return
         elif column == 4:  # Tipo
             tipo_id = item.data(column, Qt.ItemDataRole.UserRole)
@@ -599,10 +597,9 @@ class PanelesMixin:
                 familia_id=familia_id, subfamilia_id=None,
             )
         except ValueError as e:
-            tabla.blockSignals(True)
-            QMessageBox.warning(self, "Descripción duplicada", str(e))
-            item.setText(1, "")
-            tabla.blockSignals(False)
+            with blocked_signals(tabla):
+                QMessageBox.warning(self, "Descripción duplicada", str(e))
+                item.setText(1, "")
             return
 
         self._api.insumo_actualizar_campo(nuevo_id, "clave_usuario", f"INS-{nuevo_id}")
@@ -615,13 +612,12 @@ class PanelesMixin:
         # EMPTY_ROLE. No hace falta convertir este item a mano: basta con
         # devolverlo a su estado en blanco original para que siga
         # funcionando como la fila "escribe aquí" de la próxima captura.
-        tabla.blockSignals(True)
-        from PySide6.QtGui import QIcon
-        for c in range(item.columnCount()):
-            item.setText(c, "")
-            item.setIcon(c, QIcon())
-        item.setText(1, "Nuevo insumo...")
-        tabla.blockSignals(False)
+        with blocked_signals(tabla):
+            from PySide6.QtGui import QIcon
+            for c in range(item.columnCount()):
+                item.setText(c, "")
+                item.setIcon(c, QIcon())
+            item.setText(1, "Nuevo insumo...")
 
     # ── Buscador de partidas ─────────────────────────────────────────────
 

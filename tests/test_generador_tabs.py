@@ -18,7 +18,6 @@ def qapp():
 def win_tabs(qapp, api, db_tmp):
     from PySide6.QtWidgets import QTabWidget, QStackedWidget
     from frontend.ventana.mixins.generador import GeneradorMixin
-    from backend.database.repos.generador import GeneradorRepo
 
     class _FakeWindow(GeneradorMixin):
         def __init__(self, conn, api, tabs):

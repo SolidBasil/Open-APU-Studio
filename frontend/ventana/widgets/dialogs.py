@@ -183,6 +183,105 @@ class ProjectDialog(QDialog):
 
 # ── Diálogo de edición de descripción de insumo ───────────────────
 
+class DialogoSeleccionarConcepto(QDialog):
+    """Selección de un concepto del presupuesto (para vincular un
+    generador a un concepto). Reusa el estilo dlgHeader/dlgList del
+    tema. Se usa desde GeneradorMixin (reasignar generador)."""
+
+    def __init__(self, items: list[tuple[int, str]], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Seleccionar concepto")
+        self.setMinimumSize(520, 400)
+        self.setModal(True)
+        self._resultado: int | None = None
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        header = QLabel("Asignar el generador a un concepto:")
+        header.setObjectName("dlgHeader")
+        header.setFixedHeight(48)
+        header.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(header)
+
+        search = QLineEdit()
+        search.setPlaceholderText("Buscar concepto…")
+        search.setObjectName("dlgSearch")
+        sw = QWidget()
+        sl = QHBoxLayout(sw)
+        sl.setContentsMargins(16, 12, 16, 4)
+        sl.addWidget(search)
+        layout.addWidget(sw)
+
+        self._lista = QListWidget()
+        self._lista.setObjectName("dlgList")
+        self._lista.setAlternatingRowColors(True)
+        self._items = {}
+        for cid, label in items:
+            it = QListWidgetItem(label)
+            it.setData(Qt.ItemDataRole.UserRole, cid)
+            self._lista.addItem(it)
+            self._items[cid] = label
+        self._lista.itemDoubleClicked.connect(lambda: self._aceptar())
+        layout.addWidget(self._lista, 1)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setObjectName("dlgSep")
+        layout.addWidget(sep)
+
+        bl = QHBoxLayout()
+        bl.setContentsMargins(16, 10, 16, 14)
+        bl.setSpacing(8)
+        cancel = QPushButton("Cancelar")
+        cancel.setObjectName("dlgCancel")
+        cancel.clicked.connect(self.reject)
+        ok = QPushButton("Asignar")
+        ok.setObjectName("dlgAction")
+        ok.setStyleSheet(f"""
+            QPushButton#dlgAction {{
+                background-color: {ACCENT};
+                color: #12161D;
+                font-weight: bold;
+                border-radius: 4px;
+                padding: 6px 20px;
+            }}
+            QPushButton#dlgAction:hover {{
+                background-color: {ACCENT}CC;
+            }}
+        """)
+        ok.clicked.connect(self._aceptar)
+        bl.addStretch()
+        bl.addWidget(ok)
+        bl.addWidget(cancel)
+        layout.addLayout(bl)
+
+        search.textChanged.connect(self._filtrar)
+        if self._lista.count():
+            self._lista.setCurrentRow(0)
+        search.setFocus()
+
+    def _filtrar(self, texto: str):
+        t = texto.strip().lower()
+        for i in range(self._lista.count()):
+            it = self._lista.item(i)
+            it.setHidden(bool(t) and t not in it.text().lower())
+
+    def _aceptar(self):
+        it = self._lista.currentItem()
+        if it is not None:
+            self._resultado = it.data(Qt.ItemDataRole.UserRole)
+        self.accept()
+
+    def elegir(self) -> int | None:
+        """Ejecuta el diálogo modal y devuelve el id elegido (None si cancela)."""
+        if not self._lista.count():
+            return None
+        self.exec()
+        return self._resultado
+
+
 class EditarDescripcionDialog(QDialog):
     """Diálogo modal para editar la descripción de un insumo.
 
